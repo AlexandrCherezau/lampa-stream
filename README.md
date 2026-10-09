@@ -1,286 +1,204 @@
+<div align="center">
+
+<img src="docs/hero.svg" alt="Lampa-Stream — фильмы, сериалы и аниме в одном месте" width="100%">
+
 # Lampa-Stream
 
-<p align="center"><img src="docs/hero.svg" alt="Lampa-Stream — Streambert UI with Lampa's Russian-audio online &amp; torrent player" width="100%"></p>
+**`вечер свободен · фильм выбран · можно смотреть`**
 
-A cross-platform Electron desktop app that unifies **Streambert's polished GUI**
-with **Lampa's content engine**: a multi-audio **online cinema** (Collaps, up to
-4K DASH with Russian dubs) and a **torrent** source (TorrServer). No more
-"English-only" embed players — pick a Russian dub, switch audio tracks, skip
-anime intros, scrub with the keyboard, all in one place.
+Веб-приложение для фильмов, сериалов и аниме: интерфейс **Streambert**,
+онлайн-плеер с русской озвучкой и каталог **TMDB**.
+Выбирайте историю, переключайте дорожки и возвращайтесь к просмотру с сохранённой позиции.
 
-> Forked from [truelockmc/streambert](https://github.com/truelockmc/streambert)
-> (GPL-3.0). The online &amp; torrent pipelines mirror Lampa Desktop's
-> integration, reverse-engineered against the live Collaps and TorrServer APIs.
+![Web](https://img.shields.io/badge/platform-Web-e50914?style=flat-square&labelColor=15151b) ![React](https://img.shields.io/badge/React-18-61dafb?style=flat-square&labelColor=15151b) ![Vite](https://img.shields.io/badge/Vite-7-a78bfa?style=flat-square&labelColor=15151b) ![Player](https://img.shields.io/badge/player-HLS%20%2B%20DASH-ff617b?style=flat-square&labelColor=15151b) [![License](https://img.shields.io/badge/license-GPL--3.0-c8c8d0?style=flat-square&labelColor=15151b)](LICENSE)
 
-## Downloads
+**[▶ Открыть сайт](https://lampa-stream-six.vercel.app)** · [Развернуть свою копию](DEPLOY.md) · [Сообщить о баге](https://github.com/AlexandrCherezau/lampa-stream/issues/new/choose)
 
-Prebuilt installers from the [v1.0.0 release](https://github.com/kroch228/lampa-stream/releases/tag/v1.0.0):
+</div>
 
-| OS | File | Size |
-|-|-|-|
-| Windows | [Lampa-Stream-Setup-2.5.0.exe](https://github.com/kroch228/lampa-stream/releases/download/v1.0.0/Lampa-Stream-Setup-2.5.0.exe) | ~87 MB (NSIS) |
-| macOS | [Lampa-Stream-2.5.0-universal.dmg](https://github.com/kroch228/lampa-stream/releases/download/v1.0.0/Lampa-Stream-2.5.0-universal.dmg) | ~190 MB (universal) |
-| Linux | `.AppImage` / `.deb` / `.rpm` / `.pacman` | see release page |
+<p align="center">
+  <a href="#preview">Интерфейс</a> ·
+  <a href="#features">Возможности</a> ·
+  <a href="#quickstart">Запуск</a> ·
+  <a href="#player">Плеер</a> ·
+  <a href="#deploy">Деплой</a> ·
+  <a href="#structure">Устройство проекта</a>
+</p>
 
-**Windows:** the installer is unsigned, so SmartScreen warns on first run —
-click **More info → Run anyway**. This is normal for open-source apps without a
-paid code-signing certificate.
+---
 
-## Stack
+<a id="preview"></a>
+## ✦ На экране
 
-| Layer | Tech |
-|-|-|
-| Desktop shell | Electron 40, Node 22+ |
-| Renderer | React 18, Vite 7 |
-| Player engines | dash.js 4.7 (DASH / 4K), hls.js 1.5 (HLS fallback) |
-| Catalog | TMDB (metadata, images, search), AniList (anime) |
-| Online source | Collaps (`api.delivembd.ws`) — multi-audio DASH/HLS |
-| Torrent source | TorrServer (YouROK MatriX) + Jackett (optional autosearch) |
-| Anime intro skip | AniSkip (via AniList idMal) |
-| Build/pack | electron-builder (deb/rpm/AppImage/pacman, Windows NSIS, macOS dmg) |
+<img src="docs/screenshots/home.png" alt="Главная страница Lampa-Stream: обложка фильма, подборки и навигация" width="100%">
 
-## Prerequisites
+<p align="center"><sub>Главная страница · демонстрационный каталог, без личной истории и данных аккаунта.</sub></p>
 
-- **Node.js ≥ 22.12.0**
-- A **TMDB** Read Access Token (free) — [guide](tmdb-tutorial.md). Asked on first
-  run; stored encrypted in the OS keychain.
-- **No VPN required (Russia)** — TMDB (`api.themoviedb.org` / `image.tmdb.org`)
-  is routed through the `tmdb-api.rootu.top` / `tmdb-img.rootu.top` proxy by
-  default, so the token validation and catalog work where TMDB is blocked.
-  Toggle in Settings → TorrServer → «TMDB-прокси».
-- For the **Торренты** source: a local **TorrServer** (YouROK MatriX) running on
-  `http://127.0.0.1:8090` (or set its URL in Settings → TorrServer).
-- For **autosearch** of torrents (optional): a **Jackett** instance + API key.
-  Without it you can still paste magnet links / `.torrent` files manually.
-- For the **↗ external player** fallback on torrents: **mpv** or **VLC**.
+<img src="docs/screenshots/catalog.png" alt="Каталог Lampa-Stream: фильтры и сетка постеров" width="100%">
 
-## Install
+<details>
+<summary><b>Ещё: мобильный экран и совместный просмотр</b></summary>
+
+<br>
+
+<table>
+  <tr>
+    <td align="center" width="30%"><img src="mobile-home-375.png" alt="Главная страница на мобильном экране" width="250"><br><sub>Мобильный интерфейс</sub></td>
+    <td align="center" width="70%"><img src="wt-landing-desktop.png" alt="Экран создания комнаты для совместного просмотра" width="100%"><br><sub>Смотрим вместе</sub></td>
+  </tr>
+</table>
+
+Мобильный экран и экран комнаты — существующие снимки интерфейса из репозитория.
+
+</details>
+
+---
+
+<a id="features"></a>
+## ✦ Один экран — разные истории
+
+| | Что есть |
+| :--- | :--- |
+| **🎬 Каталог** | Фильмы, сериалы, аниме, поиск, подборки и карточки с описанием. Метаданные и постеры предоставляет TMDB. |
+| **🎧 Озвучка** | Русские озвучки и переключение аудиодорожек, если они доступны у источника. |
+| **▶ Плеер** | HLS / DASH, качество, скорость, субтитры, перемотка и полный экран. До 4K при наличии такого потока. |
+| **↩ Продолжить** | Сохранение позиции просмотра, история и библиотека. |
+| **⏭ Без заставки** | Пропуск вступлений в аниме по доступным меткам AniSkip. |
+| **👥 Вместе** | Комнаты совместного просмотра, синхронизация воспроизведения и чат. Для своего деплоя нужна настройка сервиса комнат. |
+| **📱 На любом экране** | Адаптивный интерфейс для компьютера и телефона. |
+
+> [!NOTE]
+> Качество, озвучки, субтитры и метки пропуска зависят от выбранного источника и конкретного выпуска.
+> Приложение не хранит видео: каталог и воспроизведение используют внешние сервисы.
+
+<a id="quickstart"></a>
+## ✦ Начать просмотр
+
+1. Откройте **[lampa-stream-six.vercel.app](https://lampa-stream-six.vercel.app)**.
+2. Если включён вход по паролю, введите пароль сайта.
+3. Добавьте свой **TMDB Read Access Token** — [как его получить](tmdb-tutorial.md).
+4. Выберите фильм или серию и запустите просмотр.
+
+### Локальная разработка веб-версии
+
+Нужны **Node.js ≥ 22.12** и npm.
 
 ```bash
-git clone https://github.com/<your-user>/lampa-stream.git
+git clone https://github.com/AlexandrCherezau/lampa-stream.git
 cd lampa-stream
-npm install
+npm ci --ignore-scripts
+npx vercel dev
 ```
 
-> **Electron binary note:** on some networks the `electron` npm postinstall
-> fails to download its binary (registry/mirror issues). If `npm start` errors
-> with "Electron failed to install correctly", download
-> `electron-v<version>-linux-x64.zip` from
-> https://github.com/electron/electron/releases, extract it into
-> `node_modules/electron/dist/`, and write `electron` into
-> `node_modules/electron/path.txt`. The bundled binary needs
-> `LD_LIBRARY_PATH=$PWD/node_modules/electron/dist` on Linux (the `launch.sh`
-> script sets this for you).
+[`vercel dev`](https://vercel.com/docs/cli/dev) запускает приложение вместе с serverless-маршрутами `api/`.
+При первом запуске CLI предложит привязать локальную копию к проекту Vercel.
+Установка с `--ignore-scripts` пропускает загрузку Electron, который для веб-версии не нужен.
 
-## First run
+Собрать статический фронтенд:
 
 ```bash
-./launch.sh        # Linux: sets LD_LIBRARY_PATH + DISPLAY, runs electron
-# or:
-npm start          # any OS: vite build && electron .
+npm run build
 ```
 
-On first launch you'll be prompted for a **TMDB Read Access Token** (stored
-encrypted in the OS keychain). The TMDB proxy is on by default, so the token
-validation and catalog load **without a VPN** even where TMDB is blocked.
-
-## Player sources
-
-Open any movie or TV episode → **Play** → click the **source** button (left
-overlay) → choose:
-
-### Russian-audio sources (added by Lampa-Stream)
-
-| Source | id | Engine | Max quality | Russian audio | Needs |
-|-|-|-|-|-|-|
-| Онлайн (Collaps) | `online` | dash.js → hls.js fallback | **4K** (DASH) | ✓ multi-dub, switchable | nothing (works out of the box) |
-| Торренты (TorrServer) | `torrserver` | hls.js + raw + mpv/VLC fallback | source-dependent | ✓ from torrent content | local TorrServer (+ Jackett for autosearch) |
-
-### Upstream Streambert sources (kept as fallbacks)
-
-| Source | id | Note |
-|-|-|-|
-| Videasy | `videasy` | embed player |
-| VidSrc | `vidsrc` | embed player |
-| Vidking | `vidking` | embed player |
-| AllManga | `allmanga` | anime, `.mp4` direct |
-
-## Player features
-
-| Feature | Online | Torrents | How |
-|-|-|-|-|
-| Audio-track switching | ✓ | ✓ (when HLS) | 🎵 button / `A` key |
-| Russian dub default | ✓ | ✓ | auto-selected on load |
-| Quality selector | ✓ 4K/1080p/720p/… + Auto | ✓ | quality button / `Q` key |
-| Playback speed | ✓ | ✓ | ⚙ button / `<` `>` keys (0.5×–2×) |
-| Subtitles | ✓ (Collaps `cc` VTT) | — | CC button / `C` key |
-| Intro/outro skip | ✓ anime (AniSkip) | — | "ПРОПУСТИТЬ ИНТРО" button, auto or manual |
-| ±10s seek | ✓ | ✓ | ◀10 / 10▶ buttons, `←` `→` `J` `L` |
-| Resume position | ✓ | ✓ | seeks to last watched % on load |
-| Buffer bar + hover time | ✓ | ✓ | hover the seek bar |
-| Auto-hide controls | ✓ | ✓ | 3s idle while playing |
-| Click-to-play / dbl-click fullscreen | ✓ | ✓ | on the video |
-| Loading spinner | ✓ | ✓ | while buffering |
-| External player | — | ✓ (mpv/VLC) | ↗ button — guaranteed RU audio on any mkv |
-
-## Keyboard shortcuts
-
-| Key | Action |
-|-|-|
-| `Space` / `K` | play / pause |
-| `←` / `J` | back 10s |
-| `→` / `L` | forward 10s |
-| `↑` / `↓` | volume ±5% |
-| `0`–`9` | seek to N×10% |
-| `F` | toggle fullscreen |
-| `M` | mute |
-| `<` / `>` | speed − / + |
-| `C` | cycle subtitles |
-| `A` | cycle audio track |
-| `Q` | cycle quality |
-
-## Settings → TorrServer
-
-| Field | Purpose |
-|-|-|
-| TorrServer URL | host of your local TorrServer (default `http://127.0.0.1:8090`) |
-| Проверить | health-check, detects MatriX build |
-| Jackett URL + API key | autosearch torrents (any Jackett-compatible indexer) |
-| Предпочитаемая аудиодорожка | RU / EN / original |
-| Внешний плеер | auto / mpv / VLC for the ↗ fallback |
-
-Config persists to `userData/lampa-stream-torrserver.json` (gitignored, may hold
-your Jackett key).
-
-## How the 4K + Russian audio works
-
-**Онлайн (Collaps):** the TMDB item is resolved to a Collaps embed via `imdb_id`
-(falls back to `kinopoisk_id` by title when TMDB has no imdb_id). The embed page
-contains a `makePlayer({...})` object with the DASH `.mpd` URL and an audio-name
-array. The DASH manifest carries up to **2160p (4K)** + multiple audio
-renditions (RU dubs as separate tracks). The in-app **dash.js** player plays it,
-defaulting to the best quality and a Russian dub. If DASH fails, it falls back
-to hls.js on the HLS URL (~720p). The Collaps CDN blocks Electron's User-Agent,
-so the main process rewrites the UA to plain Chrome for its hosts
-(`*.interkh.com`, `api.delivembd.ws`) and injects permissive CORS headers.
-
-**Торренты (TorrServer):** Russian audio comes from the torrent content itself
-(RU dubs in the mkv). TorrServer MatriX serves the **raw** stream by default
-(not multi-audio HLS), so the in-app player falls back to raw mp4 playback and
-offers an mpv/VLC button (which always handles any container + any audio track).
-
-## Security &amp; privacy
-
-- **No tracking, no ads** (inherited from Streambert — built-in ad/tracker
-  blocklist for the embed sources).
-- TMDB / Jackett / Wyzie / SubDL keys stored **encrypted** via Electron
-  `safeStorage` (OS keychain), never in plaintext or localStorage.
-- TorrServer config (`lampa-stream-torrserver.json`) lives in `userData` and is
-  gitignored; it may hold your Jackett key — don't share it.
-- The app is a **search/aggregation engine** — it hosts no content. See the
-  legal disclaimer below.
-
-## Development
+<details>
+<summary><b>Только интерфейс, без serverless API</b></summary>
 
 ```bash
-npm install
-npm run dev          # vite build --watch (rebuild renderer on change)
-npm start            # build + launch electron
+npx vite --host 127.0.0.1
 ```
 
-Build a distributable:
+Так можно работать с интерфейсом; маршруты `api/` нужно обслуживать отдельно.
+Для каталога и совместного просмотра используйте `vercel dev` или свой настроенный backend.
 
-```bash
-npm run dist:linux      # deb / rpm / AppImage / pacman
-npm run dist:appimage   # AppImage only
-npm run dist:win        # Windows NSIS
-npm run dist:mac        # macOS dmg (universal)
-npm run dist            # all platforms
+</details>
+
+<a id="player"></a>
+## ✦ Плеер под рукой
+
+**Онлайн (Collaps)** — встроенный онлайн-источник с HLS / DASH.
+Доступные дорожки и разрешения определяются потоком; настройки находятся в самом плеере.
+
+| Клавиша | Действие |
+| :--- | :--- |
+| `Space` / `K` | Воспроизвести или поставить на паузу |
+| `←` / `J` · `→` / `L` | Перемотать на 10 секунд назад или вперёд |
+| `↑` / `↓` | Изменить громкость |
+| `F` | Полный экран |
+| `M` | Выключить или включить звук |
+| `<` / `>` | Изменить скорость |
+| `A` · `C` · `Q` | Аудиодорожки · субтитры · качество |
+
+<details>
+<summary><b>Desktop-наследие и TorrServer</b></summary>
+
+Проект вырос из Electron-приложения Streambert. В исходниках и настройках остаются
+компоненты TorrServer, интеграция с Jackett и настройки внешних плееров.
+В веб-сборке эти desktop-источники недоступны; для просмотра в браузере используется онлайн-плеер.
+
+Исторические установщики находятся в [релизах](https://github.com/AlexandrCherezau/lampa-stream/releases).
+Они относятся к desktop-версии и не заменяют актуальный веб-деплой.
+
+</details>
+
+<a id="deploy"></a>
+## ✦ Свой киноэкран
+
+Импортируйте репозиторий в **Vercel**:
+
+| Настройка | Значение |
+| :--- | :--- |
+| Framework | Vite |
+| Build command | `npm run build` |
+| Output directory | `dist` |
+| API | Serverless-функции из `api/` |
+
+Пароль сайта необязателен. Комнатам совместного просмотра требуется отдельная конфигурация,
+описанная в **[руководстве по деплою](DEPLOY.md)**.
+
+В веб-версии TMDB-токен сохраняется в `localStorage` вашего браузера.
+Проверка пароля на клиенте служит простым входным экраном, а не полноценной серверной авторизацией.
+
+<a id="structure"></a>
+## ✦ Внутри проекта
+
+```text
+lampa-stream/
+├── api/               # TMDB, онлайн-источник и комнаты
+├── src/
+│   ├── components/    # Плееры и элементы интерфейса
+│   ├── pages/         # Главная, каталог, фильмы, сериалы, библиотека
+│   ├── utils/         # API-клиенты, настройки и работа с воспроизведением
+│   ├── web/           # Браузерный bridge и экран входа
+│   └── styles/        # Темы и адаптивное оформление
+├── public/            # Иконки и статические ресурсы
+├── docs/              # Обложка и скриншоты
+└── vercel.json        # Маршрутизация и настройки деплоя
 ```
 
-Project layout:
+**React 18 + Vite 7** для интерфейса · **hls.js + dash.js** для видео ·
+**TMDB** для каталога · **AniSkip** для меток вступлений.
 
-```
-src/
-├── components/
-│   ├── OnlinePlayer.jsx       # online source: dash.js → hls.js, 4K, all controls
-│   ├── TorrPlayer.jsx         # torrent source: search / add magnet / TorrServer
-│   └── TorrServerSettingsSection.jsx
-├── ipc/
-│   ├── collaps.js             # main-process Collaps parser (makePlayer → DASH/HLS)
-│   └── torrserver.js          # main-process TorrServer client + Jackett + mpv/VLC
-├── utils/
-│   ├── collaps-client.js      # renderer IPC wrapper + RU-audio picker
-│   └── torrserver-client.js
-└── pages/  (MoviePage, TVPage, SettingsPage, …)  # from Streambert
-public/vendor/dash.all.min.js  # dash.js bundle (npm registry ships broken pkg)
-index.js  preload.js           # Electron main + secure bridge
-launch.sh  kill.sh             # Linux launcher + force-kill helper
-```
+Хотите помочь? [Правила участия](CONTRIBUTING.md) ·
+[Баги и идеи](https://github.com/AlexandrCherezau/lampa-stream/issues).
 
-## Changelog
+<a id="credits"></a>
+## ✦ Авторы и лицензия
 
-- **v1.0.0** — Lampa-Stream. Added the Collaps `Онлайн` source (4K DASH,
-  multi-audio RU dubs, AniSkip intro skip, subtitles, quality/speed/seek,
-  full keyboard control, resume) and the TorrServer `Торренты` source
-  (Jackett autosearch, magnet/`.torrent` add, mpv/VLC fallback), both as in-app
-  hls.js/dash.js players. Forked from Streambert 2.5.0.
+Основано на **[truelockmc/streambert](https://github.com/truelockmc/streambert)**.
+Интеграции онлайн-плеера и TorrServer вдохновлены Lampa.
+Оформление README вдохновлено **[AngelOS-Dotfiles](https://github.com/MixaDoDs/AngelOS-Dotfiles)**;
+обложка создана для Lampa-Stream.
 
-## License
-
-GPL-3.0 (inherited from Streambert). Forks must stay open-source.
-
-## Legal disclaimer
-
-This application is for educational and personal use only. It does not host,
-store, or distribute any copyrighted content — all content is sourced from
-third-party providers (Collaps, TorrServer torrents you add, VidSrc/Videasy
-embeds). Users are responsible for ensuring they have legal rights to access any
-content and must comply with all applicable laws in their jurisdiction. The
-developer does not endorse copyright infringement.
+Код распространяется по **[GPL-3.0](LICENSE)**. Названия, постеры и кадры произведений
+принадлежат их правообладателям; изображения в демонстрации интерфейса получены из TMDB.
 
 ---
 
-## RU — кратко
+<div align="center">
 
-Объединяет **GUI Streambert** с **контент-движком Lampa**: онлайн-кинотеатр
-**Collaps** (до 4K DASH, русская озвучка, переключение дорожек) и источник
-**Торренты** (TorrServer). Больше никаких embed-плееров только с английским
-звуком.
+**Хорошего просмотра.**
 
-**Запуск:** `npm install` → `./launch.sh` (Linux) или `npm start`. При первом
-запуске спросит TMDB-токен (хранится в OS keychain). **VPN не нужен**: TMDB
-идёт через прокси `tmdb-api.rootu.top` (включён по умолчанию, тумблер в
-Настройках → TorrServer). Открой фильм/серию → Play → источник →
-**«Онлайн»** (4K, русская озвучка, без подготовки) или **«Торренты»** (через
-локальный TorrServer, ищи через Jackett или вставь magnet).
+[Открыть сайт](https://lampa-stream-six.vercel.app) ·
+[Вернуться наверх](#lampa-stream)
 
-**Фишки плеера:** качество (4K/…/Авто), скорость (0.5×–2×), субтитры, скип
-интро в аниме (AniSkip), перемотка ±10с, перемотка на позицию, полный набор
-горячих клавиш (см. таблицу выше), авто-скрытие контролей.
-
-**Безопасность:** без рекламы и трекеров, ключи хранятся в OS-keychain
-(encrypted), TorrServer-конфиг с твоим Jackett-ключом в `userData` и не
-пушится. Полная таблица фич — в EN-секции выше.
-
----
-
-## ZH — 简介
-
-将 **Streambert 的界面** 与 **Lampa 的内容引擎** 合二为一：在线影院
-**Collaps**（最高 4K DASH，俄语配音，可切换音轨）和 **TorrServer 种子**
-来源。不再受限于只有英语音轨的嵌入播放器。
-
-**运行：** `npm install` → `./launch.sh`（Linux）或 `npm start`。首次启动
-会要求输入 TMDB token（存于 OS keychain）。**无需 VPN**：TMDB 请求走
-`tmdb-api.rootu.top` 代理（默认开启，可在设置 → TorrServer 切换）。
-打开电影/剧集 → 播放 → 来源按钮 → **«Онлайн»**
-（4K，俄语配音，开箱即用）或 **«Торренты»**（通过本地 TorrServer，可用
-Jackett 搜索或粘贴磁力链接）。
-
-**播放器功能：** 画质（4K/…/自动）、倍速（0.5×–2×）、字幕、动漫片头跳过
-（AniSkip）、±10 秒快进/退、续播位置、完整快捷键（见上方表格）、控件自动
-隐藏。
-
-**安全：** 无广告无追踪，密钥经 OS keychain 加密存储，TorrServer 配置
-（含你的 Jackett key）在 `userData` 且不上传。完整功能表见上方 EN 部分。
+</div>
