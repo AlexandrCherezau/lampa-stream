@@ -17,7 +17,7 @@
 //   • ±10s seek + full keyboard shortcuts
 //   • Resume from last position, click-to-play, auto-hide controls, buffer bar
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 // hls.js (~150KB) is loaded lazily ONLY when an HLS stream actually attaches,
 // so it stays out of the initial movie-page bundle. dash.js is likewise lazy
 // (desktop-only vendor bundle). Both keep the movie chunk small for fast nav.
@@ -40,7 +40,7 @@ import {
   imgUrl,
 } from "../utils/api";
 import { fetchAniSkipTimings, resolveAnimeEpisode } from "../utils/aniSkip";
-import { fetchIntroDbTimings, mergeTimings } from "../utils/introDetect";
+import { fetchIntroDbTimings, mergeTimings, providerSkipRanges } from "../utils/introDetect";
 import { applySync as applyWatchSync } from "../utils/watchParty";
 import { storage, STORAGE_KEYS, getStoredVolume, getStoredMuted, setStoredVolume, setStoredMuted, setCappedMap } from "../utils/storage";
 import {
@@ -63,10 +63,10 @@ const fmt = (s) => {
 };
 
 function skipEndFor(segment, timings) {
-  const range = timings?.[segment];
+  const range = typeof segment === "object" ? segment : timings?.[segment];
   if (!range) return null;
   const post = timings?.postCredits;
-  if (segment === "outro" && post && post.startTime < range.endTime && post.endTime > range.startTime) {
+  if ((segment === "outro" || typeof segment === "object") && post && post.startTime < range.endTime && post.endTime > range.startTime) {
     if (post.startTime <= range.startTime) return null;
     return Math.min(range.endTime, post.startTime);
   }
@@ -1327,9 +1327,11 @@ export default function OnlinePlayer({
   // content/timing change so the interval uses a stable mode.
   const isAnimeSeries = type === "tv" && episode && isAnimeContent(item, details);
   const activeSkipMode = isAnimeSeries ? introSkipMode : generalSkipMode;
+  const providerSkips = useMemo(() => isLampac ? providerSkipRanges(lampac.skip, duration) : [], [isLampac, lampac.skip, duration]);
   useEffect(() => {
     const isFollower = syncRole === "follower";
-    const skipActive = !isFollower && skipTimings && activeSkipMode !== "off";
+    const skipActive = !isFollower && (skipTimings || providerSkips.length) && activeSkipMode !== "off";
+    setSkipPrompt(null);
     // Run the 1s tick if either skip is active OR a next-episode callback is
     // wired (so we can switch episodes when skip is off). Followers cannot
     // seek locally; the host remains authoritative.
@@ -1342,17 +1344,19 @@ export default function OnlinePlayer({
 
       // ── Skip prompt / auto-skip (intro / outro / recap) ──
       if (skipActive) {
-        const { intro, outro, recap } = skipTimings;
+        const { intro, outro, recap } = skipTimings || {};
         const inRecap = recap && ct >= recap.startTime && ct < recap.endTime - 1;
         const inIntro = intro && ct >= intro.startTime && ct < intro.endTime - 1;
         const inOutro = outro && ct >= outro.startTime && ct < outro.endTime - 1;
-        const candidate = inRecap ? "recap" : inIntro ? "intro" : inOutro ? "outro" : null;
+        const candidate = inRecap ? "recap" : inIntro ? "intro" : inOutro ? "outro"
+          : providerSkips.find((range) => ct >= range.startTime && ct < range.endTime - 1) || null;
         const seg = candidate && skipEndFor(candidate, skipTimings) > ct ? candidate : null;
         if (!seg) {
           setSkipPrompt(null);
         } else {
           setSkipPrompt(seg);
-          if (activeSkipMode === "auto" && !v.paused && !v.seeking) {
+          // Unclassified provider ranges require a click, even in automatic mode.
+          if (typeof seg === "string" && activeSkipMode === "auto" && !v.paused && !v.seeking) {
             v.currentTime = skipEndFor(seg, skipTimings);
             setSkipPrompt(null);
           }
@@ -1371,7 +1375,7 @@ export default function OnlinePlayer({
       }
     }, 1000);
     return () => clearInterval(skipTimerRef.current);
-  }, [skipTimings, activeSkipMode, onNext, watchedThreshold, syncRole, state, switching]);
+  }, [skipTimings, providerSkips, activeSkipMode, onNext, watchedThreshold, syncRole, state, switching]);
 
   // ── Fullscreen state ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1688,6 +1692,7 @@ export default function OnlinePlayer({
   };
   const doSkip = () => {
     if (syncRole === "follower" || state !== "ready" || switching || !skipPrompt) return;
+    if (typeof skipPrompt === "object" && !providerSkips.includes(skipPrompt)) return;
     const v = videoRef.current;
     const endTime = skipEndFor(skipPrompt, skipTimings);
     if (!v || !Number.isFinite(endTime) || endTime <= v.currentTime) return;
@@ -1875,7 +1880,7 @@ export default function OnlinePlayer({
         <button className="torrplayer-skip" onClick={doSkip}>
           <span className="torrplayer-skip-title">ПРОПУСТИТЬ</span>
           <span className="torrplayer-skip-sub">
-            {skipPrompt === "intro" ? (isAnimeSeries ? "ОПЕНИНГ" : "ЗАСТАВКУ") : skipPrompt === "outro" ? (isAnimeSeries ? "ЭНДИНГ" : "ТИТРЫ") : "РЕКАП"}
+            {skipPrompt === "intro" ? (isAnimeSeries ? "ОПЕНИНГ" : "ЗАСТАВКУ") : skipPrompt === "outro" ? (isAnimeSeries ? "ЭНДИНГ" : "ТИТРЫ") : skipPrompt === "recap" ? "РЕКАП" : "ФРАГМЕНТ"}
           </span>
         </button>
       )}

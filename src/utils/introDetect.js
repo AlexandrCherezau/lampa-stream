@@ -61,6 +61,14 @@ export function fallbackTimings() {
   return null;
 }
 
+export function providerSkipRanges(ranges, duration) {
+  if (!Array.isArray(ranges) || !Number.isFinite(duration) || duration <= 0) return [];
+  return ranges.slice(0, 100).filter((range) =>
+    Number.isFinite(range?.start) && Number.isFinite(range?.end)
+    && range.start >= 0 && range.end > range.start && range.end <= duration
+  ).map((range) => ({ startTime: range.start, endTime: range.end }));
+}
+
 /** Merge confirmed sources; the first argument wins per segment. */
 export function mergeTimings(primary, secondary) {
   const out = {};

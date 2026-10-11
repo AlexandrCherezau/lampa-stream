@@ -49,7 +49,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   let active = null;
   let previous = null;
   let confirmed = false;
-  let state = { stream: null, switching: false, sourceError: null, meta: "Ищем источники…", qualities: [], subtitles: [] };
+  let state = { stream: null, switching: false, sourceError: null, meta: "Ищем источники…", qualities: [], subtitles: [], skip: null };
   const emit = (patch = {}) => {
     state = { ...state, ...patch };
     const providers = [...new Map(candidates.map((value) => [value.providerId, { id: value.providerId, name: value.providerName }])).values()];
@@ -91,7 +91,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       emit({ stream: result.kind === "hls" ? { hls: result.selected.url } : { mp4: result.selected.url },
         qualities: result.qualities.map((value) => ({ id: value.label, label: value.label === "auto" ? "Авто" : value.label, height: value.height })),
         subtitles: (result.subtitles || []).map((value) => ({ name: value.label, language: value.language, url: value.url })),
-        meta: `${candidate.providerName} · ${candidate.voiceName}`, sourceError: null,
+        meta: `${candidate.providerName} · ${candidate.voiceName}`, sourceError: null, skip: result.skip || null,
       });
       return true;
     } catch (error) {
@@ -118,7 +118,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   async function start(title) {
     stop();
     candidates = []; failed = new Set(); active = previous = null; confirmed = false; finished = false;
-    state = { stream: null, switching: false, sourceError: null, meta: "Ищем источники…", qualities: [], subtitles: [] };
+    state = { stream: null, switching: false, sourceError: null, meta: "Ищем источники…", qualities: [], subtitles: [], skip: null };
     emit();
     const token = generation;
     discovery = new AbortController();
@@ -154,12 +154,13 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
           qualities: result.qualities.map((value) => ({ id: value.label, label: value.label === "auto" ? "Авто" : value.label, height: value.height })),
           subtitles: (result.subtitles || []).map((value) => ({ name: value.label, url: value.url })),
           meta: `${active.candidate.providerName} · ${active.candidate.voiceName}`,
+          skip: result.skip || null,
           sourceError: { message: "Выбранный поток не воспроизводится. Возвращаем предыдущий источник" },
         });
         return true;
       }
       active = null; confirmed = false;
-      emit({ stream: null, switching: false, sourceError: null });
+      emit({ stream: null, switching: false, sourceError: null, skip: null });
       return next();
     },
   };

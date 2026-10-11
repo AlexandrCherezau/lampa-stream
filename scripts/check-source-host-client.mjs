@@ -171,10 +171,34 @@ async function emptyDiscoveryAndSplitSse() {
   assert.equal(events[0][1].id, "x");
 }
 
+async function skipRangesFollowActiveStream() {
+  let state;
+  const ranges = { a: [{ start: 5, end: 10 }], b: [{ start: 20, end: 30 }] };
+  const session = createSourceSession({
+    publish: (value) => { state = value; },
+    discover: async (title, { onEvent }) => {
+      if (title.title === "empty") return;
+      for (const id of ["a", "b"]) onEvent("candidate", candidate(id));
+    },
+    resolve: async (id) => ({ ...result(`https://media.test/${id}.m3u8`), skip: ranges[id] }),
+  });
+  await session.start({ title: "Film" });
+  assert.deepEqual(state.skip, ranges.a);
+  session.notePlaying();
+  await session.selectBalanser("b");
+  assert.deepEqual(state.skip, ranges.b);
+  session.reportPlaybackFailure();
+  assert.deepEqual(state.skip, ranges.a, "restoring a stream restores its own skip intervals");
+  await session.start({ title: "empty" });
+  assert.equal(state.skip, null, "a new title cannot retain another source's intervals");
+  session.stop();
+}
+
 await progressiveRecoveryWithState();
 await decoderFailureUsesSibling();
 await failedVoiceKeepsOtherVoices();
 await fallbackRotatesProvidersAndStops();
 await manualFailureAndStaleRequests();
 await emptyDiscoveryAndSplitSse();
+await skipRangesFollowActiveStream();
 console.log("Source-host client checks passed: progressive fallback, per-voice recovery, provider rotation, exhausted candidates, manual/stale requests, empty discovery, split SSE.");

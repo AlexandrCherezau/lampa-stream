@@ -53,6 +53,7 @@ async function testMovieProvidersAndResolve() {
         translate: "Дубляж",
         headers: "{'Referer': 'https://source.example/'}",
         subtitles: [{ name: "Русские", url: "https://cdn.example/ru.vtt", language: "ru" }],
+        segments: { skip: [{ start: 5, end: 10 }], ad: [{ start: 0, end: 5 }] },
       }]);
     }
     if (url.pathname === "/lite/zetflixdb") {
@@ -75,6 +76,7 @@ async function testMovieProvidersAndResolve() {
   assert.deepEqual(resolved.qualities.map((quality) => [quality.label, quality.height]), [["1080p", 1080], ["720p", 720]]);
   assert.equal(resolved.qualities[0].headers.Referer, "https://source.example/");
   assert.deepEqual(resolved.subtitles, [{ label: "Русские", url: "https://cdn.example/ru.vtt", language: "ru" }]);
+  assert.deepEqual(resolved.skip, [{ start: 5, end: 10 }], "source skip markers are retained without ad ranges");
 
   const zetflixDb = await provider.resolve(candidates[1]);
   assert.equal(zetflixDb.qualities[0].height, 1080);

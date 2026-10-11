@@ -519,7 +519,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
         .map((quality) => ({ ...quality, headers: { ...sourceHeaders(item.headers || ref.headers) } })),
       subtitles: subtitlesOf(item, base),
       duration: Number(item.duration || item.runtime) || null,
-      skip: item.skip || item.skips || null,
+      skip: item.skip || item.skips || item.segments?.skip || null,
     };
   }
 

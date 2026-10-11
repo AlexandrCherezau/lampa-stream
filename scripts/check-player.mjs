@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-import { fetchIntroDbTimings, fallbackTimings, mergeTimings } from "../src/utils/introDetect.js";
+import { fetchIntroDbTimings, fallbackTimings, mergeTimings, providerSkipRanges } from "../src/utils/introDetect.js";
 import { fetchAniSkipTimings, resolveAnimeEpisode } from "../src/utils/aniSkip.js";
 import introdb from "../api/introdb.js";
 
@@ -23,6 +23,14 @@ try {
   const timings = await fetchIntroDbTimings({ imdbId: "tt0111161", type: "movie", duration: 100 });
   assert.deepEqual(timings, { intro: { startTime: 5, endTime: 10 }, postCredits: { startTime: 80, endTime: 90 } });
   assert.equal(fallbackTimings(100), null);
+  assert.deepEqual(providerSkipRanges([
+    { start: 5, end: 10 }, { start: 80, end: 100 },
+    { start: -1, end: 2 }, { start: 10, end: 5 }, { start: 3, end: 3 },
+    { start: null, end: 10 }, { start: "5", end: 10 }, { start: 5, end: Infinity },
+    { start: 90, end: 101 },
+  ], 100), [{ startTime: 5, endTime: 10 }, { startTime: 80, endTime: 100 }]);
+  assert.deepEqual(providerSkipRanges([{ start: 5, end: 10 }], NaN), []);
+  assert.deepEqual(providerSkipRanges({ ad: [{ start: 5, end: 10 }] }, 100), []);
   assert.deepEqual(mergeTimings({ intro: { startTime: 1, endTime: 2 } }, timings).intro, { startTime: 1, endTime: 2 });
   let calls = 0;
   globalThis.fetch = async () => { calls++; return Response.json({ found: true, results: [

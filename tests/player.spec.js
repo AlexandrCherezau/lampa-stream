@@ -230,6 +230,7 @@ test("automatic recovery keeps another voice after HTTP and decode failures in t
   await page.addInitScript(() => {
     localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
     localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
+    localStorage.setItem("streambert_skipHeuristicMode", JSON.stringify("auto"));
   });
   const tmdb = (route) => route.fulfill({
     status: 200, contentType: "application/json",
@@ -237,6 +238,10 @@ test("automatic recovery keeps another voice after HTTP and decode failures in t
   });
   await page.route("**/api/tmdb/**", tmdb);
   await page.route("https://api.themoviedb.org/**", tmdb);
+  await page.route("**/api/introdb?**", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ post_credits: { start_sec: 85, end_sec: 95, confidence: 1 } }),
+  }));
   await page.route("**/fixture.m3u8", (route) => route.fulfill({
     status: 200, contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" },
     body: readFileSync(join(fixtureDir, "fixture.m3u8"), "utf8"),
@@ -265,7 +270,7 @@ test("automatic recovery keeps another voice after HTTP and decode failures in t
     const url = `https://media.example/${id === "good" ? "fixture" : "broken-fixture"}.m3u8`;
     return route.fulfill({
       status: 200, contentType: "application/json",
-      body: JSON.stringify({ kind: "hls", selected: { label: "720p", height: 720, url }, qualities: [{ label: "720p", height: 720, url }] }),
+      body: JSON.stringify({ kind: "hls", selected: { label: "720p", height: 720, url }, qualities: [{ label: "720p", height: 720, url }], skip: [{ start: 70, end: 100 }] }),
     });
   });
   await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
@@ -277,6 +282,13 @@ test("automatic recovery keeps another voice after HTTP and decode failures in t
   await expect(page.locator('[title="Озвучка"]')).toContainText("good");
   await video.evaluate((v) => { v.currentTime = 60; });
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThan(60.5);
+  await video.evaluate((v) => { v.currentTime = 71; });
+  const skip = page.locator(".torrplayer-skip");
+  await expect(skip).toContainText("ФРАГМЕНТ", { timeout: 5_000 });
+  expect(await video.evaluate((v) => v.currentTime)).toBeLessThan(80);
+  await skip.click();
+  await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 5_000 }).toBeGreaterThanOrEqual(85);
+  expect(await video.evaluate((v) => v.currentTime)).toBeLessThan(95);
 });
 
 test("manual source resolution preserves a near-end resume position after the seek watchdog", async ({ page }) => {
