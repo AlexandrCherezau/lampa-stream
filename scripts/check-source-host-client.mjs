@@ -53,6 +53,63 @@ async function decoderFailureUsesSibling() {
   assert.equal(state.balanser, "beta");
 }
 
+async function failedVoiceKeepsOtherVoices() {
+  for (const failure of ["resolve", "decode"]) {
+    const calls = [];
+    let state;
+    const session = createSourceSession({
+      publish: (value) => { state = value; },
+      discover: async (_title, { onEvent }) => {
+        onEvent("candidate", candidate("bad", "alpha"));
+        onEvent("candidate", candidate("good", "alpha"));
+      },
+      resolve: async (id) => {
+        calls.push(id);
+        if (failure === "resolve" && id === "bad") throw new Error("voice unavailable");
+        return result(`https://media.test/${id}.m3u8`);
+      },
+    });
+    await session.start({ title: "Film" });
+    if (failure === "decode") assert.equal(session.reportPlaybackFailure(), true);
+    await tick(); await tick();
+    assert.deepEqual(calls, ["bad", "good"], `${failure} failure must not discard another voice from the same provider`);
+    assert.deepEqual(state.stream, { hls: "https://media.test/good.m3u8" });
+    assert.equal(state.sourceError, null);
+    session.stop();
+  }
+}
+
+async function fallbackRotatesProvidersAndStops() {
+  const calls = [];
+  let state;
+  const session = createSourceSession({
+    publish: (value) => { state = value; },
+    discover: async (_title, { onEvent }) => {
+      for (const [id, provider] of [["a1", "alpha"], ["a2", "alpha"], ["b1", "beta"], ["b2", "beta"]]) {
+        onEvent("candidate", candidate(id, provider));
+      }
+    },
+    resolve: async (id) => {
+      calls.push(id);
+      if (id.endsWith("1")) throw new Error("voice unavailable");
+      return result(`https://media.test/${id}.m3u8`);
+    },
+  });
+  await session.start({ title: "Film" });
+  await tick(); await tick();
+  assert.deepEqual(calls, ["a1", "b1", "a2"], "try another provider before its remaining voices");
+  assert.equal(state.voice, "a2");
+  assert.equal(session.reportPlaybackFailure(), true);
+  await tick(); await tick();
+  assert.deepEqual(calls, ["a1", "b1", "a2", "b2"]);
+  assert.equal(state.voice, "b2");
+  assert.equal(session.reportPlaybackFailure(), false);
+  await tick(); await tick();
+  assert.equal(calls.length, 4, "exhausted candidates are not retried forever");
+  assert.match(state.sourceError.message, /Не найдено/);
+  session.stop();
+}
+
 async function manualFailureAndStaleRequests() {
   const manual = deferred();
   const lateManual = deferred();
@@ -116,6 +173,8 @@ async function emptyDiscoveryAndSplitSse() {
 
 await progressiveRecoveryWithState();
 await decoderFailureUsesSibling();
+await failedVoiceKeepsOtherVoices();
+await fallbackRotatesProvidersAndStops();
 await manualFailureAndStaleRequests();
 await emptyDiscoveryAndSplitSse();
-console.log("Source-host client checks passed: progressive fallback, decoder failure, manual/stale requests, empty discovery, split SSE.");
+console.log("Source-host client checks passed: progressive fallback, per-voice recovery, provider rotation, exhausted candidates, manual/stale requests, empty discovery, split SSE.");

@@ -63,7 +63,13 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   };
   const next = () => {
     if (active || pending) return false;
-    const candidate = candidates.find((value) => !failed.has(value.providerId));
+    const failures = new Map();
+    for (const value of candidates) {
+      if (failed.has(value.id)) failures.set(value.providerId, (failures.get(value.providerId) || 0) + 1);
+    }
+    // Try every available provider before exhausting its alternate voices.
+    const candidate = candidates.filter((value) => !failed.has(value.id))
+      .sort((a, b) => (failures.get(a.providerId) || 0) - (failures.get(b.providerId) || 0))[0];
     if (candidate) { choose(candidate, undefined, false); return true; }
     settle();
     return !finished;
@@ -94,7 +100,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
         emit({ switching: false, sourceError: { message: error.message || "Не удалось переключить источник" } });
         return false;
       }
-      failed.add(candidate.providerId);
+      failed.add(candidate.id);
       return false;
     } finally {
       if (resolving === controller && token === generation) {
@@ -140,7 +146,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     notePlaying: () => { confirmed = true; previous = null; emit({ switching: false }); },
     reportPlaybackFailure: () => {
       if (!active) return pending || !finished;
-      failed.add(active.candidate.providerId);
+      failed.add(active.candidate.id);
       if (previous) {
         active = previous; previous = null; confirmed = true;
         const result = active.result;

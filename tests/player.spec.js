@@ -226,6 +226,59 @@ test("decoded movie playback recovers after HTTP and decode failures from manual
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThanOrEqual(29);
 });
 
+test("automatic recovery keeps another voice after HTTP and decode failures in the same provider", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
+    localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
+  });
+  const tmdb = (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ id: 550, title: "Movie 550", original_title: "Movie 550", imdb_id: "tt0111161", original_language: "en", runtime: 2, release_date: "1994-01-01", genres: [], credits: { cast: [] } }),
+  });
+  await page.route("**/api/tmdb/**", tmdb);
+  await page.route("https://api.themoviedb.org/**", tmdb);
+  await page.route("**/fixture.m3u8", (route) => route.fulfill({
+    status: 200, contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" },
+    body: readFileSync(join(fixtureDir, "fixture.m3u8"), "utf8"),
+  }));
+  await page.route("**/fixture*.ts", (route) => route.fulfill({
+    status: 200, contentType: "video/mp2t", headers: { "access-control-allow-origin": "*" },
+    body: readFileSync(join(fixtureDir, new URL(route.request().url()).pathname.split("/").pop())),
+  }));
+  await page.route("**/broken-fixture.m3u8", (route) => route.fulfill({
+    status: 200, contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" },
+    body: "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nbroken-fixture.ts\n#EXT-X-ENDLIST\n",
+  }));
+  await page.route("**/broken-fixture.ts", (route) => route.fulfill({
+    status: 200, contentType: "video/mp2t", headers: { "access-control-allow-origin": "*" }, body: Buffer.alloc(2048, 0),
+  }));
+  const ids = ["http-bad", "decode-bad", "good"];
+  await page.route(/\/api\/source-host\?op=discover(?:&|$)/, (route) => route.fulfill({
+    status: 200, contentType: "text/event-stream",
+    body: ids.map((id) => `event: candidate\ndata: ${JSON.stringify({ id, providerId: "same-provider", providerName: "Test source", voiceName: id })}\n\n`).join("") + "event: done\ndata: {}\n\n",
+  }));
+  const calls = [];
+  await page.route(/\/api\/source-host\?op=resolve(?:&|$)/, (route) => {
+    const { id } = route.request().postDataJSON();
+    calls.push(id);
+    if (id === "http-bad") return route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"MEDIA_UNAVAILABLE"}' });
+    const url = `https://media.example/${id === "good" ? "fixture" : "broken-fixture"}.m3u8`;
+    return route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ kind: "hls", selected: { label: "720p", height: 720, url }, qualities: [{ label: "720p", height: 720, url }] }),
+    });
+  });
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  const video = page.locator("video");
+  await expect(video).toBeVisible({ timeout: 20_000 });
+  await expect.poll(() => video.evaluate((v) => v.getVideoPlaybackQuality().totalVideoFrames), { timeout: 30_000 }).toBeGreaterThan(2);
+  expect(calls).toEqual(ids);
+  await expect(page.locator('[title="Озвучка"]')).toContainText("good");
+  await video.evaluate((v) => { v.currentTime = 60; });
+  await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThan(60.5);
+});
+
 test("manual source resolution preserves a near-end resume position after the seek watchdog", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
