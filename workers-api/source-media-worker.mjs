@@ -234,6 +234,10 @@ export async function handleSourceMediaRequest(request, env, fetchImpl = fetch) 
     // route must first return a Node-validated redirect target and safe headers.
     return fetchAndServeNodeMedia(request, fetchImpl, sourceOrigin, token, env.SOURCE_API_KEY, route.url);
   }
+  if (response.status === 403 || response.status === 404) {
+    await response.body?.cancel().catch(() => {});
+    return fetchAndServeNodeMedia(request, fetchImpl, sourceOrigin, token, env.SOURCE_API_KEY, route.url);
+  }
   if (!response.ok) {
     const status = response.status;
     await response.body?.cancel().catch(() => {});

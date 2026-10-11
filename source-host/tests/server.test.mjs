@@ -355,6 +355,33 @@ test("resolution preserves the verified target when providers repeat quality lab
   assert.equal(signed.headerOrigin, "https://cdn.test");
 });
 
+test("only ZetflixDB quality media tokens are sealed for direct Node serving", async (t) => {
+  for (const providerId of ["zetflixdb", "hdvb"]) {
+    const signed = [];
+    const adapter = {
+      async *discover() { yield candidate({ providerId, providerName: providerId }); },
+      async resolve() { return { qualities: [
+        { label: "1080p", height: 1080, url: "https://cdn.test/master.m3u8" },
+        { label: "720p", height: 720, url: "https://cdn.test/lower.m3u8" },
+      ] }; },
+    };
+    const media = makeMedia();
+    media.url = (resource) => {
+      signed.push(resource);
+      return `https://media.test/v1/media?token=${resource.label}`;
+    };
+    const app = await start(adapter, media);
+    t.after(() => app.close());
+    const discovery = await post(app.base, "/v1/discover", { type: "movie", title: "Movie" });
+    const reader = sseReader(discovery.body);
+    const { data: { id } } = await reader.until("candidate");
+    await reader.drain();
+    assert.equal((await post(app.base, "/v1/resolve", { id })).status, 200);
+    assert.equal(signed.length, 2);
+    assert.deepEqual(signed.map((resource) => resource.nodeOnly), [providerId === "zetflixdb", providerId === "zetflixdb"]);
+  }
+});
+
 test("automatic movie quality skips a short VOD without rejecting the full-length alternative", async (t) => {
   const adapter = {
     async *discover() { yield candidate(); },

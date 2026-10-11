@@ -206,6 +206,69 @@ test("hides direct CDN error bodies and redirect headers", async () => {
   assert.equal(cdnBodyCancelled, true);
 });
 
+for (const upstreamStatus of [403, 404]) test(`direct media ${upstreamStatus} falls back once to the authenticated Node relay`, async () => {
+  const calls = [];
+  let cdnBodyCancelled = false;
+  const mediaBytes = new Uint8Array([0x47, 1, 2, 3, 4]);
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(input);
+    calls.push({ url, init });
+    if (url.pathname === "/v1/media-route") {
+      return routeResponse({ kind: "direct", url: "https://cdn.example.test/segment.ts?sig=private", headers: { Referer: "https://provider.example/watch" } });
+    }
+    if (url.origin === "https://cdn.example.test") {
+      return new Response(new ReadableStream({
+        start(controller) { controller.enqueue(new TextEncoder().encode("private CDN error body")); },
+        cancel() { cdnBodyCancelled = true; },
+      }), { status: upstreamStatus, headers: { "content-type": "text/plain", location: "https://private.example.test/error", "x-upstream-secret": "hidden" } });
+    }
+    assert.equal(url.origin, "https://source.example.test");
+    assert.equal(url.pathname, "/v1/media");
+    assert.equal(url.searchParams.get("token"), "opaque-signed-token");
+    assert.equal(init.headers["x-source-relay-key"], env.SOURCE_API_KEY);
+    assert.equal(init.headers.range, "bytes=0-4");
+    return new Response(mediaBytes, { status: 206, headers: {
+      "content-type": "video/mp2t",
+      "content-range": "bytes 0-4/5000",
+      "accept-ranges": "bytes",
+      location: "https://private.example.test/node-location",
+      "x-upstream-secret": "must-not-leak",
+    } });
+  };
+
+  const response = await handleSourceMediaRequest(makeRequest("/v1/media?token=opaque-signed-token", {
+    headers: { range: "bytes=0-4" },
+  }), env, fetchImpl);
+  assert.equal(response.status, 206);
+  assert.equal(response.headers.get("content-range"), "bytes 0-4/5000");
+  assert.equal(response.headers.get("content-type"), "video/mp2t");
+  assert.equal(response.headers.get("access-control-allow-origin"), "*");
+  assert.equal(response.headers.get("location"), null);
+  assert.equal(response.headers.get("x-upstream-secret"), null);
+  assert.deepEqual(Array.from(new Uint8Array(await response.arrayBuffer())), Array.from(mediaBytes));
+  assert.equal(cdnBodyCancelled, true);
+  assert.equal(calls.length, 3, "exactly one authenticated Node fallback follows the direct failure");
+  assert.equal(calls[0].init.headers.authorization, `Bearer ${env.SOURCE_API_KEY}`);
+  assert.equal(calls[1].init.headers.has("x-source-relay-key"), false, "private relay key never goes to the CDN");
+  assert.equal(calls[1].init.headers.get("referer"), "https://provider.example/watch");
+});
+
+test("direct 429 does not retry through the Node relay", async () => {
+  const calls = [];
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(input);
+    calls.push({ url, init });
+    if (url.pathname === "/v1/media-route") return routeResponse({ kind: "direct", url: "https://cdn.example.test/rate-limited.mp4", headers: {} });
+    return new Response("private rate-limit detail", { status: 429, headers: { "retry-after": "60" } });
+  };
+  const response = await handleSourceMediaRequest(makeRequest(), env, fetchImpl);
+  assert.equal(response.status, 429);
+  assert.equal(await response.text(), "Media source unavailable");
+  assert.equal(response.headers.get("retry-after"), null);
+  assert.equal(calls.length, 2, "non-403/404 failures are not retried through Node");
+  assert.equal(calls[1].init.headers.has("x-source-relay-key"), false);
+});
+
 test("rejects invalid configuration/tokens, hides route errors, and handles CORS preflight", async () => {
   let fetchCount = 0;
   const fetchImpl = async () => { fetchCount++; return routeResponse({ error: "private diagnostic" }, 401); };

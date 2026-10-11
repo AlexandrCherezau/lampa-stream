@@ -113,7 +113,10 @@ async function validateDestination(url, engineOrigin, signal, timeout, lookup) {
       : await lookupPublicHost(hostname, signal, timeout, lookup);
   } catch (cause) {
     if (cause instanceof TransportError || cause.name === "AbortError") throw cause;
-    throw new TransportError("Upstream DNS lookup failed", { code: "DNS_ERROR", cause });
+    throw Object.assign(new TransportError("Upstream DNS lookup failed", { code: "DNS_ERROR", cause }), {
+      targetHost: hostname,
+      dnsCode: cause.code || cause.name,
+    });
   }
   if (!addresses.length || addresses.some(({ address }) => isPrivateAddress(address))) {
     throw new TransportError("Private upstream destination is not allowed", { code: "SSRF_BLOCKED" });

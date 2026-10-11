@@ -2,7 +2,7 @@
 
 Source host is an independent Node API plus Lampac NextGen `1.81.0` and hidden Chromium. The Vercel deployment runs them together in a custom container; Lampac and Chrome DevTools Protocol listen only on loopback. The container image has already been built remotely with the provider-module cache prewarmed. At runtime that cache and browser profile are copied to ephemeral storage, so restarts can require a fresh browser session.
 
-The production source host is `https://lampa-source-host.vercel.app` (READY deployment `dpl_4zUWJ6XPj2veu7NJgHmFY9oNZk5v`); its Cloudflare media Worker is `https://lampa-source-media.ocr-gemini-proxy.workers.dev`. The frontend is READY at `dpl_8fSyqBLRy66LfA1agDxyTVvK5At3`. The project also includes a local Docker Compose setup. From the repository root:
+The production source host is `https://lampa-source-host.vercel.app` (READY deployment `dpl_7U8C3zFNiJrJAgX5AUUGBCxZoBic`); its Cloudflare media Worker is `https://lampa-source-media.ocr-gemini-proxy.workers.dev`. The frontend is READY at `dpl_7zhcx5FmQKGAgwnqwDet1o3r64cM`. The project also includes a local Docker Compose setup. From the repository root:
 
 ```sh
 ./infrastructure/lampac/setup.sh
@@ -41,6 +41,12 @@ Direct binary streams sent by Vercel can hit its response-size limit. The option
 
 The Worker accepts an opaque token, never a caller-supplied upstream URL. Keep `SOURCE_HOST_URL` and `SOURCE_API_KEY` private in Worker settings. Redirected direct downloads fall back through Node's validated transport so DNS checks and cross-origin header handling remain in force. A large binary that redirects may therefore still traverse Vercel.
 
+Direct CDN 403/404 responses also fall back once through the authenticated Node media handler, preserving the method and Range. Other errors, including 429, do not use this fallback. Media served through Node retains Vercel's transfer limits; this route does not restore a resource that fails through both origins.
+
+ZetflixDB uses a sealed `nodeOnly` flag on quality URLs and all rewritten HLS children. Its public signed media URLs stay on Node without a Worker redirect; other providers retain the Worker route. A query parameter cannot enable this flag, and tampered tokens return 404. This was added after the exact same complete segment returned Node 200 / 334264 bytes and Worker 502. Backend routing and token regressions pass 27/27; large Node responses still require separate playback checks.
+
+После READY-деплоя прямого маршрута настоящий плеер запустил «Начало» через ZetflixDB / «DUB | Мосфильм» 1080p: длительность 8887,979 секунды, 15 декодированных кадров. Перемотка на 60-ю секунду не прошла за 45 секунд. Все медиазапросы остались на Node с подписанным `nodeOnly`; логи показали `UPSTREAM_HTTP_ERROR 404` от CDN broadway/crab/mimin.z.superdupercdn.com. Поэтому запуск подтверждён, устойчивое воспроизведение и перемотка — нет. Поиск был ограничен одним ранее выданным реальным кандидатом, TMDB использовал fixtures; resolve и видео были реальными.
+
 The Worker is deployed at `https://lampa-source-media.ocr-gemini-proxy.workers.dev` and connected to the Vercel source host. The frontend production deployment uses the new source host; its existing Collaps source remains available as an explicit fallback. No Cloudflare Workers Paid plan has been purchased. The Worker uses the free plan, whose published limits are 10 ms CPU per request and 100,000 requests per day; usage above those limits may require a paid plan ([official limits](https://developers.cloudflare.com/workers/platform/limits/)).
 
 The checked-in config is `workers-api/source-media.wrangler.toml`. From the repository root, deploy it and set the key without putting its value in shell history:
@@ -53,6 +59,8 @@ npx wrangler secret put SOURCE_API_KEY --config workers-api/source-media.wrangle
 Paste the value when Wrangler prompts. The Worker also needs `SOURCE_HOST_URL` set to the source host origin in its vars. In the source-host Vercel project, set `SOURCE_MEDIA_RELAY_URL` to the Worker URL; set the same private `SOURCE_API_KEY` in both environments. Never expose the key in frontend variables. The current public Worker endpoint is `https://lampa-source-media.ocr-gemini-proxy.workers.dev`.
 
 ## Проверенное состояние источников
+
+Последняя Cloudflare version `1aea1a6f-b76b-4aad-a83b-08517e74c4b4` развёрнута на 100%; Worker прошёл 11/11 тестов. Парный запрос одного сегмента ZetflixDB дал Node 206 / Worker 404 до исправления; свежий сегмент после обновления дал 206 через оба маршрута. Полное декодирование остаётся неподтверждённым: FFmpeg получил 5xx при открытии. DNS-диагностика указывает фактическое имя CDN и код сбоя без ссылок или заголовков; source-host прошёл 25/25 тестов.
 
 Filmix / «Дубляж [Rus, 4K, SDR]» 480p для «Интерстеллара» прошёл настоящую страницу плеера продакшена: 10144 секунды, 17 кадров при старте, 53 после перемотки на 60,52 секунды. Поиск ограничивался одним ранее выданным настоящим кандидатом; resolve и видео были реальными, TMDB использовал fixtures. Перемотка Filmix для Haikyuu и другие качества этим не подтверждены.
 

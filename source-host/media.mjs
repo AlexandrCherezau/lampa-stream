@@ -151,7 +151,7 @@ function parseToken(token, key) {
     decipher.setAuthTag(tag);
     const value = JSON.parse(Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8"));
     if (!value || !Number.isFinite(value.exp) || value.exp <= Date.now() || typeof value.url !== "string") throw new Error("expired");
-    return value;
+    return { ...value, nodeOnly: value.nodeOnly === true };
   } catch {
     throw mediaError("Invalid or expired media token", 404);
   }
@@ -164,6 +164,7 @@ function makeToken(resource, key) {
     url: String(resource.url),
     headers: headersFor(resource),
     headerOrigin: resource.headerOrigin || new URL(resource.url).origin,
+    nodeOnly: resource.nodeOnly === true,
     exp: Date.now() + TOKEN_TTL_MS,
   }));
   const encrypted = Buffer.concat([cipher.update(value), cipher.final()]);
@@ -389,6 +390,7 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
           url: childUrl,
           headers: upstreamHeaders || resource.headers,
           headerOrigin: headerOrigin || finalUrl.origin,
+          nodeOnly: resource.nodeOnly,
         }));
         const output = { "content-type": "application/vnd.apple.mpegurl", "content-length": Buffer.byteLength(rewritten), "cache-control": response.headers["cache-control"] || "no-store" };
         res.writeHead(response.statusCode || 200, output);
@@ -428,7 +430,7 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
       if (!res.writableEnded && !abort.signal.aborted) res.end();
     } catch (error) {
       if (abort.signal.aborted) return;
-      console.error("Media upstream failed", error.code || error.name, error.status || 502, new URL(resource.url).host);
+      console.error("Media upstream failed", error.code || error.name, error.status || 502, error.targetHost || new URL(resource.url).host, error.dnsCode || "");
       responseError(res, error.status === 504 ? 504 : 502, error.status === 416 ? "Invalid range" : "Media source unavailable");
     } finally {
       req.removeListener("aborted", onClose);
@@ -486,7 +488,7 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
         duration: vodDuration(playlist.text),
       };
     } catch (error) {
-      console.warn("Media probe failed", error.code || error.name, error.status || 502, new URL(resource.url).host);
+      console.warn("Media probe failed", error.code || error.name, error.status || 502, error.targetHost || new URL(resource.url).host, error.dnsCode || "");
       return { ok: false, kind: null, reason: error.status === 504 ? "timeout" : error.name === "AbortError" ? "aborted" : error.code || "probe-failed" };
     }
   }

@@ -159,13 +159,18 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
       return json(res, 200, { ok: true, engineReady: !engineReadyFile || existsSync(engineReadyFile), version: "1.0.0", uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000) });
     }
     if (path.pathname === "/v1/media" && ["GET", "HEAD"].includes(req.method)) {
-      if (mediaRelayUrl && !equalSecret(req.headers["x-source-relay-key"], apiKey)) {
-        const location = new URL("/v1/media", mediaRelayUrl);
-        location.searchParams.set("token", path.searchParams.get("token") || "");
-        res.writeHead(302, { location: location.href, "cache-control": "no-store" }).end();
-        return;
+      try {
+        if (mediaRelayUrl && !equalSecret(req.headers["x-source-relay-key"], apiKey)) {
+          const resource = media.resource(path.searchParams.get("token"));
+          if (!resource.nodeOnly) {
+            const location = new URL("/v1/media", mediaRelayUrl);
+            location.searchParams.set("token", path.searchParams.get("token") || "");
+            res.writeHead(302, { location: location.href, "cache-control": "no-store" }).end();
+            return;
+          }
+        }
+        await media.handle(req, res, path.searchParams.get("token"));
       }
-      try { await media.handle(req, res, path.searchParams.get("token")); }
       catch (error) { json(res, error.status || 502, { error: error.code || "MEDIA_FAILED", message: "Видео временно недоступно" }); }
       return;
     }
@@ -259,7 +264,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
           record(candidate.providerId, { providerName: candidate.providerName, status: "verified", verifiedAt: new Date().toISOString() });
           // Keep the verified redirect target; dynamic engine manifests need a browser again.
           const variants = qualities.map((quality) => ({ label: quality.label, height: quality.height,
-            url: media.url(quality === selected && probe.url ? { ...quality, url: String(probe.url), headers: probe.headers || quality.headers, headerOrigin: probe.headerOrigin } : quality),
+            url: media.url({ ...(quality === selected && probe.url ? { ...quality, url: String(probe.url), headers: probe.headers || quality.headers, headerOrigin: probe.headerOrigin } : quality), nodeOnly: candidate.providerId === "zetflixdb" }),
           }));
           const subtitles = (resolved.subtitles || []).map((subtitle) => ({ label: subtitle.label, language: subtitle.language, url: media.url(subtitle) }));
           json(res, 200, {
