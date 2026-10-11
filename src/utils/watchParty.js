@@ -12,12 +12,20 @@
 import { storage, STORAGE_KEYS } from "./storage";
 import { isWebBuild } from "./api";
 
-// Seek only if local vs expected position differs by more than this. Kept
-// small so followers stay tightly in sync without seeking on every tiny drift
-// (which would cause visible stutter). 0.5s is imperceptible to a viewer but
-// catches real desync fast — the old 2.0s let a follower lag 2s behind a host
-// seek before correcting.
-const DRIFT_THRESHOLD = 0.5; // seconds
+// Seek only if local vs expected position differs by more than this. 0.5s
+// looked "tight" but fought the transport: the host only pushes on
+// play/pause/seek, so between pushes the follower's expected position is
+// EXTRAPOLATED from play.updatedAt — any clock skew or push latency > 0.5s
+// produced a correction twice per second (the 500ms tick), and each correction
+// is a real seek, i.e. a re-buffer at the new position. 1.5s is still far
+// below what a viewer perceives as desync while letting the extrapolation
+// breathe.
+const DRIFT_THRESHOLD = 1.5; // seconds
+// Minimum spacing between two drift corrections. Without it, a single bad
+// push (or a slow network) chained corrections: seek → buffer → still drifted
+// → seek again, each one stuttering playback for the follower.
+const SEEK_COOLDOWN_MS = 2500;
+let _lastSeekAt = 0;
 
 // ── Web Crypto sha256 (hex) — peerId from the WT peer secret ─────────────────
 async function sha256Hex(str) {
@@ -233,7 +241,10 @@ export function applySync(video, play) {
   let sought = false;
   const myPos = video.currentTime || 0;
   if (Math.abs(myPos - expected) > DRIFT_THRESHOLD) {
-    try { video.currentTime = Math.max(0, Math.min(video.duration, expected)); sought = true; } catch {}
+    if (now - _lastSeekAt >= SEEK_COOLDOWN_MS) {
+      _lastSeekAt = now;
+      try { video.currentTime = Math.max(0, Math.min(video.duration, expected)); sought = true; } catch {}
+    }
   }
   if (play.playing && video.paused) video.play().catch(() => {});
   else if (!play.playing && !video.paused) video.pause();

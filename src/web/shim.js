@@ -18,40 +18,43 @@ if (!window.electron) {
   const LS_TMDB = "lampa_stream_tmdb_token";
 
   // ── Collaps browser-side resolver (inlined, no separate module needed) ──────
-  // The browser fetches the embed HTML, parses makePlayer, returns the
-  // stream URL.
-  //
-  // Russia/no-VPN: api.delivembd.ws and *.interkh.com (the Collaps embed +
-  // CDN hosts) are blocked/throttled for many Russian ISPs, even though
-  // there's no such block on Vercel's own network. So — unlike the comment
-  // that used to be here — we do NOT hit these hosts directly from the
-  // browser anymore. Instead every request (embed HTML, the DASH/HLS
-  // manifest, and its segments) is routed through the /api/collaps
-  // serverless proxy (see api/collaps.js), which runs on Vercel's
-  // infrastructure and forwards to the real host. Because the proxy (not
-  // the browser) is what ultimately talks to the Collaps CDN, "the same IP
-  // must resolve the embed AND fetch the segments" is still satisfied —
-  // it's just Vercel's IP throughout instead of the browser's.
-  const COLLAPS_HOSTS = { EMBED: "api.delivembd.ws" };
-  const collapsProxyUrl = (host, pathAndQuery) =>
-    `/api/collaps/h/${encodeURIComponent(host)}${pathAndQuery.startsWith("/") ? "" : "/"}${pathAndQuery}`;
-  // Rewrite an absolute Collaps CDN URL (api.delivembd.ws or *.interkh.com)
-  // to go through our proxy instead. Non-Collaps / relative URLs are
-  // returned unchanged (dash.js/hls.js resolve relative URLs against the
-  // manifest's own — already proxied — URL, so they end up proxied too).
-  function collapsifyUrl(u) {
-    if (!u) return u;
+  // The browser fetches the embed HTML, parses makePlayer, returns the stream URL.
+  // Segment tokens match the browser's IP → no 410, which is why this must run
+  // client-side. The embed HOST rotates (delivembd → luxembd → ortified → …); we
+  // resolve the live one through bhcesh instead of hardcoding. The embed CDN
+  // requires `Origin: https://kinokrad.my` (browser fetch() can't forge that), so
+  // we go through our own /api/collaps relay which sets the partner identity and
+  // streams the HTML back.
+  const BHCESH_BASE = "https://api.bhcesh.me";
+  const BHCESH_TOKEN = "eedefb541aeba871dcfc756e6b31c02e";
+  const COLLAPS_HOST = "kinokrad.my";
+  const b64u = (s) => {
+    const bytes = new TextEncoder().encode(s);
+    let bin = "";
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  };
+
+  // imdb_id/kinopoisk_id → the live iframe embed URL, or null. bhcesh wants the
+  // imdb id as BARE digits ("0167404", not "tt0167404").
+  async function collapsResolveIframe({ imdbId, kinopoiskId }, signal) {
+    const q = new URLSearchParams({ token: BHCESH_TOKEN });
+    if (imdbId) q.set("imdb_id", String(imdbId).replace(/^tt/i, ""));
+    else if (kinopoiskId) q.set("kinopoisk_id", String(kinopoiskId));
+    else return null;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 12000);
     try {
-      const parsed = new URL(u, location.origin);
-      const host = parsed.hostname.toLowerCase();
-      const isCollaps = host === COLLAPS_HOSTS.EMBED || host.endsWith(".interkh.com");
-      if (!isCollaps) return u;
-      return collapsProxyUrl(host, parsed.pathname + parsed.search);
+      const r = await fetch(`${BHCESH_BASE}/franchise/details?${q}`, { cache: "no-store", signal: signal ? AbortSignal.any([signal, ctrl.signal]) : ctrl.signal });
+      if (!r.ok) return null;
+      const j = await r.json().catch(() => null);
+      return (j && typeof j.iframe_url === "string" && j.iframe_url) || null;
     } catch {
-      return u;
+      return null;
+    } finally {
+      clearTimeout(t);
     }
   }
-  const COLLAPS_EMBED = collapsProxyUrl(COLLAPS_HOSTS.EMBED, "/embed/");
 
   function extractMakePlayer(html) {
     const i = html.indexOf("makePlayer({");
@@ -105,9 +108,10 @@ if (!window.electron) {
       let seasons = null;
       if (arr) { try { seasons = JSON.parse(arr); } catch {} }
       if (!seasons || !seasons.length) return { ok: false, error: "No seasons" };
-      let sObj = seasons.find((s) => Number(s.season) === Number(season)) || seasons[0];
+      const sObj = season == null ? seasons[0] : seasons.find((s) => Number(s.season) === Number(season));
+      if (!sObj) return { ok: false, error: "Season not found" };
       const eps = sObj.episodes || [];
-      let ep = eps.find((e) => Number(e.episode) === Number(episode)) || eps[0];
+      const ep = episode == null ? eps[0] : eps.find((e) => Number(e.episode) === Number(episode));
       if (!ep) return { ok: false, error: "Episode not found" };
       hls = ep.hls || null;
       dash = ep.dash || ep.dasha || null;
@@ -126,16 +130,6 @@ if (!window.electron) {
       if (ccArr) { try { const cc = JSON.parse(ccArr); subtitles = cc.map((c, i) => ({ url: c.url, name: c.name || "Sub " + (i + 1) })); } catch {} }
     }
     if (!hls && !dash) return { ok: false, error: "No stream URL" };
-    // Route the manifest (and subtitle) URLs through the /api/collaps proxy
-    // instead of hitting the CDN host (*.interkh.com / api.delivembd.ws)
-    // directly from the browser — see collapsifyUrl() above. dash.js/hls.js
-    // then resolve any RELATIVE segment/init URLs inside the manifest
-    // against this (already-proxied) URL, so those go through the proxy
-    // too automatically. Absolute segment URLs baked into the manifest are
-    // rewritten too, IF they point at a known Collaps host.
-    hls = collapsifyUrl(hls);
-    dash = collapsifyUrl(dash);
-    subtitles = subtitles.map((s) => ({ ...s, url: collapsifyUrl(s.url) }));
     return { ok: true, hls, dash, audioNames, subtitles, duration };
   }
 
@@ -149,7 +143,8 @@ if (!window.electron) {
   const _collapsCache = new Map(); // key → { html, expiresAt }
   const COLLAPS_CACHE_TTL = 10 * 60 * 1000;
 
-  async function collapsResolveWeb(args) {
+  async function collapsResolveWeb(args, { signal } = {}) {
+    signal?.throwIfAborted();
     const { imdbId, kinopoiskId, type, season, episode } = args;
     if (!imdbId && !kinopoiskId) return { ok: false, error: "Need imdb or kp id" };
     const cacheKey = imdbId ? `imdb:${imdbId}` : `kp:${kinopoiskId}`;
@@ -158,26 +153,47 @@ if (!window.electron) {
     if (cached && now < cached.expiresAt) {
       // Re-parse the cached HTML for the requested season/episode — no fetch.
       try {
-        return parseCollapsHtml(cached.html, type, Number(season), Number(episode));
+        return parseCollapsHtml(cached.html, type, season, episode);
       } catch {
         _collapsCache.delete(cacheKey); // corrupt — re-fetch below
       }
     }
-    const url = imdbId
-      ? COLLAPS_EMBED + "imdb/" + encodeURIComponent(imdbId)
-      : COLLAPS_EMBED + "kp/" + encodeURIComponent(kinopoiskId);
-    try {
+    const iframe = await collapsResolveIframe({ imdbId, kinopoiskId }, signal);
+    signal?.throwIfAborted();
+    if (!iframe) return { ok: false, error: "Collaps: тайтл не найден в каталоге" };
+    // The embed page reads `host=` as a route hint.
+    //
+    // DIRECT FIRST, relay as fallback. The old comment claimed the CDN requires
+    // `Origin: https://kinokrad.my` (unforgeable from the browser), forcing the
+    // /api/collaps hop. Re-measured 2026-08-25 on embed/movie/376 (Lost): the CDN
+    // now answers 200 + makePlayer to ANY Origin and reflects it back in
+    // Access-Control-Allow-Origin — the partner gate is gone. Meanwhile every
+    // Vercel/Worker egress IP IS block-listed upstream (410 Gone on all three
+    // embed hosts), so routing the HTML through the relay now GUARANTEES failure
+    // while a direct browser fetch succeeds end-to-end (verified through
+    // master → variant → segment for S3E18). Direct also keeps the HTML tokens
+    // bound to the same IP hls.js will pull segments from.
+    const target = iframe + (iframe.includes("?") ? "&" : "?") + "host=" + COLLAPS_HOST;
+    const grab = async (url) => {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 20000);
-      const res = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
-      clearTimeout(t);
-      if (!res.ok) return { ok: false, error: "HTTP " + res.status };
-      const html = await res.text();
-      _collapsCache.set(cacheKey, { html, expiresAt: now + COLLAPS_CACHE_TTL });
-      return parseCollapsHtml(html, type, Number(season), Number(episode));
-    } catch (e) {
-      return { ok: false, error: e.name === "AbortError" ? "timeout" : e.message };
-    }
+      try {
+        const res = await fetch(url, { signal: signal ? AbortSignal.any([signal, ctrl.signal]) : ctrl.signal, cache: "no-store" });
+        if (!res.ok) return null;
+        return await res.text();
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(t);
+      }
+    };
+    let html = await grab(target);
+    signal?.throwIfAborted();
+    if (!html) html = await grab("/api/collaps?u=" + b64u(target));
+    signal?.throwIfAborted();
+    if (!html) return { ok: false, error: "HTTP 410" };
+    _collapsCache.set(cacheKey, { html, expiresAt: now + COLLAPS_CACHE_TTL });
+    return parseCollapsHtml(html, type, season, episode);
   }
 
   // ── Server config (Express only): shared TMDB token + auth check ──────────
@@ -232,15 +248,15 @@ if (!window.electron) {
     tmdbProxySet: async () => ({ on: true, web: true }),
 
     // ── Collaps online source: resolved IN the browser (IP-bound tokens) ───
-    collapsResolve: async (args) => collapsResolveWeb(args),
-    collapsFindKp: async (args) => {
+    collapsResolve: async (args, options) => collapsResolveWeb(args, options),
+    collapsFindKp: async (args, { signal } = {}) => {
       // kinopoisk-id-by-title: not IP-bound, can go direct from the browser.
       const qs = new URLSearchParams({ ...args }).toString();
       try {
         const r = await fetch(
           "https://kinopoiskapiunofficial.tech/api/v2.1/films/search-by-keyword?" +
             qs.replace("query=", "keyword="),
-          { headers: { "X-API-KEY": "2d55adfd-019d-4567-bbf7-67d503f61b5a" } },
+          { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000), headers: { "X-API-KEY": "2d55adfd-019d-4567-bbf7-67d503f61b5a" } },
         );
         const json = await r.json();
         const films = json.films || [];

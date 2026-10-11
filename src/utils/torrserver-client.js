@@ -4,18 +4,37 @@
 
 const e = () => window.electron;
 
-export const torrPing = () => e()?.torrPing?.();
-export const torrList = () => e()?.torrList?.();
-export const torrGet = (hash) => e()?.torrGet?.({ hash });
-export const torrAdd = (args) => e()?.torrAdd?.(args);
+// Every IPC call gets a deadline. Without one, a TorrServer that is booting,
+// unreachable, or whose main-process call hangs leaves the promise unsettled
+// FOREVER — the player sits on "Подключение к TorrServer…" with no way out
+// but switching sources. The race rejects into the caller's existing error
+// path (setError), so the UI stays responsive and recoverable.
+const withTimeout = (p, ms, what) => {
+  if (!p || typeof p.then !== "function") return p; // no electron bridge (web)
+  return Promise.race([
+    p,
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`${what}: нет ответа за ${Math.round(ms / 1000)} с`)),
+        ms,
+      ),
+    ),
+  ]);
+};
+
+export const torrPing = () => withTimeout(e()?.torrPing?.(), 5000, "TorrServer ping");
+export const torrList = () => withTimeout(e()?.torrList?.(), 15000, "Список торрентов");
+export const torrGet = (hash) => withTimeout(e()?.torrGet?.({ hash }), 20000, "Получение торрента");
+export const torrAdd = (args) => withTimeout(e()?.torrAdd?.(args), 40000, "Добавление торрента");
 export const torrAddFile = (filePath, title) =>
-  e()?.torrAddFile?.({ filePath, title });
-export const torrRem = (hash) => e()?.torrRem?.({ hash });
-export const torrStream = (args) => e()?.torrStream?.(args);
+  withTimeout(e()?.torrAddFile?.({ filePath, title }), 15000, "Добавление .torrent");
+export const torrRem = (hash) => withTimeout(e()?.torrRem?.({ hash }), 15000, "Удаление торрента");
+export const torrStream = (args) => withTimeout(e()?.torrStream?.(args), 25000, "TorrServer поток");
 export const torrExternal = (url, seconds = 0) =>
-  e()?.torrExternal?.({ url, seconds });
+  withTimeout(e()?.torrExternal?.({ url, seconds }), 5000, "Внешний плеер");
 export const torrSearch = (query, category) =>
-  e()?.torrSearch?.({ query, category });
+  withTimeout(e()?.torrSearch?.({ query, category }), 25000, "Поиск");
+// No timeout: paced by the user in the file dialog.
 export const pickTorrentFile = () => e()?.pickTorrentFile?.();
 
 export const torrGetCfg = () => e()?.torrGetCfg?.();

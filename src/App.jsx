@@ -36,6 +36,39 @@ const DiscoverPage = lazy(() => import("./pages/DiscoverPage"));
 const WatchTogetherPage = lazy(() => import("./pages/WatchTogetherPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
+
+const ROUTE_PAGES = new Set(["home", "discover", "history", "settings", "together", "downloads", "movie", "tv"]);
+function readRoute(url = new URL(window.location.href)) {
+  const parts = url.pathname.split("/").filter(Boolean);
+  const slug = parts[0] || "home";
+  const page = slug === "library" ? "history" : slug;
+  if (!ROUTE_PAGES.has(page)) return { page: "home", selected: null };
+  if (page === "movie" || page === "tv") {
+    if (parts.length !== 2) return { page: "home", selected: null };
+    const id = /^\d+$/.test(parts[1] || "") ? Number(parts[1]) : 0;
+    if (!Number.isSafeInteger(id) || id < 1) return { page: "home", selected: null };
+    const seasonValue = url.searchParams.get("season");
+    const episodeValue = url.searchParams.get("episode");
+    const season = seasonValue !== null && /^(0|[1-9]\d*)$/.test(seasonValue) ? Number(seasonValue) : undefined;
+    const episode = episodeValue && /^[1-9]\d*$/.test(episodeValue) ? Number(episodeValue) : undefined;
+    return { page, selected: { id, media_type: page, ...(Number.isSafeInteger(season) ? { season } : {}), ...(Number.isSafeInteger(episode) ? { episode } : {}) } };
+  }
+  if (parts.length > 1) return { page: "home", selected: null };
+  const section = url.searchParams.get("section");
+  return { page, selected: page === "settings" && section ? { section } : null };
+}
+function routeUrl(page, selected) {
+  if (page === "movie" || page === "tv") {
+    const url = `/${page}/${encodeURIComponent(selected.id)}`;
+    const query = new URLSearchParams();
+    if (page === "tv" && selected.season != null && Number.isSafeInteger(Number(selected.season)) && Number(selected.season) >= 0) query.set("season", selected.season);
+    if (page === "tv" && Number(selected.episode) > 0) query.set("episode", selected.episode);
+    return url + (query.size ? `?${query}` : "");
+  }
+  const slug = page === "history" ? "library" : page === "home" ? "" : page;
+  const query = page === "settings" && selected?.section ? `?section=${encodeURIComponent(selected.section)}` : "";
+  return `/${slug}${query}`;
+}
 import {
   checkForUpdatesWithFallback,
   DEFAULT_UPDATE_SOURCE,
@@ -47,8 +80,12 @@ export default function App() {
   const [apiKeyLoaded, setApiKeyLoaded] = useState(false);
   const [skipped, setSkipped] = useState(false);
   const [apiKeyStatus, setApiKeyStatus] = useState("checking"); // 'checking' | 'ok' | 'invalid_token' | 'unreachable'
-  const [page, setPage] = useState(() => storage.get("startPage") || "home");
-  const [selected, setSelected] = useState(null);
+  const [initialRoute] = useState(() => readRoute());
+  const initialPage = initialRoute.page === "home" && location.pathname === "/" ? storage.get("startPage") || "home" : initialRoute.page;
+  const [page, setPage] = useState(initialPage);
+  const [selected, setSelected] = useState(() => initialRoute.selected);
+  const routeIndexRef = useRef(window.history.state?.appIndex || 0);
+  const currentRouteRef = useRef({ page: initialPage, selected: initialRoute.selected });
   const [wtInitialCode, setWtInitialCode] = useState(null); // ?room= deep-link
   const [showSearch, setShowSearch] = useState(false);
   const [dlSearchOpen, setDlSearchOpen] = useState(false);
@@ -59,7 +96,9 @@ export default function App() {
   const [platform, setPlatform] = useState(null);
 
   // Navigation history stack for Ctrl+Z back navigation
-  const [navStack, setNavStack] = useState([]);
+  const [navStack, setNavStack] = useState(() => window.history.state?.appStack || []);
+  const navStackRef = useRef(navStack);
+  useEffect(() => { navStackRef.current = navStack; }, [navStack]);
 
   const [saved, setSaved] = useState(() => storage.get("saved") || {});
   // Separate order array for drag-and-drop reordering
@@ -110,6 +149,16 @@ export default function App() {
     });
     return () => window.electron.offScheduledBackupRequested(handler);
   }, []);
+
+  // Hydrate direct movie/TV links after the private TMDB token is available.
+  useEffect(() => {
+    if (!apiKey || !selected?.id || selected.title || selected.name) return;
+    let cancelled = false;
+    tmdbFetch(`/${page}/${selected.id}`, apiKey).then((item) => {
+      if (!cancelled && item?.id) setSelected((current) => current?.id === item.id ? { ...item, ...current, media_type: page } : current);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [apiKey, page, selected?.id, selected?.title, selected?.name]);
 
   // ── Post-update cache flush ───────────────────────────────────────────────
   // On every start, compare the running version against the last-seen version.
@@ -218,7 +267,7 @@ export default function App() {
                       series.title ||
                       series.name ||
                       data.name ||
-                      "Unknown series",
+                      "Неизвестный сериал",
                     season: lastEp?.season_number ?? null,
                     id: series.id,
                     seriesItem: series,
@@ -252,7 +301,7 @@ export default function App() {
                         series.title ||
                         series.name ||
                         data.name ||
-                        "Unknown series",
+                        "Неизвестный сериал",
                       season: lastEp?.season_number ?? null,
                       id: series.id,
                       seriesItem: series,
@@ -301,7 +350,7 @@ export default function App() {
                 names.length > 3 ? ` and ${names.length - 3} more` : ""
               } have new episodes.`;
         window.electron.showNotification({
-          title: "New episodes available",
+          title: "Доступны новые серии",
           body,
           silent: false,
         });
@@ -384,8 +433,12 @@ export default function App() {
     );
   }, []);
 
-  // ── Validate stored API key on startup ───────────────────────────────────
-  useEffect(() => {
+  // ── Validate the API key (startup + the banner's Retry button) ────────────
+  // A stable callback, not an inline effect body: the Retry button used to do
+  // `setApiKeyStatus("checking") || window.location.reload()` — the setter
+  // returns undefined, so the || ALWAYS fired a full page reload (losing all
+  // in-memory caches and the SPA state) instead of re-running the check.
+  const recheckApiKey = useCallback(() => {
     if (!apiKey) {
       setApiKeyStatus("ok");
       return;
@@ -410,6 +463,11 @@ export default function App() {
       });
     return () => controller.abort();
   }, [apiKey]);
+
+  useEffect(() => {
+    const cancel = recheckApiKey();
+    return cancel;
+  }, [recheckApiKey]);
 
   // Load persisted downloads on startup + immediately prune missing files
   useEffect(() => {
@@ -460,8 +518,8 @@ export default function App() {
         window.electron.showNotification
       ) {
         window.electron.showNotification({
-          title: "Download complete",
-          body: update.name || "Your download has finished.",
+          title: "Загрузка завершена",
+          body: update.name || "Файл скачан.",
           silent: false,
         });
       }
@@ -618,8 +676,14 @@ export default function App() {
       if (code) {
         setWtInitialCode(code.toUpperCase());
         setPage("together");
-        // Clean the URL so a refresh doesn't re-trigger the join prompt.
-        history.replaceState(null, "", window.location.pathname);
+        setSelected(null);
+        const route = { page: "together", selected: null };
+        currentRouteRef.current = route;
+        window.history.replaceState({ ...window.history.state, appRoute: route, appIndex: routeIndexRef.current, appStack: window.history.state?.appStack || [] }, "", "/together");
+      } else {
+        const route = { page, selected };
+        currentRouteRef.current = route;
+        window.history.replaceState({ ...window.history.state, appRoute: route, appIndex: routeIndexRef.current, appStack: window.history.state?.appStack || [] }, "", routeUrl(page, selected));
       }
     } catch {}
   }, []);
@@ -636,23 +700,19 @@ export default function App() {
   }, [selected]);
 
   const navigateBack = useCallback(() => {
-    setNavStack((prev) => {
-      if (prev.length === 0) return prev;
-      const last = prev[prev.length - 1];
-      setPage(last.page);
-      setSelected(last.selected);
-      if (typeof gc === "function") {
-        requestIdleCallback(() => gc(), { timeout: 2000 });
-      }
-      return prev.slice(0, -1);
-    });
+    if (!navStackRef.current.length) return;
+    window.history.back();
   }, []);
 
   const navigate = useCallback((pg, data = null) => {
-    setNavStack((prev) => [
-      ...prev,
-      { page: pageRef.current, selected: selectedRef.current },
-    ]);
+    const route = { page: pg, selected: data };
+    const stack = [...navStackRef.current, { page: pageRef.current, selected: selectedRef.current }];
+    routeIndexRef.current += 1;
+    currentRouteRef.current = route;
+    pageRef.current = pg;
+    selectedRef.current = data;
+    window.history.pushState({ appRoute: route, appIndex: routeIndexRef.current, appStack: stack }, "", routeUrl(pg, data));
+    setNavStack(stack);
     setSelected(data);
     setPage(pg);
     setShowSearch(false);
@@ -661,6 +721,44 @@ export default function App() {
       requestIdleCallback(() => gc(), { timeout: 2000 });
     }
   }, []);
+
+  useEffect(() => {
+    const onPopState = (event) => {
+      const route = event.state?.appRoute || readRoute();
+      const nextIndex = event.state?.appIndex || 0;
+      const distance = nextIndex - routeIndexRef.current;
+      if (event.state?.appStack) setNavStack(event.state.appStack);
+      else if (distance < 0) setNavStack((prev) => prev.slice(0, distance));
+      else if (distance > 0) setNavStack((prev) => [...prev, currentRouteRef.current]);
+      routeIndexRef.current = nextIndex;
+      currentRouteRef.current = route;
+      pageRef.current = route.page;
+      selectedRef.current = route.selected || null;
+      setPage(route.page);
+      setSelected(route.selected || null);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  const updateTvRoute = useCallback((season, episode) => {
+    const current = selectedRef.current;
+    if (!current) return;
+    const updated = { ...current, season, ...(episode ? { episode } : { episode: undefined }) };
+    const route = { page: "tv", selected: updated };
+    selectedRef.current = updated;
+    currentRouteRef.current = route;
+    window.history.replaceState({ ...window.history.state, appRoute: route }, "", routeUrl("tv", updated));
+  }, []);
+
+  // Stable identity callbacks for the app chrome: inline arrows here are fresh
+  // closures on every App render, which defeats memo() on Sidebar/MobileTopBar
+  // — and App re-renders on every playback progress tick (every 5 s during a
+  // film), so the chrome (and its saved-list of poster <img>s) re-rendered
+  // with it. Stable props let the memos bail out.
+  const openSearch = useCallback(() => setShowSearch(true), []);
+  const openShortcuts = useCallback(() => setShowShortcuts(true), []);
+  const goSettings = useCallback(() => navigate("settings"), [navigate]);
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
@@ -748,7 +846,7 @@ export default function App() {
 
       if (isRemoving) {
         delete next[id];
-        showToast("Removed from watchlist");
+        showToast("Удалено из избранного");
         setSavedOrder((prev) => {
           const currentOrder = prev || Object.keys(currentSaved);
           const newOrder = currentOrder.filter((k) => k !== id);
@@ -764,7 +862,7 @@ export default function App() {
           vote_average: item.vote_average,
           year: (item.release_date || item.first_air_date || "").slice(0, 4),
         };
-        showToast("Added to watchlist");
+        showToast("Добавлено в избранное");
         setSavedOrder((prev) => {
           const currentOrder = prev || Object.keys(currentSaved);
           const newOrder = [...currentOrder, id];
@@ -818,6 +916,31 @@ export default function App() {
     });
   }, []); // no deps needed
 
+  // Debounced disk write. The state update itself is immediate (the UI must
+  // reflect it), but the JSON.stringify + synchronous localStorage.setItem of
+  // the WHOLE progress map used to run on every 5 s playback tick — a main
+  // thread block during decoding. The map is flushed at most once per 30 s,
+  // and immediately on pagehide so a close never loses the last position.
+  const progressFlushRef = useRef(null);
+  const progressLatestRef = useRef(null);
+  const flushProgress = useCallback(() => {
+    progressFlushRef.current = null;
+    if (progressLatestRef.current) {
+      storage.set("progress", progressLatestRef.current);
+      progressLatestRef.current = null;
+    }
+  }, []);
+  useEffect(() => {
+    const onHide = () => flushProgress();
+    window.addEventListener("pagehide", onHide);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      document.removeEventListener("visibilitychange", onHide);
+      flushProgress();
+    };
+  }, [flushProgress]);
+
   const saveProgress = useCallback((key, pct) => {
     // Functional update - without this, TVPage's setInterval keeps spreading
     // the progress object from when the interval was created, overwriting
@@ -825,10 +948,13 @@ export default function App() {
     setProgress((prev) => {
       if (prev[key] === pct) return prev; // no change - skip write
       const next = { ...prev, [key]: pct };
-      storage.set("progress", next);
+      progressLatestRef.current = next;
+      if (!progressFlushRef.current) {
+        progressFlushRef.current = setTimeout(flushProgress, 30000);
+      }
       return next;
     });
-  }, []); // no deps needed
+  }, [flushProgress]);
 
   const markWatched = useCallback((key) => {
     setWatched((prev) => {
@@ -940,14 +1066,14 @@ export default function App() {
         <Sidebar
           page={page}
           onNavigate={navigate}
-          onSearch={() => setShowSearch(true)}
+          onSearch={openSearch}
           savedList={savedList}
           activeDownloads={activeDownloadCount}
           onReorderSaved={handleReorderSaved}
           onRemoveSaved={toggleSave}
           canGoBack={navStack.length > 0}
           onBack={navigateBack}
-          onShowShortcuts={() => setShowShortcuts(true)}
+          onShowShortcuts={openShortcuts}
         />
 
         <div className="main">
@@ -956,8 +1082,8 @@ export default function App() {
             page={page}
             canGoBack={navStack.length > 0}
             onBack={navigateBack}
-            onSearch={() => setShowSearch(true)}
-            onSettings={() => navigate("settings")}
+            onSearch={openSearch}
+            onSettings={goSettings}
           />
           {/* ── API key status banner ── */}
           {/* Suspense boundary: lazy page chunks are fetched on first visit */}
@@ -978,12 +1104,7 @@ export default function App() {
                 ⚠ Cannot reach TMDB, check your internet connection. Content may
                 not load.
               </span>
-              <button
-                className="api-status-btn"
-                onClick={() =>
-                  setApiKeyStatus("checking") || window.location.reload()
-                }
-              >
+              <button className="api-status-btn" onClick={recheckApiKey}>
                 Retry
               </button>
             </div>
@@ -1021,6 +1142,7 @@ export default function App() {
             )}
             {page === "movie" && selected && (
               <MoviePage
+                key={selected.id}
                 item={selected}
                 apiKey={apiKey}
                 playerSettings={playerSettings}
@@ -1029,7 +1151,7 @@ export default function App() {
                 onHistory={addHistory}
                 progress={progress}
                 saveProgress={saveProgress}
-                onBack={() => navigate("home")}
+                onBack={() => navStack.length ? navigateBack() : navigate("home")}
                 onSettings={(section) =>
                   navigate("settings", { section: section || null })
                 }
@@ -1044,15 +1166,17 @@ export default function App() {
             )}
             {page === "tv" && selected && (
               <TVPage
+                key={`${selected.id}-${selected.season ?? ""}-${selected.episode ?? ""}`}
                 item={selected}
                 apiKey={apiKey}
+                onRouteChange={updateTvRoute}
                 playerSettings={playerSettings}
                 onSave={() => toggleSave(selected)}
                 isSaved={isSaved(selected)}
                 onHistory={addHistory}
                 progress={progress}
                 saveProgress={saveProgress}
-                onBack={() => navigate("home")}
+                onBack={() => navStack.length ? navigateBack() : navigate("home")}
                 onSettings={(section) =>
                   navigate("settings", { section: section || null })
                 }
@@ -1188,7 +1312,7 @@ export default function App() {
                 lineHeight: 1,
                 padding: "0 4px",
               }}
-              aria-label="Dismiss"
+              aria-label="Закрыть"
             >
               ×
             </button>
@@ -1303,7 +1427,7 @@ export default function App() {
                       lineHeight: 1,
                       padding: "0 2px",
                     }}
-                    aria-label="Dismiss"
+                    aria-label="Закрыть"
                   >
                     ×
                   </button>

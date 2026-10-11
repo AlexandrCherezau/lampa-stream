@@ -88,6 +88,71 @@ export function withLanguage(path) {
 export const imgUrl = (path, size = "w500") =>
   path ? `${IMG_BASE}/${size}${path}` : null;
 
+// TMDB serves a fixed ladder of widths per image kind. Asking for the rung that
+// matches the DEVICE pixels a slot actually needs — CSS px × DPR — instead of a
+// hardcoded w342 is the largest single transfer saving on the home page: a
+// ~190 px card on a 1× display needs w185 (15.8 KB), not w342 (52.4 KB), and
+// posters were 877 KB of a 1012 KB cold load.
+//
+// A rung may be slightly narrower than the slot it fills — the browser upscales
+// and `object-fit: cover` plus a poster's own softness hide a few per cent. How
+// much is acceptable depends on density, so the default tolerance follows it: at
+// 1× a ~5 % stretch is the most that still looks crisp, while at 2× ~15 % is
+// past what the eye resolves — and that looser bound is exactly what keeps
+// retina posters on w342 rather than stepping up to w500 (74 KB). DPR is capped
+// at 2 because a 3× rung buys nothing visible on an image this small.
+function pickRung(rungs, cssWidth, tolerance) {
+  const dpr =
+    typeof window !== "undefined"
+      ? Math.min(window.devicePixelRatio || 1, 2)
+      : 1;
+  const need = cssWidth * dpr * (tolerance ?? (dpr >= 2 ? 0.85 : 0.95));
+  // Nothing wide enough → clamp to the top rung. Never fall through to
+  // "original", which is unbounded (backdrops there run ~1 MB).
+  return rungs.find((w) => w >= need) ?? rungs.at(-1);
+}
+
+const POSTER_RUNGS = [92, 154, 185, 342, 500, 780];
+export function posterSize(cssWidth, tolerance) {
+  return `w${pickRung(POSTER_RUNGS, cssWidth, tolerance)}`;
+}
+
+// Episode stills have their own, much shorter ladder.
+const STILL_RUNGS = [92, 185, 300];
+export function stillSize(cssWidth, tolerance) {
+  return `w${pickRung(STILL_RUNGS, cssWidth, tolerance)}`;
+}
+
+// Backdrops sit behind a 35–45 % dark overlay and a gradient, so they tolerate a
+// bigger stretch than a poster the eye reads directly — hence the fixed, looser
+// 0.82. That is what lets a ~890 px content column take w780 (42.7 KB) instead
+// of w1280 (142.5 KB); windows wider than ~950 px still get w1280.
+const BACKDROP_RUNGS = [300, 780, 1280];
+export function backdropSize(cssWidth, tolerance = 0.82) {
+  return `w${pickRung(BACKDROP_RUNGS, cssWidth, tolerance)}`;
+}
+
+// Width the page content actually spans, for the full-bleed backdrops. `.main`
+// is the app's scroll container and is always already in the DOM when a page
+// renders a backdrop (those are gated on fetched data), so reading it during
+// render is a synchronous, accurate substitute for measuring after mount —
+// which would cost an extra render and delay the request by a frame. The
+// viewport fallback is wider than the content column, so it can only ever
+// over-estimate, never ask for too small a rung.
+export function contentWidth() {
+  if (typeof document === "undefined") return 1280;
+  return (
+    document.querySelector(".main")?.clientWidth || window.innerWidth || 1280
+  );
+}
+
+// NOTE on images: on web these go through /api/tmdb/img/... on purpose. The
+// audience is in Russia, where image.tmdb.org is DNS-poisoned/blocked, so a
+// direct <img src="https://image.tmdb.org/..."> simply fails to connect
+// (verified locally: ECONNREFUSED after 200 ms). api/tmdb.js now sends
+// `immutable` cache headers for /img/*, so the Vercel edge and the browser both
+// keep them and the function is only invoked on a true cold miss.
+
 // Global auth-error callback, registered by App on mount
 let _onAuthError = null;
 let _onUnreachable = null;
@@ -96,41 +161,159 @@ export const setApiErrorHandlers = (onAuth, onUnreachable) => {
   _onUnreachable = onUnreachable;
 };
 
-// ── In-memory TMDB response cache (session-scoped, cleared on page reload) ───
-// Avoids redundant network calls when navigating back to the same show.
-// TTL: 5 minutes
+// ── TMDB response cache ──────────────────────────────────────────────────────
+// Two tiers:
+//  • memory (Map)         — 5 min TTL, the hot path for in-session navigation.
+//  • localStorage mirror  — 30 min TTL, so a page RELOAD doesn't refetch the
+//    whole home page. Metadata this stale is indistinguishable from fresh, and
+//    App.jsx already keeps a 30-min trending cache on the same reasoning.
+// Only reasonably small payloads are mirrored (a few big /discover pages would
+// blow the ~5 MB localStorage quota for no benefit).
 const _tmdbCache = new Map(); // key → { data, expiresAt }
 const TMDB_CACHE_TTL = 5 * 60 * 1000;
+const TMDB_DISK_TTL = 30 * 60 * 1000;
+const TMDB_DISK_KEY = "streambert_tmdbDiskCache";
+// The mirror is a reload-survival nicety, not a second cache tier: its whole
+// blob is re-serialized in ONE synchronous JSON.stringify + localStorage.setItem
+// on the main thread, 1.5 s after the first response of a cold load — exactly
+// when the user starts scrolling. 120 entries × 120 KB = up to ~14 MB of JSON
+// work per flush (a visible multi-hundred-ms hitch). Sizing it to ~1 MB worst
+// case keeps the same reload-survival benefit for the metadata payloads that
+// actually fit, and the size gate below already refuses the big /discover
+// responses that would blow the budget.
+const TMDB_DISK_MAX_ENTRIES = 48;
+const TMDB_DISK_MAX_ENTRY_BYTES = 24 * 1024;
+
+let _disk = null; // key → { d: data, e: expiresAt }
+let _diskDirty = false;
+let _diskFlushTimer = null;
+
+function diskRead() {
+  if (_disk) return _disk;
+  try {
+    const raw = localStorage.getItem(TMDB_DISK_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    _disk = parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    _disk = {};
+  }
+  // Drop anything already expired so the blob can't grow monotonically.
+  const now = Date.now();
+  for (const k of Object.keys(_disk)) {
+    if (!_disk[k] || now >= _disk[k].e) delete _disk[k];
+  }
+  return _disk;
+}
+
+function diskFlush() {
+  _diskFlushTimer = null;
+  if (!_diskDirty || !_disk) return;
+  _diskDirty = false;
+  try {
+    const keys = Object.keys(_disk);
+    if (keys.length > TMDB_DISK_MAX_ENTRIES) {
+      // Evict soonest-to-expire first (≈ least recently written).
+      keys
+        .sort((a, b) => _disk[a].e - _disk[b].e)
+        .slice(0, keys.length - TMDB_DISK_MAX_ENTRIES)
+        .forEach((k) => delete _disk[k]);
+    }
+    localStorage.setItem(TMDB_DISK_KEY, JSON.stringify(_disk));
+  } catch {
+    // Quota exceeded (or private mode): drop the mirror entirely rather than
+    // retrying forever. The memory tier keeps working.
+    _disk = {};
+    try {
+      localStorage.removeItem(TMDB_DISK_KEY);
+    } catch {}
+  }
+}
+
+function diskWrite(key, data) {
+  let serialized;
+  try {
+    serialized = JSON.stringify(data);
+  } catch {
+    return;
+  }
+  if (serialized.length > TMDB_DISK_MAX_ENTRY_BYTES) return;
+  const disk = diskRead();
+  disk[key] = { d: data, e: Date.now() + TMDB_DISK_TTL };
+  _diskDirty = true;
+  // Batch writes: a cold home page resolves ~40 requests, and one
+  // JSON.stringify of the whole blob per response would be the new bottleneck.
+  if (!_diskFlushTimer) _diskFlushTimer = setTimeout(diskFlush, 1500);
+}
+
+// Never lose the tail of the mirror to a tab close mid-window.
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    if (_diskFlushTimer) { clearTimeout(_diskFlushTimer); _diskFlushTimer = null; }
+    diskFlush();
+  });
+}
 
 /** Clears the in-memory TMDB cache and the persisted trending cache.
  * Calling this when the metadata language changes. */
 export function clearTmdbCache() {
   _tmdbCache.clear();
+  _disk = {};
+  _diskDirty = false;
   try {
     localStorage.removeItem("streambert_trendingCache");
+    localStorage.removeItem(TMDB_DISK_KEY);
   } catch {}
 }
 
-// ── Request queue (max 4 concurrent TMDB fetches) ────────────────────────────
+// ── Request queue (concurrency measured, not fixed) ──────────────────────────
 // Prevents bursts of 10-20 parallel requests from carousel/similar-rows rapid
 // navigation from hammering the API and triggering rate-limit responses.
+//
+// Two priority lanes. Everything the user is waiting to SEE (trending rows,
+// details, search) runs normal; background enrichment that only decorates
+// already-visible cards (age-rating badges — ~40 calls on a cold home page)
+// runs `low` and is only admitted when no normal request is queued. Before
+// this split, the badges could take all 4 slots and push the rows that matter
+// behind them.
+//
+// The lane width is transport-dependent: on HTTP/1.1 the browser opens six
+// connections per origin, so 4 in flight leaves headroom for the winning
+// stream's own playlist/segment fetches. On h2/h3 everything multiplexes over
+// one connection and the real limit is the API's patience — a cold home page
+// resolves ~40 requests, which at 4 lanes is ~4 s of serialized RTTs and at 8
+// is half that. nextHopProtocol is read from the browser's own resource
+// timings for same-origin responses, so it costs nothing.
 let _inflight = 0;
-const MAX_INFLIGHT = 4;
-const _waiters = [];
+const _waiters = []; // normal priority
+const _waitersLow = [];
+const MAX_INFLIGHT = (() => {
+  try {
+    const entries = performance?.getEntriesByType?.("resource") || [];
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const e = entries[i];
+      if (!e?.nextHopProtocol) continue;
+      if (e.name && typeof location !== "undefined" && e.name.indexOf(location.origin) !== 0) continue;
+      if (e.nextHopProtocol === "h2" || e.nextHopProtocol === "h3") return 8;
+      break;
+    }
+  } catch { /* fall through to the conservative default */ }
+  return 4;
+})();
 
-function _acquireSlot() {
-  if (_inflight < MAX_INFLIGHT) {
+function _acquireSlot(low = false) {
+  if (_inflight < MAX_INFLIGHT && (!low || _waiters.length === 0)) {
     _inflight++;
     return Promise.resolve();
   }
-  return new Promise((resolve) => _waiters.push(resolve));
+  return new Promise((resolve) => (low ? _waitersLow : _waiters).push(resolve));
 }
 
 function _releaseSlot() {
   _inflight--;
-  if (_waiters.length > 0) {
+  const next = _waiters.length > 0 ? _waiters : _waitersLow;
+  if (next.length > 0) {
     _inflight++;
-    _waiters.shift()();
+    next.shift()();
   }
 }
 
@@ -139,8 +322,17 @@ export const tmdbFetch = async (path, apiKey, opts = {}) => {
   const cacheKey = `${apiKey}|${localizedPath}`;
   const cached = _tmdbCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.data;
+  // Reload survivor: hydrate the memory tier from the localStorage mirror.
+  const onDisk = diskRead()[cacheKey];
+  if (onDisk && Date.now() < onDisk.e) {
+    _tmdbCache.set(cacheKey, {
+      data: onDisk.d,
+      expiresAt: Date.now() + TMDB_CACHE_TTL,
+    });
+    return onDisk.d;
+  }
 
-  await _acquireSlot();
+  await _acquireSlot(opts.priority === "low");
 
   let res;
   try {
@@ -172,6 +364,7 @@ export const tmdbFetch = async (path, apiKey, opts = {}) => {
   if (!res.ok) throw new Error(`TMDB ${res.status}`);
   const data = await res.json();
   _tmdbCache.set(cacheKey, { data, expiresAt: Date.now() + TMDB_CACHE_TTL });
+  diskWrite(cacheKey, data);
 
   // Evict stale entries to prevent unbounded memory growth
   if (_tmdbCache.size > 80) {
@@ -274,6 +467,19 @@ export const PLAYER_SOURCES = [
     movieUrl: (_id) => "about:blank",
     tvUrl: (_id, _season, _ep) => "about:blank",
   },
+  {
+    // Own source host; keep the stored id so existing per-title preferences work.
+    id: "lampac",
+    label: "Источники",
+    tag: "RU",
+    note: "Озвучки и качество",
+    supportsProgress: true,
+    inApp: true,
+    webOnly: true, // relay-backed; no <webview>, no desktop egress path
+    params: {},
+    movieUrl: (_id) => "about:blank",
+    tvUrl: (_id, _season, _ep) => "about:blank",
+  },
 ];
 
 // True for sources that render their own in-app player (no webview embed).
@@ -291,16 +497,20 @@ export function isWebOnly() {
   return _webOnly;
 }
 export function availableSources() {
-  // On web, ONLY the online (Collaps) source — no webview embeds, no torrents.
-  // isWebBuild() reads window.__webShim (set synchronously by the web shim
-  // before React mounts); _webOnly is set asynchronously in App.jsx after
-  // getPlatform() resolves. Check BOTH so the source picker never lists broken
-  // webview sources on web, even on the very first render before the async
-  // _webOnly flag flips — otherwise the picker would briefly offer
-  // Vidking/VidSrc/etc. and selecting one would spin forever (no <webview> in
-  // a browser).
-  if (isWebBuild() || _webOnly) return PLAYER_SOURCES.filter((s) => s.id === "online");
-  return PLAYER_SOURCES;
+  // On web, only in-app sources work (no <webview> in a browser): the Collaps
+  // "Онлайн" source and the relay-backed Lampac fleet. isWebBuild() reads
+  // window.__webShim (set synchronously by the web shim before React mounts);
+  // _webOnly is set asynchronously in App.jsx after getPlatform() resolves.
+  // Check BOTH so the source picker never lists broken webview sources on web,
+  // even on the very first render before the async _webOnly flag flips —
+  // otherwise the picker would briefly offer Vidking/VidSrc/etc. and selecting
+  // one would spin forever (no <webview> in a browser).
+  if (isWebBuild() || _webOnly) {
+    return PLAYER_SOURCES.filter((s) => s.id === "online" || s.id === "lampac");
+  }
+  // Desktop: everything except the web-only relay sources (Lampac needs the
+  // same-origin relay it can't reach from the packaged app).
+  return PLAYER_SOURCES.filter((s) => !s.webOnly);
 }
 export const getSourceUrl = (
   sourceId,

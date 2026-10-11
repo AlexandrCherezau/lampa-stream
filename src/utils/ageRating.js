@@ -118,9 +118,18 @@ export function isRestricted(contentMinAge, ageLimitSetting) {
   return contentMinAge > ageLimitSetting;
 }
 
+// Age ratings only decorate a badge on cards that are already on screen, so they
+// use the low-priority lane of the tmdbFetch queue — a cold home page queues
+// ~40 of these and they must not delay the rows the user is waiting for.
+const RATING_OPTS = { priority: "low" };
+
 export async function fetchMovieRating(movieId, apiKey, countryCode) {
   try {
-    const data = await tmdbFetch(`/movie/${movieId}/release_dates`, apiKey);
+    const data = await tmdbFetch(
+      `/movie/${movieId}/release_dates`,
+      apiKey,
+      RATING_OPTS,
+    );
     const results = data.results || [];
     const codesToTry = countryCode !== "US" ? [countryCode, "US"] : ["US"];
     for (const code of codesToTry) {
@@ -147,7 +156,11 @@ export async function fetchMovieRating(movieId, apiKey, countryCode) {
 
 export async function fetchTVRating(tvId, apiKey, countryCode) {
   try {
-    const data = await tmdbFetch(`/tv/${tvId}/content_ratings`, apiKey);
+    const data = await tmdbFetch(
+      `/tv/${tvId}/content_ratings`,
+      apiKey,
+      RATING_OPTS,
+    );
     const results = data.results || [];
     const codesToTry = countryCode !== "US" ? [countryCode, "US"] : ["US"];
     for (const code of codesToTry) {

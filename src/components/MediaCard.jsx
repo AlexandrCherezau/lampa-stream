@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback, memo } from "react";
-import { imgUrl, isAnimeContent } from "../utils/api";
+import { imgUrl, isAnimeContent, posterSize } from "../utils/api";
+import useElementWidth from "../utils/useElementWidth";
+import { prefetchDetailPage } from "../utils/prefetch";
 import {
   PlayIcon,
   FilmIcon,
@@ -8,6 +10,10 @@ import {
   RatingShieldIcon,
   RatingLockIcon,
 } from "./Icons";
+
+// Unreleased detection — one shared "today" for every card instead of a fresh
+// Date() per render (this used to run on every reconciliation of every card).
+const TODAY = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
 
 const MediaCard = memo(function MediaCard({
   item,
@@ -24,11 +30,13 @@ const MediaCard = memo(function MediaCard({
   const isTV = item.media_type === "tv";
   const isAnime = isAnimeContent(item);
 
+  // Hover/focus on a card is a near-certain predictor of a click: warm the
+  // detail-page chunk now so the navigation doesn't pay for it.
+  const warmChunk = useCallback(() => prefetchDetailPage(item.media_type), [item.media_type]);
+
   // Unreleased detection
   const rawDate = item.release_date || item.first_air_date;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const isUnreleased = rawDate ? new Date(rawDate) > today : false;
+  const isUnreleased = rawDate ? new Date(rawDate) > TODAY : false;
 
   // Build watched key for TV cards from Continue Watching we get season/episode
   const watchedKey = isTV
@@ -38,6 +46,12 @@ const MediaCard = memo(function MediaCard({
     : `movie_${item.id}`;
 
   const isWatched = !!watched?.[watchedKey];
+
+  // Poster slots are fluid (auto-fill grid, 100–191 px across breakpoints and
+  // compact mode), so the rung is chosen from the measured width. Until the
+  // first measurement lands the <img> is held back rather than guessing a size —
+  // useElementWidth resolves within the same commit, before paint.
+  const [posterRef, posterWidth] = useElementWidth();
 
   // Context menu state
   const [menu, setMenu] = useState(null); // { x, y }
@@ -82,16 +96,22 @@ const MediaCard = memo(function MediaCard({
     <>
       <div
         className={`card${isWatched ? " ep-watched" : ""}${isUnreleased ? " card--unreleased" : ""}`}
-        onClick={onClick}
+        onClick={() => onClick(item)}
+        onMouseEnter={warmChunk}
+        onFocus={warmChunk}
+        onTouchStart={warmChunk}
         onContextMenu={isUnreleased ? undefined : openMenu}
       >
-        <div className="card-poster">
+        <div className="card-poster" ref={posterRef}>
           {item.poster_path ? (
-            <img
-              src={imgUrl(item.poster_path, "w342")}
-              alt={title}
-              loading="lazy"
-            />
+            posterWidth > 0 && (
+              <img
+                src={imgUrl(item.poster_path, posterSize(posterWidth))}
+                alt={title}
+                loading="lazy"
+                decoding="async"
+              />
+            )
           ) : (
             <div className="no-poster">
               {isTV ? <TVIcon /> : <FilmIcon />}
@@ -145,13 +165,13 @@ const MediaCard = memo(function MediaCard({
           <div className="card-year">
             {isTV && item.season != null && item.episode != null
               ? `S${item.season}E${item.episode}${item.episodeName ? ` · ${item.episodeName}` : ""}`
-              : `${year} · ${isTV ? "Series" : "Movie"}`}
+              : `${year} · ${isTV ? "Сериал" : "Фильм"}`}
           </div>
         </div>
         <span
           className={`card-badge${isUnreleased ? " card-badge--unreleased" : ""}${isAnime && !isUnreleased ? " card-badge--anime" : ""}`}
         >
-          {isUnreleased ? "SOON" : isAnime ? "ANIME" : isTV ? "TV" : "HD"}
+          {isUnreleased ? "СКОРО" : isAnime ? "АНИМЕ" : isTV ? "СЕРИАЛ" : "HD"}
         </span>
       </div>
 
@@ -164,11 +184,11 @@ const MediaCard = memo(function MediaCard({
         >
           {isWatched ? (
             <button className="context-menu-item" onClick={handleMarkUnwatched}>
-              ↩ Mark as Unwatched
+              ↩ Отметить непросмотренным
             </button>
           ) : (
             <button className="context-menu-item" onClick={handleMarkWatched}>
-              ✓ Mark as Watched
+              ✓ Отметить просмотренным
             </button>
           )}
         </div>

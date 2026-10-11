@@ -62,7 +62,7 @@ const SETUP_JS = `
 export default function TrailerModal({ trailerKey, title, onClose }) {
   const webviewRef = useRef(null);
   const [currentSrc, setCurrentSrc] = useState(null);
-  const [statusMsg, setStatusMsg] = useState("Loading trailer…");
+  const [statusMsg, setStatusMsg] = useState("Загрузка трейлера…");
   const [failed, setFailed] = useState(false);
   const instanceIndexRef = useRef(-1);
 
@@ -77,13 +77,13 @@ export default function TrailerModal({ trailerKey, title, onClose }) {
     if (idx >= list.length) {
       setFailed(true);
       setStatusMsg(
-        "All Invidious instances failed. Try setting a custom instance in Settings.",
+        "Все экземпляры Invidious недоступны. Укажите другой адрес в настройках.",
       );
       return;
     }
     const instance = list[idx];
     const label = instance.replace(/^https?:\/\//, "");
-    setStatusMsg(idx === 0 ? "Loading trailer…" : `Trying ${label}…`);
+    setStatusMsg(idx === 0 ? "Загрузка трейлера…" : `Пробуем ${label}…`);
     setCurrentSrc(`${instance}/embed/${trailerKey}?autoplay=1&listen=0`);
   }, [trailerKey]);
 
@@ -168,7 +168,7 @@ export default function TrailerModal({ trailerKey, title, onClose }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button
               onClick={openInBrowser}
-              title="Open in browser"
+              title="Открыть в браузере"
               style={{
                 background: "rgba(255,255,255,0.08)",
                 border: "1px solid rgba(255,255,255,0.15)",
@@ -189,7 +189,7 @@ export default function TrailerModal({ trailerKey, title, onClose }) {
             <button
               className="trailer-close-btn"
               onClick={onClose}
-              title="Close"
+              title="Закрыть"
             >
               <CloseIcon />
             </button>

@@ -1,6 +1,8 @@
 export const StreambertLogo = ({ style }) => (
   <img
-    src="./logo.png"
+    // Absolute: a relative "./logo.png" resolves against the DOCUMENT url, so
+    // on a deep-linked /movie/<id> load (SPA fallback) the logo 404s.
+    src={`${import.meta.env.BASE_URL}logo.png`}
     alt="Lampa-Stream"
     width="44"
     height="44"

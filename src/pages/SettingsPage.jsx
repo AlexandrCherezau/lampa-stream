@@ -165,15 +165,15 @@ function SettingsSelect({ value, onChange, options, style }) {
 
 // Age limit options: null = none, or specific ages
 const AGE_LIMIT_OPTIONS = [
-  { value: "", label: "No restriction" },
-  { value: "0", label: "0 — All audiences (G / FSK 0)" },
-  { value: "7", label: "7 — Family friendly (PG / FSK 6)" },
-  { value: "12", label: "12 — Teens and up" },
-  { value: "13", label: "13 — PG-13 and equivalent" },
-  { value: "15", label: "15 — Older teens" },
-  { value: "16", label: "16 — FSK 16 and equivalent" },
-  { value: "17", label: "17 — R / 17+ and equivalent" },
-  { value: "18", label: "18 — Adults only (NC-17 / FSK 18)" },
+  { value: "", label: "Без ограничений" },
+  { value: "0", label: "0 — Для всех (G / FSK 0)" },
+  { value: "7", label: "7 — Для всей семьи (PG / FSK 6)" },
+  { value: "12", label: "12 — От 12 лет" },
+  { value: "13", label: "13 — PG-13 и аналоги" },
+  { value: "15", label: "15 — От 15 лет" },
+  { value: "16", label: "16 — FSK 16 и аналоги" },
+  { value: "17", label: "17 — R / 17+ и аналоги" },
+  { value: "18", label: "18 — Только для взрослых (NC-17 / FSK 18)" },
 ];
 
 // ── Confirmation Dialog ───────────────────────────────────────────────────────
@@ -268,7 +268,7 @@ function ResetConfirmDialog({ onConfirm, onCancel }) {
             }}
             onClick={onConfirm}
           >
-            Yes, Reset Everything
+            Сбросить всё
           </button>
         </div>
       </div>
@@ -280,7 +280,7 @@ function ResetConfirmDialog({ onConfirm, onCancel }) {
 function ConfirmDialog({
   title,
   description,
-  confirmLabel = "Confirm",
+  confirmLabel = "Подтвердить",
   onConfirm,
   onCancel,
 }) {
@@ -410,7 +410,7 @@ function Toggle({ value, onChange, title }) {
   );
 }
 
-// ── Skip-mode picker (Off / Auto / Manual) — reused for anime + heuristic ─────
+// ── Skip-mode picker (Off / Auto / Manual) — shared by both skip sources ─────
 function SkipModePicker({ mode, onSelect, title, description }) {
   return (
     <div style={{ marginBottom: 40 }}>
@@ -436,9 +436,9 @@ function SkipModePicker({ mode, onSelect, title, description }) {
         }}
       >
         {[
-          { value: "off", label: "Off", desc: "Skip is disabled." },
-          { value: "auto", label: "Auto Skip", desc: "Automatically jumps past the segment when reached." },
-          { value: "manual", label: "Manual Skip", desc: 'Shows a "Skip" button at the bottom of the player.' },
+          { value: "off", label: "Выкл.", desc: "Пропуск отключён." },
+          { value: "auto", label: "Автоматически", desc: "Автоматически пропускать сегменты с доступными таймкодами." },
+          { value: "manual", label: "Вручную", desc: 'Показывать в плеере кнопку «Пропустить».' },
         ].map(({ value, label, desc }, i, arr) => (
           <div
             key={value}
@@ -523,10 +523,10 @@ function CleanRow({
         // User dismissed the confirm dialog
         return;
       }
-      setStatus(result?.msg || "✓ Done");
+      setStatus(result?.msg || "✓ Готово");
       setTimeout(() => setStatus(null), 4000);
     } catch (e) {
-      setStatus("✕ " + (e.message || "Something went wrong"));
+      setStatus("✕ " + (e.message || "Что-то пошло не так"));
       setTimeout(() => setStatus(null), 4000);
     } finally {
       setBusy(false);
@@ -597,7 +597,7 @@ function CleanRow({
               : { opacity: busy ? 0.5 : 1 }
           }
         >
-          {busy ? "Working…" : buttonLabel}
+          {busy ? "Выполняется…" : buttonLabel}
         </button>
       </div>
     </div>
@@ -659,7 +659,7 @@ function VersionSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">App Version</div>
+      <div className="settings-section-title">Версия приложения</div>
 
       {/* Version row */}
       <div
@@ -673,7 +673,7 @@ function VersionSection() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 13, color: "var(--text3)" }}>
-            Current version
+            Текущая версия
           </span>
           <code
             style={{
@@ -696,7 +696,7 @@ function VersionSection() {
           onClick={runCheck}
           style={{ opacity: checking ? 0.6 : 1 }}
         >
-          {checking ? "Checking…" : "Check for Updates"}
+          {checking ? "Проверяем…" : "Проверить обновления"}
         </button>
 
         {/* Update source toggle */}
@@ -797,7 +797,7 @@ function VersionSection() {
         <Toggle
           value={autoCheck}
           onChange={toggleAuto}
-          title={autoCheck ? "Disable auto-check" : "Enable auto-check"}
+          title={autoCheck ? "Отключить автопроверку" : "Включить автопроверку"}
         />
         <div>
           <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text)" }}>
@@ -862,7 +862,7 @@ function HomeLayoutSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Home Page Layout</div>
+      <div className="settings-section-title">Главная страница</div>
       <div
         style={{
           fontSize: 13,
@@ -871,8 +871,8 @@ function HomeLayoutSection() {
           lineHeight: 1.6,
         }}
       >
-        Choose which rows appear on the Home page and drag to reorder them. The
-        hero banner is always shown at the top.
+        Выберите блоки для главной страницы и перетащите их, чтобы изменить порядок.
+        Главный баннер всегда остаётся наверху.
       </div>
 
       {/* ── View mode selector ── */}
@@ -887,19 +887,19 @@ function HomeLayoutSection() {
             letterSpacing: "0.05em",
           }}
         >
-          Row display style
+          Отображение блоков
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           {[
             {
               value: "carousel",
-              label: "Carousel",
-              desc: "Scrollable spotlight with featured poster",
+              label: "Карусель",
+              desc: "Прокручиваемая подборка с крупной обложкой",
             },
             {
               value: "list",
-              label: "⊞ Grid",
-              desc: "Compact grid of all items",
+              label: "⊞ Сетка",
+              desc: "Компактная сетка со всеми элементами",
             },
           ].map(({ value, label, desc }) => (
             <button
@@ -990,7 +990,7 @@ function HomeLayoutSection() {
             <Toggle
               value={visible[id]}
               onChange={() => toggleVisible(id)}
-              title={visible[id] ? "Hide row" : "Show row"}
+              title={visible[id] ? "Скрыть блок" : "Показать блок"}
             />
           </div>
         ))}
@@ -1005,10 +1005,10 @@ function HomeLayoutSection() {
         }}
       >
         <button className="btn btn-primary" onClick={handleSave}>
-          Save Layout
+          Сохранить порядок
         </button>
         {saved && (
-          <span style={{ fontSize: 13, color: "#48c774" }}>✓ Saved</span>
+          <span style={{ fontSize: 13, color: "#48c774" }}>✓ Сохранено</span>
         )}
       </div>
     </div>
@@ -1017,10 +1017,10 @@ function HomeLayoutSection() {
 
 // ── Scheduled Backup Section ──────────────────────────────────────────────────
 const FREQUENCY_OPTIONS = [
-  { value: "startup", label: "On App Start" },
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "monthly", label: "Monthly" },
+  { value: "startup", label: "При запуске приложения" },
+  { value: "daily", label: "Ежедневно" },
+  { value: "weekly", label: "Еженедельно" },
+  { value: "monthly", label: "Ежемесячно" },
 ];
 
 function ScheduledBackupSection() {
@@ -1129,7 +1129,7 @@ function ScheduledBackupSection() {
                 style={{ padding: "7px 14px", fontSize: 13 }}
                 onClick={pickFolder}
               >
-                Browse…
+                Обзор…
               </button>
             </div>
           </div>
@@ -1236,13 +1236,13 @@ function BackupRestoreSection({ onRestored }) {
       try {
         const backup = JSON.parse(ev.target.result);
         if (!backup?.data)
-          throw new Error("Invalid backup file, missing data field.");
+          throw new Error("Некорректная резервная копия: отсутствуют данные.");
         restoreBackupData(backup.data);
-        setRestoreStatus("✓ Backup restored: reloading…");
+        setRestoreStatus("✓ Резервная копия восстановлена. Перезагрузка…");
         setTimeout(() => window.location.reload(), 1200);
         onRestored?.();
       } catch (err) {
-        setRestoreStatus("✕ " + (err.message || "Could not read backup file."));
+        setRestoreStatus("✕ " + (err.message || "Не удалось прочитать файл резервной копии."));
         setTimeout(() => setRestoreStatus(null), 4000);
       }
     };
@@ -1253,7 +1253,7 @@ function BackupRestoreSection({ onRestored }) {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Backup &amp; Restore</div>
+      <div className="settings-section-title">Резервное копирование и восстановление</div>
       <div
         style={{
           fontSize: 13,
@@ -1262,9 +1262,8 @@ function BackupRestoreSection({ onRestored }) {
           lineHeight: 1.6,
         }}
       >
-        Export your watchlist, watch history, progress, and all settings to a
-        JSON file. Import it later to restore everything, useful before
-        reinstalling or switching devices.
+        Экспортируйте избранное, историю просмотров, прогресс и настройки в JSON-файл.
+        Импортируйте его, чтобы восстановить данные после переустановки или на другом устройстве.
       </div>
       <div
         style={{
@@ -1275,7 +1274,7 @@ function BackupRestoreSection({ onRestored }) {
         }}
       >
         <button className="btn btn-primary" onClick={handleExport}>
-          ⬆ Export Backup
+          ⬆ Экспортировать копию
         </button>
         <label
           style={{
@@ -1421,19 +1420,19 @@ function AppearanceSection() {
   };
 
   const CUSTOM_VAR_LABELS = {
-    "--bg": "Background",
-    "--surface": "Surface",
-    "--surface2": "Surface 2",
-    "--surface3": "Surface 3",
-    "--border": "Border",
-    "--text": "Text",
-    "--text2": "Text 2",
-    "--text3": "Text 3",
+    "--bg": "Фон",
+    "--surface": "Поверхность",
+    "--surface2": "Поверхность 2",
+    "--surface3": "Поверхность 3",
+    "--border": "Граница",
+    "--text": "Текст",
+    "--text2": "Текст 2",
+    "--text3": "Текст 3",
   };
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Appearance</div>
+      <div className="settings-section-title">Внешний вид</div>
 
       {/* Theme */}
       <div style={{ marginBottom: 24 }}>
@@ -1679,9 +1678,9 @@ function AppearanceSection() {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {[
-            { id: "sm", label: "Small" },
-            { id: "normal", label: "Normal" },
-            { id: "lg", label: "Large" },
+            { id: "sm", label: "Мелкий" },
+            { id: "normal", label: "Обычный" },
+            { id: "lg", label: "Крупный" },
           ].map((o) => (
             <button
               key={o.id}
@@ -1785,15 +1784,15 @@ function LibraryPrivacySection() {
   };
 
   const SORT_OPTIONS = [
-    { value: "manual", label: "Custom order" },
-    { value: "title", label: "Title A-Z" },
-    { value: "rating", label: "Top rated" },
-    { value: "year", label: "Newest first" },
+    { value: "manual", label: "Пользовательский порядок" },
+    { value: "title", label: "По алфавиту" },
+    { value: "rating", label: "С высоким рейтингом" },
+    { value: "year", label: "Сначала новые" },
   ];
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Library & Privacy</div>
+      <div className="settings-section-title">Библиотека и приватность</div>
 
       {/* Watchlist Sort */}
       <div style={{ marginBottom: 24 }}>
@@ -1805,7 +1804,7 @@ function LibraryPrivacySection() {
             marginBottom: 8,
           }}
         >
-          Watchlist sort order
+          Порядок избранного
         </div>
         <div
           style={{
@@ -1815,8 +1814,8 @@ function LibraryPrivacySection() {
             lineHeight: 1.6,
           }}
         >
-          How titles in your watchlist are sorted. "Custom order" keeps your
-          drag-and-drop arrangement.
+          Порядок фильмов и сериалов в избранном. «Пользовательский порядок» сохраняет
+          сортировку, которую вы задали перетаскиванием.
         </div>
         <SettingsSelect
           value={sort}
@@ -1885,7 +1884,7 @@ function StartPageSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Start Page</div>
+      <div className="settings-section-title">Стартовая страница</div>
       <div
         style={{
           fontSize: 13,
@@ -1894,7 +1893,7 @@ function StartPageSection() {
           lineHeight: 1.6,
         }}
       >
-        Choose which page opens when you launch Streambert.
+        Выберите страницу, которая будет открываться при запуске Streambert.
       </div>
       <div
         style={{
@@ -1908,16 +1907,16 @@ function StartPageSection() {
           value={startPage}
           onChange={(v) => setStartPage(v)}
           options={[
-            { value: "home", label: "🏠  Home" },
-            { value: "history", label: "🕐  Library / History" },
-            { value: "downloads", label: "⬇  Downloads" },
+            { value: "home", label: "🏠  Главная" },
+            { value: "history", label: "🕐  Библиотека и история" },
+            { value: "downloads", label: "⬇  Загрузки" },
           ]}
         />
         <button className="btn btn-primary" onClick={handleSave}>
-          Save
+          Сохранить
         </button>
         {saved && (
-          <span style={{ fontSize: 13, color: "#48c774" }}>✓ Saved</span>
+          <span style={{ fontSize: 13, color: "#48c774" }}>✓ Сохранено</span>
         )}
       </div>
     </div>
@@ -1964,7 +1963,7 @@ function TmdbLanguageSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Metadata Language</div>
+      <div className="settings-section-title">Язык метаданных</div>
       <div
         style={{
           fontSize: 13,
@@ -1973,9 +1972,8 @@ function TmdbLanguageSection() {
           lineHeight: 1.6,
         }}
       >
-        Language used when fetching titles, descriptions, and other metadata
-        from TMDB. Changing this clears the metadata cache so updated content
-        loads immediately.
+        Язык названий, описаний и других данных, которые приложение получает из TMDB.
+        При смене языка кэш очищается, а обновлённые данные загружаются сразу.
       </div>
       <div
         style={{
@@ -2054,7 +2052,7 @@ function SubtitleSettingsSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Subtitle Downloads</div>
+      <div className="settings-section-title">Загрузка субтитров</div>
 
       {/* Source info */}
       <div
@@ -2082,7 +2080,7 @@ function SubtitleSettingsSection() {
         >
           SubDL API key
         </span>{" "}
-        (free), to use SubDL as the primary source instead.
+        (бесплатно), чтобы выбрать SubDL основным источником.
         {hasSubdlKey && (
           <span
             style={{
@@ -2119,8 +2117,8 @@ function SubtitleSettingsSection() {
           }}
         >
           {enabled
-            ? "Auto-download subtitles when downloading videos"
-            : "Subtitle download disabled"}
+            ? "Автоматически загружать субтитры вместе с видео"
+            : "Загрузка субтитров отключена"}
         </span>
       </div>
 
@@ -2131,7 +2129,7 @@ function SubtitleSettingsSection() {
             <div
               style={{ fontSize: 12, color: "var(--text3)", marginBottom: 6 }}
             >
-              Default language
+              Язык субтитров по умолчанию
             </div>
             <SettingsSelect
               value={lang}
@@ -2163,7 +2161,7 @@ function SubtitleSettingsSection() {
                   border: `1px solid ${hasWyzieKey ? "rgba(99,202,183,0.25)" : "rgba(255,180,80,0.25)"}`,
                 }}
               >
-                {hasWyzieKey ? "SET" : "REQUIRED"}
+                {hasWyzieKey ? "УКАЗАН" : "ОБЯЗАТЕЛЕН"}
               </span>
             </div>
             <div
@@ -2216,16 +2214,16 @@ function SubtitleSettingsSection() {
                 style={{ padding: "6px 12px", fontSize: 12 }}
                 onClick={() => setShowWyzieKey((v) => !v)}
               >
-                {showWyzieKey ? "Hide" : "Show"}
+                {showWyzieKey ? "Скрыть" : "Показать"}
               </button>
               {hasWyzieKey && (
                 <button
                   className="btn btn-ghost"
                   style={{ padding: "6px 12px", fontSize: 12 }}
                   onClick={handleWyzieCopy}
-                  title="Copy key"
+                  title="Скопировать ключ"
                 >
-                  {wyzieCopied ? "Copied!" : "Copy"}
+                  {wyzieCopied ? "Скопировано!" : "Копировать"}
                 </button>
               )}
               {hasWyzieKey && (
@@ -2237,7 +2235,7 @@ function SubtitleSettingsSection() {
                       `https://store.wyzie.io/dashboard?key=${wyzieApiKey.trim()}`,
                     )
                   }
-                  title="Open your wyzie dashboard"
+                  title="Открыть панель Wyzie"
                 >
                   Dashboard ↗
                 </button>
@@ -2286,17 +2284,17 @@ function SubtitleSettingsSection() {
                 lineHeight: 1.5,
               }}
             >
-              Leave empty to use{" "}
+              Если оставить поле пустым, будет использоваться{" "}
               <strong style={{ color: "var(--text)" }}>Wyzie Subs</strong>{" "}
-              (default, requires Wyzie API key above). Add a SubDL key to switch
-              to SubDL as the primary source.
+              (нужен ключ Wyzie API выше). Добавьте ключ SubDL, чтобы выбрать
+              SubDL основным источником.
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input
                 className="apikey-input"
                 style={{ flex: 1, maxWidth: 400, marginBottom: 0 }}
                 type={showSubdlKey ? "text" : "password"}
-                placeholder="SubDL API key, leave empty to use Wyzie"
+                placeholder="Ключ API SubDL; оставьте пустым, чтобы использовать Wyzie"
                 value={subdlApiKey}
                 onChange={(e) => setSubdlApiKey(e.target.value)}
               />
@@ -2305,7 +2303,7 @@ function SubtitleSettingsSection() {
                 style={{ padding: "6px 12px", fontSize: 12 }}
                 onClick={() => setShowSubdlKey((v) => !v)}
               >
-                {showSubdlKey ? "Hide" : "Show"}
+                {showSubdlKey ? "Скрыть" : "Показать"}
               </button>
               {subdlApiKey.trim() && (
                 <button
@@ -2316,7 +2314,7 @@ function SubtitleSettingsSection() {
                     color: "var(--text3)",
                   }}
                   onClick={() => setSubdlApiKey("")}
-                  title="Clear key (revert to Wyzie)"
+                  title="Удалить ключ и вернуться к Wyzie"
                 >
                   Clear
                 </button>
@@ -2389,7 +2387,7 @@ function NotificationsSection() {
 
   return (
     <div style={{ marginBottom: 40 }}>
-      <div className="settings-section-title">Desktop Notifications</div>
+      <div className="settings-section-title">Уведомления</div>
       <div
         style={{
           fontSize: 13,
@@ -2411,14 +2409,14 @@ function NotificationsSection() {
         }}
       >
         <ToggleRow
-          label="Notify when a download completes"
-          description="Shows a desktop notification when an item finishes downloading."
+          label="Уведомлять о завершении загрузки"
+          description="Показывать уведомление, когда файл будет загружен."
           value={notifyDownload}
           onChange={setNotifyDownload}
         />
         <ToggleRow
-          label="Notify about new episodes on startup"
-          description="On startup, checks every TV series you have saved for newly released episodes and notifies you if any aired since the last check."
+          label="Сообщать о новых сериях при запуске"
+          description="При запуске проверять сохранённые сериалы и сообщать о сериях, вышедших после последней проверки."
           value={notifyEpisode}
           onChange={setNotifyEpisode}
         />
@@ -2487,7 +2485,7 @@ const SUPPORTS_HIGHLIGHT =
 const SECTION_NAV = [
   {
     id: "updates",
-    label: "Updates & API",
+    label: "Обновления и API",
     icon: "↑",
     keywords: [
       "update",
@@ -2510,7 +2508,7 @@ const SECTION_NAV = [
   },
   {
     id: "content",
-    label: "Age Rating",
+    label: "Возрастные ограничения",
     icon: "🔞",
     keywords: [
       "age",
@@ -2526,7 +2524,7 @@ const SECTION_NAV = [
   },
   {
     id: "playback",
-    label: "Playback",
+    label: "Воспроизведение",
     icon: "▶",
     keywords: [
       "invidious",
@@ -2568,7 +2566,7 @@ const SECTION_NAV = [
   },
   {
     id: "subtitles",
-    label: "Subtitles",
+    label: "Субтитры",
     icon: "CC",
     keywords: [
       "subtitle",
@@ -2583,7 +2581,7 @@ const SECTION_NAV = [
   },
   {
     id: "downloads",
-    label: "Downloads",
+    label: "Загрузки",
     icon: "⬇",
     keywords: [
       "download",
@@ -2597,7 +2595,7 @@ const SECTION_NAV = [
   },
   {
     id: "notifications",
-    label: "Notifications",
+    label: "Уведомления",
     icon: "🔔",
     keywords: [
       "notification",
@@ -2613,7 +2611,7 @@ const SECTION_NAV = [
   },
   {
     id: "interface",
-    label: "Interface",
+    label: "Интерфейс",
     icon: "✦",
     keywords: [
       "home",
@@ -2636,7 +2634,7 @@ const SECTION_NAV = [
   },
   {
     id: "library",
-    label: "Library",
+    label: "Библиотека",
     icon: "📚",
     keywords: [
       "library",
@@ -2650,7 +2648,7 @@ const SECTION_NAV = [
   },
   {
     id: "backup",
-    label: "Backup",
+    label: "Резервная копия",
     icon: "💾",
     keywords: [
       "backup",
@@ -2664,7 +2662,7 @@ const SECTION_NAV = [
   },
   {
     id: "storage",
-    label: "Storage & Data",
+    label: "Хранилище и данные",
     icon: "🗄",
     keywords: [
       "storage",
@@ -2959,7 +2957,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
                 ref={inputRef}
                 value={query}
                 onChange={handleQueryChange}
-                placeholder="Search on this page…"
+                placeholder="Поиск по этой странице…"
                 style={{
                   flex: 1,
                   background: "transparent",
@@ -2987,7 +2985,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
                     flexShrink: 0,
                   }}
                 >
-                  {noMatch ? "No results" : `${currentMatch} / ${matchCount}`}
+                  {noMatch ? "Ничего не найдено" : `${currentMatch} / ${matchCount}`}
                 </span>
               )}
 
@@ -2995,7 +2993,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
               {matchCount > 0 && (
                 <button
                   onClick={goPrev}
-                  title="Previous match (Shift+Enter)"
+                  title="Предыдущее совпадение (Shift+Enter)"
                   style={navBtnStyle}
                   onMouseEnter={(e) =>
                     (e.currentTarget.style.background =
@@ -3024,7 +3022,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
               {matchCount > 0 && (
                 <button
                   onClick={goNext}
-                  title="Next match (Enter)"
+                  title="Следующее совпадение (Enter)"
                   style={navBtnStyle}
                   onMouseEnter={(e) =>
                     (e.currentTarget.style.background =
@@ -3057,7 +3055,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
                     clearHighlights();
                     inputRef.current?.focus();
                   }}
-                  title="Clear search"
+                  title="Очистить поиск"
                   style={{ ...navBtnStyle, color: "var(--text3)" }}
                   onMouseEnter={(e) =>
                     (e.currentTarget.style.background =
@@ -3085,7 +3083,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
               {/* Esc button */}
               <button
                 onClick={closeSearch}
-                title="Close (Esc)"
+                title="Закрыть (Esc)"
                 style={{
                   background: "none",
                   border: "none",
@@ -3139,7 +3137,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
-              Search settings…
+              Поиск по настройкам…
               <span
                 style={{
                   fontSize: 10,
@@ -3398,7 +3396,7 @@ export default function SettingsPage({
   const checkInvidious = async (baseUrl) => {
     const clean = (baseUrl || "").trim().replace(/\/$/, "");
     if (!clean) {
-      setInvidiousStatus({ ok: false, msg: "Please enter a URL first." });
+                setInvidiousStatus({ ok: false, msg: "Сначала введите URL." });
       return;
     }
     setInvidiousChecking(true);
@@ -3409,18 +3407,18 @@ export default function SettingsPage({
       if (res.ok) {
         setInvidiousStatus({
           ok: true,
-          msg: "Instance reachable and responding.",
+          msg: "Инстанс доступен и отвечает.",
         });
       } else {
         setInvidiousStatus({
           ok: false,
-          msg: `Server responded with status ${res.status}.`,
+        msg: `Сервер ответил со статусом ${res.status}.`,
         });
       }
     } catch (e) {
       setInvidiousStatus({
         ok: false,
-        msg: "Could not reach instance. Check the URL or try another.",
+        msg: "Не удалось подключиться. Проверьте URL или укажите другой.",
       });
     } finally {
       setInvidiousChecking(false);
@@ -3534,13 +3532,13 @@ export default function SettingsPage({
     <>
       {showProgressConfirm && (
         <ConfirmDialog
-          title="CLEAR WATCH PROGRESS?"
-          description="This will permanently delete all watch history, continue-watching progress, and watched/completed markings for all movies and series."
-          confirmLabel="Yes, Clear Everything"
+          title="ОЧИСТИТЬ ИСТОРИЮ ПРОСМОТРОВ?"
+          description="Будут удалены история, прогресс просмотра и отметки о просмотре всех фильмов и сериалов."
+          confirmLabel="Да, очистить всё"
           onConfirm={async () => {
             setShowProgressConfirm(false);
             await handleClearWatchProgress();
-            window.__progressConfirmResolve?.({ msg: "✓ Watch data cleared" });
+            window.__progressConfirmResolve?.({ msg: "✓ Данные о просмотре очищены" });
             window.__progressConfirmResolve = null;
           }}
           onCancel={() => {
@@ -3552,9 +3550,9 @@ export default function SettingsPage({
       )}
       {showDeleteDlConfirm && (
         <ConfirmDialog
-          title="DELETE ALL DOWNLOADS?"
-          description="This will permanently delete all video files downloaded through Streambert and remove them from the download list."
-          confirmLabel="Yes, Delete All"
+          title="УДАЛИТЬ ВСЕ ЗАГРУЗКИ?"
+          description="Будут безвозвратно удалены все видео, загруженные через Streambert, и очищен список загрузок."
+          confirmLabel="Да, удалить всё"
           onConfirm={async () => {
             setShowDeleteDlConfirm(false);
             const result = await handleDeleteAllDownloads();
@@ -3595,7 +3593,7 @@ export default function SettingsPage({
           SETTINGS
         </div>
         <div style={{ color: "var(--text3)", fontSize: 14, marginBottom: 48 }}>
-          App configuration for Streambert
+         Настройки Streambert
         </div>
 
         {/* ══════════════════════════════════════════════════════════════════ */}
@@ -3603,8 +3601,8 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secUpdates} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="General"
-            subtitle="App version, updates, API credentials and Languages"
+            title="Общие"
+            subtitle="Версия приложения, обновления, доступ к API и язык метаданных"
           />
 
           {/* Version & Updates */}
@@ -3614,7 +3612,7 @@ export default function SettingsPage({
 
           {/* TMDB API Token */}
           <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">TMDB Read Access Token</div>
+            <div className="settings-section-title">Токен доступа TMDB</div>
             <div
               style={{
                 fontSize: 13,
@@ -3623,8 +3621,8 @@ export default function SettingsPage({
                 lineHeight: 1.6,
               }}
             >
-              Used to fetch movie and TV metadata, posters, ratings, and cast
-              info from The Movie Database.
+              Нужен для загрузки данных о фильмах и сериалах, постеров, рейтингов
+              и информации об актёрах из The Movie Database.
             </div>
             <div
               style={{
@@ -3662,13 +3660,13 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secContent} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Content"
-            subtitle="Parental controls and content filtering by age rating"
+            title="Контент"
+            subtitle="Родительский контроль и возрастные ограничения"
           />
 
           <div style={{ marginBottom: 40 }}>
             <div className="settings-section-title">
-              Age Rating &amp; Parental Controls
+              Возрастной рейтинг и родительский контроль
             </div>
             <div
               style={{
@@ -3678,12 +3676,12 @@ export default function SettingsPage({
                 lineHeight: 1.6,
               }}
             >
-              Set a maximum age rating. Content rated above this age will still
-              be visible but{" "}
+              Выберите возрастной предел. Контент с более высоким рейтингом
+              останется видимым, но его{" "}
               <strong style={{ color: "var(--text)" }}>
-                you won't be able to play it.
+                нельзя будет воспроизвести.
               </strong>{" "}
-              Set to <em>No restriction</em> to disable this feature entirely.
+              Выберите <em>«Без ограничений»</em>, чтобы отключить эту функцию.
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -3745,13 +3743,13 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secPlayback} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Playback"
-            subtitle="Trailer source and auto-watched behavior"
+            title="Воспроизведение"
+            subtitle="Источник трейлеров и отметка о просмотре"
           />
 
           {/* Invidious */}
           <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Invidious Instance</div>
+            <div className="settings-section-title">Экземпляр Invidious</div>
             <div
               style={{
                 fontSize: 13,
@@ -3760,16 +3758,16 @@ export default function SettingsPage({
                 lineHeight: 1.6,
               }}
             >
-              Trailers are played via{" "}
+              Трейлеры воспроизводятся через{" "}
               <span style={{ color: "var(--text)", fontWeight: 600 }}>
                 Invidious
               </span>
-              , a privacy-friendly YouTube frontend. Your configured instance is
-              tried first; if it fails, the app automatically falls back through
-              a list of known working instances. The default is{" "}
+              — приватный интерфейс YouTube. Сначала используется выбранный вами
+              экземпляр. Если он недоступен, приложение проверит другие рабочие
+              адреса. По умолчанию используется{" "}
               <code style={{ fontSize: 12 }}>{DEFAULT_INVIDIOUS_BASE}</code>.
-              The instance must have its API enabled (
-              <code style={{ fontSize: 12 }}>/api/v1/stats</code> reachable).
+              У экземпляра должен быть включён API и доступен адрес{" "}
+              <code style={{ fontSize: 12 }}>/api/v1/stats</code>.
             </div>
             <div
               style={{
@@ -3795,10 +3793,10 @@ export default function SettingsPage({
                 onClick={() => checkInvidious(invidiousBase)}
                 style={{ opacity: invidiousChecking ? 0.5 : 1 }}
               >
-                {invidiousChecking ? "Checking…" : "Check"}
+                {invidiousChecking ? "Проверяем…" : "Проверить"}
               </button>
               <button className="btn btn-primary" onClick={saveInvidiousBase}>
-                Save
+                Сохранить
               </button>
             </div>
 
@@ -3846,7 +3844,7 @@ export default function SettingsPage({
 
           {/* Auto-Watched Threshold */}
           <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Auto-Watched Threshold</div>
+      <div className="settings-section-title">Порог отметки о просмотре</div>
             <div
               style={{
                 fontSize: 13,
@@ -3855,12 +3853,12 @@ export default function SettingsPage({
                 lineHeight: 1.6,
               }}
             >
-              A movie or episode is automatically marked as{" "}
+              Фильм или эпизод будет автоматически отмечен как{" "}
               <span style={{ color: "#48c774", fontWeight: 600 }}>
-                Watched ✓
+                просмотренный ✓
               </span>{" "}
-              when the remaining time drops to this value or below. Set between
-              1 and 300 seconds.
+              , когда до конца останется столько секунд или меньше. Укажите значение
+              от 1 до 300 секунд.
             </div>
             <div
               style={{
@@ -3881,16 +3879,16 @@ export default function SettingsPage({
                   onChange={(e) => setWatchedThreshold(e.target.value)}
                 />
                 <span style={{ fontSize: 14, color: "var(--text2)" }}>
-                  seconds
+                  секунд
                 </span>
               </div>
               <button className="btn btn-primary" onClick={handleSaveThreshold}>
-                Save
+                Сохранить
               </button>
             </div>
             {saved && (
               <div style={{ marginTop: 10, fontSize: 13, color: "#48c774" }}>
-                ✓ Saved
+                ✓ Сохранено
               </div>
             )}
           </div>
@@ -3899,7 +3897,7 @@ export default function SettingsPage({
 
           {/* Autoplay Next Episode */}
           <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Autoplay Next Episode</div>
+            <div className="settings-section-title">Автовоспроизведение следующего эпизода</div>
             <div
               style={{
                 fontSize: 13,
@@ -3908,10 +3906,9 @@ export default function SettingsPage({
                 lineHeight: 1.6,
               }}
             >
-              Configure how the player behaves when an episode finishes. The
-              countdown starts as soon as the ending/outro begins (when a skip
-              timing is available) or, as a fallback, when only the threshold
-              seconds remain.
+              Выберите, как плеер запускает следующую серию. Обратный отсчёт
+              начинается в начале эндинга, если его таймкод известен, или когда
+              до конца остаётся заданное число секунд.
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -3968,7 +3965,7 @@ export default function SettingsPage({
                           color: "var(--text)",
                         }}
                       >
-                        Play Immediately
+                        Начинать воспроизведение сразу
                       </div>
                       <div
                         style={{
@@ -4064,8 +4061,8 @@ export default function SettingsPage({
                         marginBottom: 12,
                       }}
                     >
-                      Choose which side of the player the next episode thumbnail
-                      and details are shown.
+                      Выберите, с какой стороны плеера показывать обложку и сведения
+                      о следующем эпизоде.
                     </div>
                     <SettingsSelect
                       value={autoplayNextLayout}
@@ -4075,8 +4072,8 @@ export default function SettingsPage({
                         flash();
                       }}
                       options={[
-                        { value: "left", label: "Left Side" },
-                        { value: "right", label: "Right Side" },
+                        { value: "left", label: "Слева" },
+                        { value: "right", label: "Справа" },
                       ]}
                     />
                   </div>
@@ -4089,27 +4086,24 @@ export default function SettingsPage({
 
           <Divider />
 
-          {/* Skip intro/outro/recap — two separate controls:
-              1) Anime series: exact timestamps via AniSkip (MyAnimeList id).
-              2) Movies & non-anime series: safe fallback timings (conservative
-                 ~30s intro skip + credits estimate), since no public timestamp
-                 source exists. Both also drive "next episode when the ending
-                 starts" (see Autoplay Next Episode above). */}
+          {/* Anime uses AniSkip; movies and non-anime series use confirmed
+              IntroDB timestamps. Missing metadata never creates estimates. */}
           <SkipModePicker
             mode={introSkipMode}
             onSelect={(v) => {
               setIntroSkipMode(v);
               storage.set(STORAGE_KEYS.INTRO_SKIP_MODE, v);
             }}
-            title="Skip Intro / Ending / Recap — Anime"
+            title="Пропуск опенинга, эндинга и рекапа — аниме"
             description={
               <>
                 Uses{" "}
                 <span style={{ color: "var(--text)", fontWeight: 600 }}>AniSkip</span>{" "}
-                to detect and skip the opening (оппенинг), ending (эндинг) and
-                recap (заскавка) segments for anime series — exact timestamps via
-                the MyAnimeList id. Only active for anime. When the ending begins,
-                the next episode starts automatically (if Autoplay Next is on).
+                определять и пропускать опенинг, эндинг и рекап в аниме по таймкодам
+                эпизодов, сопоставленным по ID MyAnimeList. Автоматический пропуск
+                работает только при наличии метки AniSkip. При достижении метки
+                эндинга следующая серия может запуститься автоматически, если
+                включено автовоспроизведение.
               </>
             }
           />
@@ -4119,17 +4113,15 @@ export default function SettingsPage({
               setHeuristicSkipMode(v);
               storage.set(STORAGE_KEYS.SKIP_HEURISTIC_MODE, v);
             }}
-            title="Skip Intro / Ending — Movies & Series"
+            title="Пропуск заставок, рекапов и титров — фильмы и сериалы"
             description={
               <>
-                No public timestamp source exists for non-anime, so this uses{" "}
-                <span style={{ color: "var(--text)", fontWeight: 600 }}>
-                  safe fallback timings
-                </span>
-                : a conservative ~30s intro skip (studio logos) plus a credits
-                estimate (last ~8% of runtime) for the ending. Works for movies
-                and non-anime series. When the ending begins, the next episode
-                starts automatically (if Autoplay Next is on).
+                Используются подтверждённые таймкоды сегментов из{" "}
+                <span style={{ color: "var(--text)", fontWeight: 600 }}> IntroDB</span>{" "}
+                для фильмов и сериалов. Если подходящих данных нет, кнопка пропуска
+                не появится и автоматический пропуск не сработает. При достижении
+                подтверждённой метки окончания или титров следующая серия может
+                запуститься автоматически, если автовоспроизведение включено.
               </>
             }
           />
@@ -4151,8 +4143,8 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secSubtitles} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Subtitles"
-            subtitle="Subtitle download source, preferred language, and API key"
+            title="Субтитры"
+            subtitle="Источник загрузки, предпочитаемый язык и ключ API"
           />
           <SubtitleSettingsSection />
         </div>
@@ -4162,12 +4154,12 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secDownloads} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Downloads"
-            subtitle="Where downloaded video files are saved on disk"
+            title="Загрузки"
+            subtitle="Папка для сохранения видеофайлов"
           />
 
           <div style={{ marginBottom: 40 }}>
-            <div className="settings-section-title">Download Folder</div>
+            <div className="settings-section-title">Папка загрузки</div>
             <div
               style={{
                 fontSize: 13,
@@ -4210,8 +4202,8 @@ export default function SettingsPage({
             )}
             {!downloadPath && (
               <div style={{ marginTop: 10, fontSize: 13, color: "var(--red)" }}>
-                ⚠ No download folder set - videos cannot be downloaded until you
-                set one.
+                ⚠ Папка загрузок не выбрана — скачивание видео будет недоступно,
+                пока вы не укажете папку.
               </div>
             )}
           </div>
@@ -4222,8 +4214,8 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secNotifications} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Notifications"
-            subtitle="Desktop alerts for downloads and new episode releases"
+            title="Уведомления"
+            subtitle="О загрузках и новых сериях"
           />
           <NotificationsSection />
         </div>
@@ -4233,8 +4225,8 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secInterface} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Interface"
-            subtitle="Home layout, start page, appearance, and display options"
+            title="Интерфейс"
+            subtitle="Главная страница, внешний вид и параметры отображения"
           />
           <HomeLayoutSection />
           <Divider />
@@ -4248,8 +4240,8 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secLibrary} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Library"
-            subtitle="Watchlist sort order and watch history preferences"
+            title="Библиотека"
+            subtitle="Порядок избранного и история просмотров"
           />
           <LibraryPrivacySection />
         </div>
@@ -4259,8 +4251,8 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secBackup} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Backup & Restore"
-            subtitle="Export your data or restore from a previous backup file"
+            title="Резервная копия"
+            subtitle="Экспорт данных и восстановление из файла"
           />
           <BackupRestoreSection />
         </div>
@@ -4270,8 +4262,8 @@ export default function SettingsPage({
         {/* ══════════════════════════════════════════════════════════════════ */}
         <div ref={secStorage} style={{ scrollMarginTop: 80 }}>
           <SectionGroupHeader
-            title="Storage & Data"
-            subtitle="Clear cache, watch progress, downloads, or reset the entire app"
+            title="Хранилище и данные"
+            subtitle="Очистка кэша, прогресса, загрузок и сброс приложения"
           />
 
           <div
@@ -4285,9 +4277,9 @@ export default function SettingsPage({
             {/* Install location */}
             <div style={{ padding: "22px 24px" }}>
               <CleanRow
-                title="Install Location"
-                description="Opens the folder where Streambert is installed."
-                buttonLabel="Open Folder"
+                title="Папка приложения"
+                description="Открывает папку, в которой установлен Streambert."
+                buttonLabel="Открыть папку"
                 onAction={async () => {
                   const p = await window.electron?.getInstallPath?.();
                   if (p) window.electron.openPath(p);
@@ -4300,9 +4292,9 @@ export default function SettingsPage({
             {/* Cache */}
             <div style={{ padding: "22px 24px" }}>
               <CleanRow
-                title="Clear Cache"
-                description="Removes temporary browser cache, shader cache, and service worker data from all internal sessions (main, video player, trailer). Does not affect your personal data or settings."
-                buttonLabel="Clear Cache"
+                title="Очистить кэш"
+                description="Удаляет временный кэш браузера, шейдеров и Service Worker во всех встроенных окнах (приложение, плеер, трейлеры). Личные данные и настройки сохраняются."
+                buttonLabel="Очистить кэш"
                 onAction={handleClearCache}
                 sizeLabel={formatBytes(sizes.cache)}
               />
@@ -4313,9 +4305,9 @@ export default function SettingsPage({
             {/* Watch Progress */}
             <div style={{ padding: "22px 24px" }}>
               <CleanRow
-                title="Clear Watch Progress"
-                description="Resets all watch history, continue-watching progress, and watched / completed markings for movies and series. Also clears internal video player session data."
-                buttonLabel="Clear Progress"
+                title="Очистить данные о просмотре"
+                description="Удаляет историю, прогресс и отметки о просмотре фильмов и сериалов. Также очищает данные встроенного плеера."
+                buttonLabel="Очистить данные"
                 onAction={() =>
                   new Promise((resolve) => {
                     setShowProgressConfirm(true);
@@ -4331,9 +4323,9 @@ export default function SettingsPage({
             {/* Delete Downloads */}
             <div style={{ padding: "22px 24px" }}>
               <CleanRow
-                title="Delete All Downloads"
-                description="Permanently deletes all video files that were downloaded through Streambert and removes them from the download list. Only files downloaded through the app will be deleted, nothing else in your folder is touched."
-                buttonLabel="Delete All"
+                title="Удалить все загрузки"
+                description="Безвозвратно удаляет видео, загруженные через Streambert, и убирает их из списка. Остальные файлы в папке не затрагиваются."
+                buttonLabel="Удалить всё"
                 onAction={() =>
                   new Promise((resolve) => {
                     setShowDeleteDlConfirm(true);

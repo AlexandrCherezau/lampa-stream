@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, useEffect } from "react";
 import MediaCard from "../components/MediaCard";
+import ProgressiveGrid from "../utils/useProgressiveList.jsx";
 import { imgUrl } from "../utils/api";
 import { EyeIcon, WatchedIcon } from "../components/Icons";
 import { useRatings, getRatingForItem } from "../utils/useRatings";
@@ -34,10 +35,10 @@ export default function LibraryPage({
   }, []);
 
   const sortLabels = {
-    manual: "Custom order",
-    title: "A-Z",
-    rating: "Top rated",
-    year: "Newest first",
+    manual: "Пользовательский порядок",
+    title: "По алфавиту",
+    rating: "С высоким рейтингом",
+    year: "Сначала новые",
   };
 
   const getRating = useCallback(
@@ -52,17 +53,17 @@ export default function LibraryPage({
   return (
     <div className="fade-in">
       <div className="library-header">
-        <div className="library-title">My Library</div>
+        <div className="library-title">Моя библиотека</div>
         <div className="library-sub">
-          Watch history, progress, and saved titles
+          История просмотров, прогресс и сохранённые фильмы и сериалы
         </div>
       </div>
 
       {inProgress.length > 0 && (
         <div className="library-section">
-          <div className="library-section-title">Continue Watching</div>
-          <div className="cards-grid">
-            {inProgress.map((item, i) => {
+          <div className="library-section-title">Продолжить просмотр</div>
+          <ProgressiveGrid items={inProgress}>
+            {(visible) => visible.map((item, i) => {
               const pk =
                 item.media_type === "movie"
                   ? `movie_${item.id}`
@@ -73,7 +74,7 @@ export default function LibraryPage({
                 <MediaCard
                   key={pk}
                   item={item}
-                  onClick={() => onSelect(item)}
+                  onClick={onSelect}
                   progress={progress[pk] || 0}
                   watched={watched}
                   onMarkWatched={onMarkWatched}
@@ -83,14 +84,14 @@ export default function LibraryPage({
                 />
               );
             })}
-          </div>
+          </ProgressiveGrid>
         </div>
       )}
 
       {saved.length > 0 && (
         <div className="library-section">
           <div className="library-section-title">
-            Watchlist ({saved.length})
+            Сохранённое ({saved.length})
             {sort !== "manual" && (
               <span
                 style={{
@@ -104,15 +105,15 @@ export default function LibraryPage({
               </span>
             )}
           </div>
-          <div className="cards-grid">
-            {saved.map((item) => {
+          <ProgressiveGrid items={saved}>
+            {(visible) => visible.map((item) => {
               const r = getRating(item);
               const restr = itemRestricted(item);
               return (
                 <MediaCard
                   key={`${item.media_type}_${item.id}`}
                   item={item}
-                  onClick={() => onSelect(item)}
+                  onClick={onSelect}
                   watched={watched}
                   onMarkWatched={onMarkWatched}
                   onMarkUnwatched={onMarkUnwatched}
@@ -121,13 +122,13 @@ export default function LibraryPage({
                 />
               );
             })}
-          </div>
+          </ProgressiveGrid>
         </div>
       )}
 
       {history.length > 0 && (
         <div className="library-section">
-          <div className="library-section-title">Watch History</div>
+          <div className="library-section-title">История просмотров</div>
           <div className="history-rows">
             {history.map((item, i) => {
               const pk =
@@ -169,7 +170,7 @@ export default function LibraryPage({
                             {" · "}
                           </>
                         )}
-                      {new Date(item.watchedAt).toLocaleDateString("en-US", {
+                      {new Date(item.watchedAt).toLocaleDateString("ru-RU", {
                         year: "numeric",
                         month: "short",
                         day: "numeric",
@@ -179,12 +180,12 @@ export default function LibraryPage({
                   <span
                     className={`search-result-type ${item.media_type === "tv" ? "type-tv" : "type-movie"}`}
                   >
-                    {item.media_type === "tv" ? "Series" : "Movie"}
+                    {item.media_type === "tv" ? "Сериал" : "Фильм"}
                   </span>
                   {onRemoveHistory && (
                     <button
                       className="history-remove-btn"
-                      title="Remove from history"
+                      title="Удалить из истории"
                       onClick={(e) => {
                         e.stopPropagation();
                         onRemoveHistory(item);
@@ -203,9 +204,9 @@ export default function LibraryPage({
       {history.length === 0 && saved.length === 0 && (
         <div className="empty-state">
           <EyeIcon />
-          <h3>Nothing here yet</h3>
+          <h3>Пока здесь пусто</h3>
           <p>
-            Start watching a movie or series and your history will appear here.
+            Начните смотреть фильм или сериал — история появится здесь.
           </p>
         </div>
       )}

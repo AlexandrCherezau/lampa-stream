@@ -38,7 +38,7 @@ import {
   bestFileName,
   hashFromResult,
 } from "../utils/torrserver-client";
-import { storage, formatBytes, STORAGE_KEYS } from "../utils/storage";
+import { storage, formatBytes, STORAGE_KEYS, setCappedMap } from "../utils/storage";
 import { fetchAniSkipTimings } from "../utils/aniSkip";
 import { fallbackTimings, mergeTimings } from "../utils/introDetect";
 import { fetchAnilistData, isAnimeContent } from "../utils/api";
@@ -131,6 +131,7 @@ export default function TorrPlayer({
 }) {
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
+  const errCountRef = useRef(0);
   const containerRef = useRef(null);
   const progressTimerRef = useRef(null);
   const saveRef = useRef(saveProgress);
@@ -175,8 +176,13 @@ export default function TorrPlayer({
   const [introSkipMode] = useState(
     () => storage.get(STORAGE_KEYS.INTRO_SKIP_MODE) || "manual",
   );
+  // Default "off", not "manual": the fallback timings fabricate a ~30 s intro
+  // for ANY title (they exist to keep the anime path safe, not to guess), so
+  // the old default put a "ПРОПУСТИТЬ ИНТРО" button over the first 30 seconds
+  // of every film and every non-anime episode. Viewers who want it enable it
+  // in Settings; the button now means what it says.
   const [heuristicSkipMode] = useState(
-    () => storage.get(STORAGE_KEYS.SKIP_HEURISTIC_MODE) || "manual",
+    () => storage.get(STORAGE_KEYS.SKIP_HEURISTIC_MODE) || "off",
   );
   const skipTimerRef = useRef(null);
   const onNextRef = useRef(onNext);
@@ -197,10 +203,24 @@ export default function TorrPlayer({
   // Load config + initial listing + (optionally) auto-search
   useEffect(() => {
     (async () => {
-      const c = (await torrGetCfg()) || {};
+      // Reachability check FIRST: if TorrServer is down/booting, say so now
+      // instead of letting every follow-up call (add/get/stream) time out
+      // one by one. torrPing has its own 5 s deadline.
+      try {
+        const p = await torrPing();
+        if (p && p.ok === false) {
+          setError("TorrServer недоступен. Проверьте адрес в Настройках → TorrServer.");
+        }
+      } catch (err) {
+        setError(err?.message || "TorrServer недоступен. Проверьте адрес в Настройках → TorrServer.");
+      }
+      let c = {};
+      try { c = (await torrGetCfg()) || {}; } catch (err) { setError(err?.message || "Не удалось прочитать настройки TorrServer"); }
       setCfg(c);
-      const list = await torrList();
-      if (list?.ok) setDbTorrents(list.list || []);
+      try {
+        const list = await torrList();
+        if (list?.ok) setDbTorrents(list.list || []);
+      } catch {}
       if (torrentHint) {
         await handleAdd(torrentHint, "Из источника", c);
       } else if (c.jackettUrl) {
@@ -232,7 +252,9 @@ export default function TorrPlayer({
     setBusy("search");
     setError("");
     setResults([]);
-    const res = await torrSearch(q);
+    let res;
+    try { res = await torrSearch(q); }
+    catch (err) { setBusy(""); setError(err?.message || "Поиск не удался"); return; }
     setBusy("");
     if (!res?.ok) {
       setError(res?.error || "Поиск не удался");
@@ -247,7 +269,9 @@ export default function TorrPlayer({
     async (link, displayTitle, c = cfg) => {
       setBusy("add");
       setError("");
-      const res = await torrAdd({ link, title: `[Lampa-Stream] ${displayTitle || ""}` });
+      let res;
+      try { res = await torrAdd({ link, title: `[Lampa-Stream] ${displayTitle || ""}` }); }
+      catch (err) { setBusy(""); setError(err?.message || "Не удалось добавить торрент"); return false; }
       setBusy("");
       if (!res?.ok) {
         setError(res?.error || "Не удалось добавить торрент");
@@ -281,7 +305,9 @@ export default function TorrPlayer({
       const fileName = bestFileName(fl, idx);
       setBusy("stream");
       setError("");
-      const s = await torrStream({ hash, index: idx, fileName });
+      let s;
+      try { s = await torrStream({ hash, index: idx, fileName }); }
+      catch (err) { setBusy(""); setError(err?.message || "TorrServer недоступен. Проверьте адрес в Настройках."); return; }
       setBusy("");
       if (!s?.ok) {
         setError(s?.error || "TorrServer недоступен. Проверьте адрес в Настройках.");
@@ -298,6 +324,7 @@ export default function TorrPlayer({
     const v = videoRef.current;
     if (!v) return;
     destroyHls();
+    errCountRef.current = 0;
     setCurrent(0);
     setDuration(0);
     setAudioTracks([]);
@@ -306,9 +333,35 @@ export default function TorrPlayer({
     setSkipPrompt(null);
     nextFiredRef.current = false; // new file → allow one next-episode trigger
 
+    // Resume from the exact saved timecode (same mechanism as OnlinePlayer).
+    // Handed to hls.js as startPosition so the FIRST fragment request lands
+    // at the resume offset — without it, a resumed film buffers from 0 and
+    // re-attaches (~3-4× a cold start). The raw path seeks on loadedmetadata.
+    // Skip an essentially-finished title (progress ≥ 95%).
+    let resumeStart = -1;
+    try {
+      const tMap = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
+      const pMap = storage.get(STORAGE_KEYS.WATCH_PROGRESS) || {};
+      const t = tMap[progressKey];
+      const pct = pMap[progressKey];
+      if (typeof t === "number" && t >= 5 && (typeof pct !== "number" || pct < 95)) resumeStart = t;
+    } catch {}
+
     const tryExternalOnly = () => {
-      // TorrServer reachable but no HLS → raw may still play mp4. Set raw src.
+      // TorrServer reachable but no HLS → raw may still play mp4. Clear any
+      // previous src first: a lingering src keeps buffering the old file and
+      // can wedge the new attach.
+      try { v.removeAttribute("src"); v.load(); } catch {}
       v.src = stream.raw;
+      // The native path has no ABR ladder and no retry: a decode failure is
+      // terminal, so surface it instead of leaving a dead play button with
+      // no message and no recovery path.
+      v.addEventListener("error", () => {
+        setError("Поток недоступен. Попробуйте другой файл торрента или внешний плеер.");
+      }, { once: true });
+      if (resumeStart >= 5) {
+        v.addEventListener("loadedmetadata", () => { try { v.currentTime = resumeStart; } catch {} }, { once: true });
+      }
       v.play().catch(() => {});
     };
 
@@ -321,10 +374,24 @@ export default function TorrPlayer({
       const Hls = await loadHls();
       if (disposed) return;
       if (Hls.isSupported()) {
+        // Buffer config tuned for TorrServer: every segment must first be
+        // PRODUCED by TorrServer fetching the corresponding torrent pieces,
+        // so a 30 s forward buffer (hls.js default) leaves the playhead one
+        // piece-fetch hiccup away from a rebuffer. A 120 s forward buffer
+        // plus patient fragment timeouts/retries absorb the legitimately
+        // slow-but-working case instead of surfacing it as a stall.
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          backBufferLength: 30,
+          backBufferLength: 60,
+          capLevelToPlayerSize: true,
+          maxBufferLength: 120,
+          maxMaxBufferLength: 600,
+          maxBufferSize: 200 * 1000 * 1000,
+          fragLoadingMaxRetry: 8,
+          fragLoadingTimeOut: 30000,
+          fragLoadingMaxRetryTimeout: 60000,
+          startPosition: resumeStart,
         });
         hlsRef.current = hls;
         hls.loadSource(stream.hls);
@@ -344,11 +411,20 @@ export default function TorrPlayer({
           }
         });
         hls.on(Hls.Events.ERROR, (_e, data) => {
-          if (data?.fatal) {
-            // Fall back to raw stream (works for mp4) — HLS unavailable on this build
-            destroyHls();
-            tryExternalOnly();
+          if (!data?.fatal) return;
+          // Retry ladder before surrendering to the raw stream: a single
+          // transient segment failure (a slow piece, a blip) used to drop
+          // the whole engine immediately.
+          errCountRef.current += 1;
+          if (errCountRef.current <= 4) {
+            try {
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) { hls.startLoad(); return; }
+              if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
+            } catch {}
           }
+          // Fall back to raw stream (works for mp4) — HLS unavailable on this build
+          destroyHls();
+          tryExternalOnly();
         });
       } else {
         // No hls.js support (unlikely in Electron) — try native HLS, else raw
@@ -365,10 +441,30 @@ export default function TorrPlayer({
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const onTime = () => setCurrent(v.currentTime || 0);
+    // rAF-coalesced timeupdate: each raw event (4 Hz) used to setState →
+    // full re-render of this component while frames decode. One setState per
+    // animation frame, skipping no-op values.
+    let timeRaf = 0;
+    let lastSetT = -1;
+    const onTime = () => {
+      const t = v.currentTime || 0;
+      if (timeRaf) return;
+      timeRaf = requestAnimationFrame(() => {
+        timeRaf = 0;
+        if (Math.abs(t - lastSetT) > 0.05) { lastSetT = t; setCurrent(t); }
+      });
+    };
     const onDur = () => setDuration(v.duration || 0);
     const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
+    const onPause = () => {
+      setPlaying(false);
+      // Persist the exact position on pause so a reopen resumes here.
+      try {
+        const map = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
+        map[progressKey] = Math.max(0, Math.round((v.currentTime || 0) * 10) / 10);
+        setCappedMap(STORAGE_KEYS.RESUME_TIME, map);
+      } catch {}
+    };
     const onWaiting = () => setWaiting(true);
     const onPlaying = () => setWaiting(false);
     const onCanPlay = () => setWaiting(false);
@@ -380,6 +476,7 @@ export default function TorrPlayer({
     v.addEventListener("playing", onPlaying);
     v.addEventListener("canplay", onCanPlay);
     return () => {
+      if (timeRaf) { cancelAnimationFrame(timeRaf); timeRaf = 0; }
       v.removeEventListener("timeupdate", onTime);
       v.removeEventListener("durationchange", onDur);
       v.removeEventListener("play", onPlay);
@@ -388,7 +485,7 @@ export default function TorrPlayer({
       v.removeEventListener("playing", onPlaying);
       v.removeEventListener("canplay", onCanPlay);
     };
-  }, [stream]);
+  }, [stream, progressKey]);
 
   // ── Auto-hide controls during playback (3s of inactivity) ───────────────────
   const showControls = useCallback(() => {
@@ -415,7 +512,18 @@ export default function TorrPlayer({
       const pct = Math.min(100, Math.round((v.currentTime / v.duration) * 100));
       // saveProgress(progressKey, pct) — 2-arg signature used by both pages
       saveRef.current?.(progressKey, pct);
-      if (pct >= watchedThreshold) markWatchedRef.current?.(progressKey);
+      // Persist the exact timecode too, so a reopen resumes at the same
+      // second (OnlinePlayer's mechanism; the torrent source had none).
+      try {
+        const map = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
+        map[progressKey] = Math.max(0, Math.round(v.currentTime * 10) / 10);
+        setCappedMap(STORAGE_KEYS.RESUME_TIME, map);
+      } catch {}
+      // watchedThreshold is SECONDS REMAINING (matches OnlinePlayer). The old
+      // `pct >= watchedThreshold` compared a percentage against 20 and marked
+      // the title watched at 20 % of runtime.
+      const remaining = v.duration - v.currentTime;
+      if (remaining >= 0 && remaining <= watchedThreshold) markWatchedRef.current?.(progressKey);
     }, 5000);
     return () => clearInterval(progressTimerRef.current);
   }, [stream, watchedThreshold]);
@@ -425,7 +533,9 @@ export default function TorrPlayer({
   // timestamps. Only for anime series (AniSkip is episode-based). Best-effort:
   // a RU-dub torrent may shift the OP/ED a few seconds, but the user can dismiss.
   useEffect(() => {
-    if (introSkipMode === "off" || !isAnimeSeries) return;
+    // Gate on duration: it is a dep (better-aligned OP/ED once the real length
+    // is known), so without the guard the fetch ran twice per episode.
+    if (introSkipMode === "off" || !isAnimeSeries || !duration) return;
     let cancelled = false;
     (async () => {
       try {
@@ -611,7 +721,9 @@ export default function TorrPlayer({
     setFileIndex(idx);
     setBusy("stream");
     const fileName = bestFileName(files, idx);
-    const s = await torrStream({ hash: activeHash, index: idx, fileName });
+    let s;
+    try { s = await torrStream({ hash: activeHash, index: idx, fileName }); }
+    catch (err) { setBusy(""); setError(err?.message || "Не удалось получить поток"); return; }
     setBusy("");
     if (s?.ok) setStream({ raw: s.raw, hls: s.hls });
     else setError(s?.error || "Не удалось получить поток");
@@ -623,7 +735,9 @@ export default function TorrPlayer({
     const hash = (t.hash || t.Hash || "").toLowerCase();
     if (!hash) return;
     setBusy("get");
-    const got = await torrGet(hash);
+    let got;
+    try { got = await torrGet(hash); }
+    catch (err) { setBusy(""); setError(err?.message || "Не удалось получить торрент"); return; }
     setBusy("");
     const torrent = got?.ok ? got.torrent : t;
     setActiveHash(hash);
@@ -635,16 +749,21 @@ export default function TorrPlayer({
   const removeDb = async (t) => {
     const hash = (t.hash || t.Hash || "").toLowerCase();
     if (!hash) return;
-    await torrRem(hash);
-    const list = await torrList();
+    try { await torrRem(hash); } catch {}
+    let list;
+    try { list = await torrList(); } catch {}
     if (list?.ok) setDbTorrents(list.list || []);
   };
 
   const onPickTorrentFile = async () => {
-    const picked = await pickTorrentFile();
+    let picked;
+    try { picked = await pickTorrentFile(); }
+    catch (err) { setError(err?.message || "Не удалось выбрать файл"); return; }
     if (!picked?.ok) return;
     setBusy("add");
-    const res = await torrAddFile(picked.path, queryTitle || activeHash || "");
+    let res;
+    try { res = await torrAddFile(picked.path, queryTitle || activeHash || ""); }
+    catch (err) { setBusy(""); setError(err?.message || "Не удалось добавить .torrent"); return; }
     setBusy("");
     if (!res?.ok) {
       setError(res?.error || "Не удалось добавить .torrent");

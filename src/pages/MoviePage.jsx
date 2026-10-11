@@ -6,10 +6,15 @@ import {
   memo,
   useCallback,
   useMemo,
+  lazy,
+  Suspense,
 } from "react";
 import {
   tmdbFetch,
   imgUrl,
+  posterSize,
+  backdropSize,
+  contentWidth,
   PLAYER_SOURCES,
   getSourceUrl,
   sourceSupportsProgress,
@@ -41,12 +46,19 @@ import {
   ShieldBlockIcon,
   PopOutIcon,
 } from "../components/Icons";
-import DownloadModal from "../components/DownloadModal";
-import TrailerModal from "../components/TrailerModal";
-import BlockedStatsModal from "../components/BlockedStatsModal";
-import TorrPlayer from "../components/TorrPlayer";
-import OnlinePlayer from "../components/OnlinePlayer";
+// The player subtree is ~400 KB of source (useLampacSource + lampac-client +
+// both players + the download modal) that the detail page does not need until
+// the viewer presses Play. As static imports it all landed in the movie/tv
+// chunk, so the FIRST poster click paid for it before anything rendered —
+// a visible freeze on a cold navigation. Lazy boundaries move it behind the
+// click; the Suspense fallback is the player stage's own loading UI.
+const DownloadModal = lazy(() => import("../components/DownloadModal"));
+const TrailerModal = lazy(() => import("../components/TrailerModal"));
+const BlockedStatsModal = lazy(() => import("../components/BlockedStatsModal"));
+const TorrPlayer = lazy(() => import("../components/TorrPlayer"));
+const OnlinePlayer = lazy(() => import("../components/OnlinePlayer"));
 import { useBlockedStats } from "../utils/useBlockedStats";
+import useElementWidth from "../utils/useElementWidth";
 import MediaCard from "../components/MediaCard";
 import {
   storage,
@@ -81,6 +93,22 @@ export default function MoviePage({
   onGoToDownloads,
   onSelect,
 }) {
+  // .main's measured width (ResizeObserver) for the hero backdrop rung —
+  // replaces the contentWidth() sync layout read that ran on every render.
+  const [mainWidth, setMainWidth] = useState(0);
+  const mainRef = useRef(null);
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    if (typeof ResizeObserver === "undefined") { setMainWidth(el.clientWidth || 0); return; }
+    const ro = new ResizeObserver(([entry]) => {
+      const w = Math.round(entry.contentRect?.width || el.clientWidth || 0);
+      setMainWidth((prev) => (Math.abs(prev - w) > 1 ? w : prev));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const [details, setDetails] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [showDownload, setShowDownload] = useState(false);
@@ -90,12 +118,12 @@ export default function MoviePage({
   const [interceptedSubs, setInterceptedSubs] = useState([]);
   const [playerSource, setPlayerSource] = useState(() => {
     const saved = storage.get("playerSource");
-    // On web, ONLY "online" works. Check window.__webShim directly (set by
-    // the web shim at import time) — more reliable than a re-exported const.
+    // New browser sessions use our source host; keep supported saved choices.
     const isWeb = typeof window !== "undefined" && !!window.__webShim;
     if (isWeb) {
-      if (saved && saved !== "online") storage.set("playerSource", "online");
-      return "online";
+      if (saved && availableSources().some((s) => s.id === saved)) return saved;
+      if (saved) storage.set("playerSource", "lampac");
+      return "lampac";
     }
     return saved || NON_ANIME_DEFAULT_SOURCE;
   });
@@ -116,6 +144,9 @@ export default function MoviePage({
   const [menuPos, setMenuPos] = useState(null);
   const sourceRef = useRef(null);
   const playerWrapRef = useRef(null);
+  // `.detail-poster` is 200 / 120 / 100 px across breakpoints; measuring picks
+  // the rung (w185 vs w154 vs w92) without duplicating those media queries here.
+  const [detailPosterRef, detailPosterWidth] = useElementWidth();
   const webviewRef = useRef(null);
   // Always-current refs for interval callbacks, avoids stale closures without restarting the interval
   const saveProgressRef = useRef(saveProgress);
@@ -141,6 +172,28 @@ export default function MoviePage({
   useEffect(() => {
     if (!!window.__webShim) setWebviewLoading(false);
   }, [!!window.__webShim]);
+
+  // Web build: no <webview>, no pop-out window, no request blocker → the
+  // overlay buttons that drive them are dead chrome and must not render.
+  const webMode = typeof window !== "undefined" && !!window.__webShim;
+  // In-app sources (OnlinePlayer / TorrPlayer) render their own <video>, so the
+  // webview-only chrome (pop-out, ad-block counter) and the manual
+  // "Mark progress" row are redundant — our player tracks progress itself.
+  const inAppSource = sourceIsInApp(playerSource);
+  const showWebviewChrome = !webMode && !inAppSource;
+
+  // ── Theater mode: scroll the player into view when playback starts ────────
+  useEffect(() => {
+    if (!playing) return;
+    // The player mounts in the same commit; wait one frame so layout is final.
+    const raf = requestAnimationFrame(() => {
+      playerWrapRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [playing]);
 
   // Derived: detect anime before any effects so effects can use it
   const isAnime = useMemo(
@@ -382,7 +435,7 @@ export default function MoviePage({
                 setM3u8Url(res.url);
               })
               .catch(() => {
-                if (mounted) setResolveError("Failed to start local player");
+                if (mounted) setResolveError("Не удалось запустить локальный плеер");
               });
           } else {
             resolvedPlayerUrlRef.current = res.url;
@@ -401,12 +454,12 @@ export default function MoviePage({
             setResolveError(null);
             setPlayerSource(next);
           } else {
-            setResolveError(res?.error || "Movie not found on AllManga");
+            setResolveError(res?.error || "Фильм не найден на AllManga");
           }
         }
       })
       .catch((e) => {
-        if (mounted) setResolveError(e.message || "Error");
+        if (mounted) setResolveError(e.message || "Ошибка");
       })
       .finally(() => {
         if (mounted) {
@@ -704,19 +757,33 @@ export default function MoviePage({
   );
 
   return (
-    <div className="fade-in">
+    <div className="fade-in" ref={mainRef}>
       <div className="detail-hero">
         <div
           className="detail-bg"
           style={{
-            backgroundImage: `url(${imgUrl(d.backdrop_path, "w1280")})`,
+            backgroundImage: `url(${imgUrl(
+              d.backdrop_path,
+              backdropSize(mainWidth || 1280),
+            )})`,
           }}
         />
         <div className="detail-gradient" />
         <div className="detail-content">
-          <div className="detail-poster" style={{ position: "relative" }}>
+          <div
+            className="detail-poster"
+            style={{ position: "relative" }}
+            ref={detailPosterRef}
+          >
             {d.poster_path ? (
-              <img src={imgUrl(d.poster_path)} alt={title} loading="lazy" />
+              detailPosterWidth > 0 && (
+                <img
+                  src={imgUrl(d.poster_path, posterSize(detailPosterWidth))}
+                  alt={title}
+                  loading="lazy"
+                  decoding="async"
+                />
+              )
             ) : (
               <div
                 style={{
@@ -738,7 +805,7 @@ export default function MoviePage({
             )}
           </div>
           <div className="detail-info">
-            <div className="detail-type">Movie</div>
+            <div className="detail-type">Фильм</div>
             <div className="detail-title">{title}</div>
             <div className="genres">
               {displayGenres.map((g) => (
@@ -754,7 +821,7 @@ export default function MoviePage({
                 </span>
               )}
               {year && <span>{year}</span>}
-              {d.runtime && <span>{d.runtime} min</span>}
+              {d.runtime && <span>{d.runtime} мин</span>}
               {d.original_language && (
                 <span>{d.original_language?.toUpperCase()}</span>
               )}
@@ -771,7 +838,7 @@ export default function MoviePage({
                 <span className="age-rating-pill-cert">{rating.cert}</span>
                 {restricted && (
                   <span className="age-rating-pill-label">
-                    Inappropriate for your age setting
+                    Не подходит для выбранного возрастного ограничения
                   </span>
                 )}
               </div>
@@ -795,21 +862,21 @@ export default function MoviePage({
                 <button
                   className="btn btn-primary btn-restricted"
                   disabled
-                  title="This movie has not been released yet"
+                  title="Фильм ещё не вышел"
                 >
-                  🔒 Unreleased
+                  🔒 Ещё не вышел
                 </button>
               ) : restricted ? (
                 <button
                   className="btn btn-primary btn-restricted"
                   disabled
-                  title="Inappropriate for your age rating setting"
+                  title="Не подходит для выбранного возрастного ограничения"
                 >
-                  🔒 Restricted
+                  🔒 Ограничен по возрасту
                 </button>
               ) : (
                 <button className="btn btn-primary" onClick={handlePlay}>
-                  <PlayIcon /> {playing ? "Restart" : "Play"}
+                  <PlayIcon /> {playing ? "Сначала" : "Смотреть"}
                 </button>
               )}
               {trailerKey &&
@@ -817,21 +884,21 @@ export default function MoviePage({
                   <button
                     className="btn btn-secondary btn-restricted"
                     disabled
-                    title="Inappropriate for your age rating setting"
+                    title="Не подходит для выбранного возрастного ограничения"
                   >
-                    🔒 Trailer
+                    🔒 Трейлер
                   </button>
                 ) : (
                   <button
                     className="btn btn-secondary"
                     onClick={() => setShowTrailer(true)}
                   >
-                    <TrailerIcon /> Trailer
+                    <TrailerIcon /> Трейлер
                   </button>
                 ))}
               <button className="btn btn-secondary" onClick={onSave}>
                 {isSaved ? <BookmarkFillIcon /> : <BookmarkIcon />}
-                {isSaved ? "Saved" : "Save"}
+                {isSaved ? "Сохранено" : "В избранное"}
               </button>
               {!isUnreleased &&
                 (isWatched ? (
@@ -839,7 +906,7 @@ export default function MoviePage({
                     className="btn btn-ghost watched-btn"
                     onClick={() => onMarkUnwatched?.(progressKey)}
                   >
-                    <WatchedIcon size={16} /> Watched
+                    <WatchedIcon size={16} /> Просмотрено
                   </button>
                 ) : (
                   <>
@@ -847,7 +914,7 @@ export default function MoviePage({
                       className="btn btn-ghost"
                       onClick={() => onMarkWatched?.(progressKey)}
                     >
-                      ✓ Mark Watched
+                      ✓ Отметить просмотренным
                     </button>
                     {hasProgress && (
                       <button
@@ -879,8 +946,11 @@ export default function MoviePage({
           >
             {sourceIsInApp(playerSource) && (
               <div className="torrplayer-stage">
-                {playerSource === "online" ? (
+                <Suspense fallback={<div className="torrplayer-loading">Загрузка плеера…</div>}>
+                {playerSource === "online" || playerSource === "lampac" ? (
                   <OnlinePlayer
+                    key={playerSource}
+                    provider={playerSource}
                     apiKey={apiKey}
                     item={item}
                     details={details}
@@ -889,6 +959,17 @@ export default function MoviePage({
                     saveProgress={saveProgress}
                     onMarkWatched={onMarkWatched}
                     watchedThreshold={watchedThreshold}
+                    onSourceFailed={({ provider: failedProvider }) => {
+                      // Auto-failover: Collaps returned 410 (embed domain lost
+                      // this title's iframe — rotates every few weeks) → switch
+                      // to Lampac so the balancer picker surfaces a working
+                      // sibling. Persisted per-title so we don't loop back to a
+                      // dead source on next play.
+                      if (failedProvider === "online" && playerSource === "online") {
+                        setFailoverSource(`movie_${item.id}_${dubMode}`, "lampac");
+                        setPlayerSource("lampac");
+                      }
+                    }}
                   />
                 ) : (
                   <TorrPlayer
@@ -903,6 +984,7 @@ export default function MoviePage({
                     details={details}
                   />
                 )}
+                </Suspense>
               </div>
             )}
             {/* Universal source-loading overlay, shown instantly on every source/item switch */}
@@ -924,8 +1006,8 @@ export default function MoviePage({
                 <div className="spinner" />
                 <span style={{ fontSize: 14, color: "var(--text2)" }}>
                   {resolvingUrl
-                    ? "Looking up movie on AllManga…"
-                    : `Loading ${PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "source"}…`}
+                    ? "Ищем фильм на AllManga…"
+                    : `Загрузка: ${PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "источник"}…`}
                 </span>
               </div>
             )}
@@ -947,7 +1029,7 @@ export default function MoviePage({
               >
                 <span style={{ fontSize: 28 }}>⚠️</span>
                 <span style={{ fontSize: 14, color: "var(--text2)" }}>
-                  Movie not found on AllManga
+                  Фильм не найден на AllManga
                 </span>
                 <span style={{ fontSize: 12, color: "var(--text3)" }}>
                   {resolveError}
@@ -981,7 +1063,7 @@ export default function MoviePage({
                     fontWeight: 600,
                   }}
                 >
-                  Playing in pop-out window
+                  Воспроизведение в отдельном окне
                 </span>
                 <span
                   style={{
@@ -998,7 +1080,7 @@ export default function MoviePage({
                   onClick={() => window.electron?.closePipWindow?.()}
                   style={{ marginTop: 4 }}
                 >
-                  Close pop-out &amp; return
+                  Закрыть окно и вернуться
                 </button>
               </div>
             )}
@@ -1051,11 +1133,12 @@ export default function MoviePage({
                     setMenuPos({ top: rect.bottom + 6, left: rect.left });
                   setShowSourceMenu((v) => !v);
                 }}
-                title="Change source"
+                title="Сменить источник"
               >
                 <SourceIcon />
                 {PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ??
                   "Source"}
+                <span className="player-overlay-caret">▾</span>
               </button>
               {/* Sub/Dub toggle, only for async (AllManga) sources */}
               {sourceIsAsync(playerSource) && (
@@ -1073,26 +1156,30 @@ export default function MoviePage({
                     setResolvingUrl(false);
                     setResolveError(null);
                   }}
-                  title="Toggle Sub/Dub"
+                  title="Переключить субтитры / дубляж"
                 >
                   {dubMode === "sub" ? "SUB" : "DUB"}
                 </button>
               )}
-              {/* Blocked ads & trackers button */}
+              {/* Blocked ads & trackers button — webview-only (in-app players
+                  make no third-party requests, web build has no blocker) */}
+              {showWebviewChrome && (
               <button
                 className="player-overlay-btn"
                 onClick={() => {
                   setShowSourceMenu(false);
                   setShowBlockedModal(true);
                 }}
-                title="Blocked ads & trackers"
+                title="Блокировка рекламы и трекеров"
               >
                 <ShieldBlockIcon />
                 {blockedSession > 0 && (
                   <span className="player-blocked-badge">{blockedSession}</span>
                 )}
               </button>
-              {/* Pop-out button*/}
+              )}
+              {/* Pop-out button — desktop webview sources only */}
+              {showWebviewChrome && (
               <button
                 className="player-overlay-btn"
                 onClick={() => {
@@ -1116,7 +1203,7 @@ export default function MoviePage({
                   pipUrlRef.current = url;
                   window.electron?.openPipWindow?.(url, item.title);
                 }}
-                title={pipOpen ? "Close pop-out" : "Pop out player"}
+                title={pipOpen ? "Закрыть отдельное окно" : "Открыть плеер в отдельном окне"}
                 disabled={
                   !pipOpen &&
                   (webviewLoading ||
@@ -1126,6 +1213,7 @@ export default function MoviePage({
               >
                 <PopOutIcon />
               </button>
+              )}
             </div>
             {showSourceMenu && menuPos && (
               <div
@@ -1169,6 +1257,7 @@ export default function MoviePage({
                 ))}
               </div>
             )}
+            {!webMode && (
             <button
               className="player-overlay-btn"
               onClick={() =>
@@ -1179,9 +1268,9 @@ export default function MoviePage({
               title={
                 movieDownload
                   ? movieDownload.status === "downloading"
-                    ? "Downloading… - view in Downloads"
-                    : "Already downloaded - view in Downloads"
-                  : "Download"
+                    ? "Загружается… · открыть загрузки"
+                    : "Уже загружено · открыть загрузки"
+                  : "Скачать"
               }
             >
               {movieDownload ? (
@@ -1205,12 +1294,13 @@ export default function MoviePage({
               {!sourceSupportsProgress(playerSource) && (
                 <span
                   className="player-no-progress-hint"
-                  title="No automatic progress tracking for this source"
+                  title="Для этого источника прогресс не отслеживается автоматически"
                 >
                   ⚠ no tracking
                 </span>
               )}
             </button>
+            )}
           </div>
 
           {displayPct > 0 && (
@@ -1226,6 +1316,9 @@ export default function MoviePage({
               </span>
             </div>
           )}
+          {/* Manual progress marks — only for sources that cannot report their
+              own position (in-app players save progress automatically). */}
+          {!inAppSource && (
           <div className="progress-mark-row">
             <span
               style={{ fontSize: 12, color: "var(--text3)", marginRight: 4 }}
@@ -1243,6 +1336,7 @@ export default function MoviePage({
               </button>
             ))}
           </div>
+          )}
         </div>
       )}
 
@@ -1272,24 +1366,29 @@ export default function MoviePage({
       )}
 
       {showTrailer && trailerKey && (
-        <TrailerModal
-          trailerKey={trailerKey}
-          title={title}
-          onClose={() => setShowTrailer(false)}
-        />
+        <Suspense fallback={null}>
+          <TrailerModal
+            trailerKey={trailerKey}
+            title={title}
+            onClose={() => setShowTrailer(false)}
+          />
+        </Suspense>
       )}
 
       {showBlockedModal && (
-        <BlockedStatsModal
-          sessionDomains={getBlockedDomains()}
-          sessionTotal={blockedSession}
-          alltimeTotal={blockedAlltime}
-          onClose={() => setShowBlockedModal(false)}
-        />
+        <Suspense fallback={null}>
+          <BlockedStatsModal
+            sessionDomains={getBlockedDomains()}
+            sessionTotal={blockedSession}
+            alltimeTotal={blockedAlltime}
+            onClose={() => setShowBlockedModal(false)}
+          />
+        </Suspense>
       )}
 
       {showDownload && (
-        <DownloadModal
+        <Suspense fallback={null}>
+          <DownloadModal
           onClose={() => setShowDownload(false)}
           m3u8Url={m3u8Url}
           subtitles={interceptedSubs}
@@ -1303,6 +1402,7 @@ export default function MoviePage({
           posterPath={d.poster_path}
           tmdbId={item.id}
         />
+        </Suspense>
       )}
     </div>
   );
@@ -1320,7 +1420,8 @@ const CollectionCard = memo(function CollectionCard({
   onMarkWatched,
   onMarkUnwatched,
 }) {
-  const handleClick = useCallback(() => onSelect(part), [onSelect, part]);
+  // MediaCard invokes onClick(item), so the stable onSelect is passed straight
+  // through — no per-card closure, so MediaCard's memo actually bails out.
   return (
     <div
       style={{
@@ -1330,7 +1431,7 @@ const CollectionCard = memo(function CollectionCard({
     >
       <MediaCard
         item={part}
-        onClick={handleClick}
+        onClick={onSelect}
         progress={progress}
         watched={watched}
         onMarkWatched={onMarkWatched}

@@ -1,0 +1,53 @@
+services:
+  lampac:
+    image: ghcr.io/lampac-nextgen/lampac:1.81.0@sha256:409ca4ebbcc9e92579872370a4c237880d624e7cb47063d573e51d6358feb808
+    restart: unless-stopped
+    shm_size: 1gb
+    volumes:
+      - ./config/init.conf:/lampac/init.conf:ro
+      - ./data/passwd:/lampac/passwd:ro
+    depends_on:
+      - chrome-cdp
+    networks:
+      - backend
+
+  source-host:
+    build:
+      context: ../..
+      dockerfile: source-host/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9120:9120"
+    environment:
+      PORT: 9120
+      SOURCE_ENGINE_URL: http://lampac:9118
+      SOURCE_HOST_SECRET_FILE: /run/secrets/source_host_secret
+      SOURCE_PUBLIC_ORIGIN: "${SOURCE_PUBLIC_ORIGIN:-}"
+      SOURCE_API_KEY: "${SOURCE_API_KEY:-}"
+    volumes:
+      - ./data/source-host-secret:/run/secrets/source_host_secret:ro
+    depends_on:
+      - lampac
+    networks:
+      - backend
+
+  chrome:
+    image: lscr.io/linuxserver/chrome:latest@sha256:84219d3d4049b7ec93daea4aa4aaa02b1fc6ccdcd67dc2e22562a3027ae13ea4
+    restart: unless-stopped
+    environment:
+      CHROME_CLI: --remote-debugging-port=9222 --user-data-dir=/config/cdp-profile
+    shm_size: 1gb
+    networks:
+      - backend
+
+  chrome-cdp:
+    image: alpine/socat:latest@sha256:fb3862c949af7c79996d0e514ee96128644d840835ed5368eeecb14a869de361
+    restart: unless-stopped
+    command: tcp-listen:9223,fork,reuseaddr tcp:127.0.0.1:9222
+    network_mode: service:chrome
+    depends_on:
+      - chrome
+
+networks:
+  backend:
+    name: lampac-backend

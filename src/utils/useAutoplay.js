@@ -11,6 +11,12 @@ export function useAutoplay({ nextEp, playEpisode, restricted }) {
   const [autoplayCountdown, setAutoplayCountdown] = useState(null);
   const countdownIntervalRef = useRef(null);
   const countdownStartedRef = useRef(false);
+  // Guard against re-entry: if the parent effect fires `triggerAutoplay()`
+  // twice in the same render window (the progress ticker can — it reads
+  // localCountdownStartedRef before the effect that resets it on episode
+  // change has flushed) we'd call playEpisode(nextEp) twice and skip an
+  // episode. Reset on cancel / reset / unmount.
+  const triggeredRef = useRef(false);
 
   // Keep references to nextEp and playEpisode up-to-date
   const nextEpRef = useRef(nextEp);
@@ -43,6 +49,9 @@ export function useAutoplay({ nextEp, playEpisode, restricted }) {
       ? new Date(currentNextEp.air_date) > _todayForEpisodes
       : false;
     if (restricted || epUnreleased) return;
+
+    if (triggeredRef.current) return; // already fired for this episode
+    triggeredRef.current = true;
 
     // Instant mode: skip the countdown/overlay and play the next episode
     // immediately when the ending trigger fires (outro start or threshold).
@@ -89,6 +98,7 @@ export function useAutoplay({ nextEp, playEpisode, restricted }) {
   const resetAutoplay = useCallback(() => {
     cancelAutoplay();
     countdownStartedRef.current = false;
+    triggeredRef.current = false;
   }, [cancelAutoplay]);
 
   // Clean up interval on unmount

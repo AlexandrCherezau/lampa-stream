@@ -1,0 +1,108 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const base = new URL('../infrastructure/lampac/', import.meta.url);
+const repo = new URL('../', import.meta.url);
+const config = JSON.parse(readFileSync(new URL('config/init.conf', base), 'utf8'));
+const compose = readFileSync(new URL('docker-compose.yml', base), 'utf8');
+const dockerfile = readFileSync(new URL('source-host/Dockerfile', repo), 'utf8');
+const setup = readFileSync(new URL('setup.sh', base), 'utf8');
+const vercelConfig = JSON.parse(readFileSync(new URL('config/vercel.init.conf', base), 'utf8'));
+const vercelProjectConfig = JSON.parse(readFileSync(new URL('vercel.json', base), 'utf8'));
+const vercelDockerfile = readFileSync(new URL('Dockerfile.vercel', base), 'utf8');
+const vercelStart = readFileSync(new URL('start-vercel.sh', base), 'utf8');
+
+assert.equal(config.chromium.enable, true, 'Zetflix requires Lampac Playwright Chromium');
+assert.equal(config.chromium.Headless, false, 'Zetflix Playwright must use the hidden virtual display');
+assert.equal(config.Zetflix.enable, true);
+assert.equal(config.ZetflixDB.enable, true);
+assert.equal(config.VideoDB.cdp, 'http://chrome:9223');
+assert.equal(config.VideoDB.httptimeout, 30);
+assert.ok(config.listen.ResponseCancelAfter >= 50, 'Lampac must allow the VideoDB browser challenge to finish');
+assert.deepEqual(config.BaseModule.LoadModules, ['Online', 'OnlineRUS', 'OnlineAnime', 'OnlinePaid', 'Kit']);
+assert.ok(['SISI', 'Adult', 'DLNA', 'GStreamer', 'AdminPanel', 'LampaWeb', 'JacRed', 'TorrServer'].every(
+  (name) => config.BaseModule.SkipModules.includes(name),
+));
+assert.match(compose, /ghcr\.io\/lampac-nextgen\/lampac:1\.81\.0@sha256:[a-f0-9]{64}/);
+assert.match(compose, /127\.0\.0\.1:9120:9120/);
+assert.doesNotMatch(compose, /127\.0\.0\.1:9118:9118/);
+assert.match(compose, /network_mode: service:chrome/);
+assert.match(compose, /\.\/data\/passwd:\/lampac\/passwd:ro/);
+assert.match(compose, /\.\/data\/source-host-secret:\/run\/secrets\/source_host_secret:ro/);
+assert.match(compose, /SOURCE_ENGINE_URL: http:\/\/lampac:9118/);
+assert.match(compose, /SOURCE_HOST_SECRET_FILE: \/run\/secrets\/source_host_secret/);
+assert.match(compose, /SOURCE_PUBLIC_ORIGIN:/);
+assert.match(compose, /SOURCE_API_KEY:/);
+assert.match(compose, /lscr\.io\/linuxserver\/chrome:latest@sha256:[a-f0-9]{64}/);
+assert.match(compose, /CHROME_CLI: --remote-debugging-port=9222 --user-data-dir=\/config\/cdp-profile/);
+assert.doesNotMatch(compose, /--headless/i, 'VideoDB cookie browser must run headed in the image virtual display');
+assert.match(dockerfile, /USER node/);
+assert.match(dockerfile, /EXPOSE 9120/);
+assert.match(setup, /umask 077/);
+assert.deepEqual([...compose.matchAll(/^\s+- "(\d+(?:\.\d+){3}:\d+:\d+)"$/gm)].map((match) => match[1]), ['127.0.0.1:9120:9120']);
+assert.doesNotMatch(compose, /^\s+expose:/m, 'Backend/CDP ports stay internal to Docker');
+
+assert.equal(vercelConfig.chromium.enable, true);
+assert.equal(vercelConfig.chromium.Headless, false);
+assert.equal(vercelConfig.chromium.executablePath, '/usr/bin/chromium');
+assert.equal(vercelConfig.Zetflix.enable, true);
+assert.equal(vercelConfig.ZetflixDB.enable, true);
+assert.equal(vercelConfig.VideoDB.cdp, 'http://127.0.0.1:9222');
+assert.equal(vercelConfig.VideoDB.httptimeout, 30);
+assert.equal(vercelConfig.listen.ip, '127.0.0.1', 'Lampac API is loopback-only in the single-container image');
+assert.equal(vercelConfig.listen.port, 9118);
+assert.ok(vercelConfig.listen.ResponseCancelAfter >= 50);
+assert.deepEqual(vercelConfig.BaseModule.LoadModules, ['Online', 'OnlineRUS', 'OnlineAnime', 'OnlinePaid', 'Kit']);
+assert.deepEqual(vercelConfig.BaseModule.SkipModules, config.BaseModule.SkipModules);
+assert.deepEqual(vercelProjectConfig.services.sources, {
+  root: '.',
+  runtime: 'container',
+  entrypoint: 'Dockerfile.vercel',
+});
+assert.deepEqual(vercelProjectConfig.regions, ['fra1'], 'the source container should use Vercel Frankfurt');
+assert.deepEqual(vercelProjectConfig.rewrites, [{ source: '/(.*)', destination: { service: 'sources' } }]);
+assert.match(vercelDockerfile, /ghcr\.io\/lampac-nextgen\/lampac:1\.81\.0@sha256:[a-f0-9]{64}/);
+assert.match(vercelDockerfile, /node:24\.13\.0-bookworm-slim@sha256:[a-f0-9]{64}/);
+assert.match(vercelDockerfile, /COPY source-host\/ \/app\//);
+assert.match(vercelDockerfile, /EXPOSE 9120/);
+assert.match(vercelDockerfile, /c\.chromium\.enable=false/);
+assert.match(vercelDockerfile, /c\.listen\.ip="127\.0\.0\.1"/);
+assert.match(vercelDockerfile, /c\.listen\.port=19118/);
+assert.match(vercelDockerfile, /grep -q '\^Configure complete'/);
+assert.match(vercelDockerfile, /test "\$module_count" -ge 50/);
+assert.match(vercelDockerfile, /cp -a \/lampac\/cache\/module\/\. \/opt\/lampac\/module-cache\//);
+assert.doesNotMatch(vercelDockerfile, /SOURCE_HOST_SECRET|SOURCE_API_KEY/);
+assert.match(vercelDockerfile, /ENTRYPOINT \["\/usr\/local\/bin\/start-vercel"\]/);
+assert.match(vercelDockerfile, /CMD \[\]/);
+assert.match(vercelDockerfile, /WORKDIR \/app/);
+assert.match(vercelDockerfile, /ln -s \/tmp\/lampac-runtime\/cache \/lampac\/cache/);
+assert.match(vercelDockerfile, /ln -s \/tmp\/lampac-runtime\/init\.conf \/lampac\/init\.conf/);
+assert.match(vercelDockerfile, /ln -s \/tmp\/lampac-runtime\/current\.conf \/lampac\/current\.conf/);
+assert.match(vercelStart, /cd \/lampac/);
+assert.doesNotMatch(vercelStart, /cd "\$runtime_dir"/);
+assert.match(vercelStart, /SOURCE_HOST_SECRET/);
+assert.match(vercelStart, /SOURCE_API_KEY/);
+assert.match(vercelStart, /SOURCE_PUBLIC_ORIGIN/);
+assert.match(vercelStart, /SOURCE_ENGINE_READY_FILE="\/tmp\/lampac-runtime\/ready"/);
+assert.match(vercelStart, /cp -a \/opt\/lampac\/module-cache\/\. "\$runtime_dir\/cache\/module\/"/);
+assert.ok(vercelStart.indexOf('cp -a /opt/lampac/module-cache/. "$runtime_dir/cache/module/"') < vercelStart.indexOf('node /app/server.mjs &'));
+assert.match(vercelStart, /engine_start_file="\$\{SOURCE_ENGINE_READY_FILE\}\.start"/);
+assert.match(vercelStart, /rm -f "\$SOURCE_ENGINE_READY_FILE" "\$engine_start_file"/);
+assert.match(vercelStart, /node \/app\/server\.mjs &/);
+assert.match(vercelStart, /while \[ ! -f "\$engine_start_file" \]/);
+assert.match(vercelStart, /touch "\$SOURCE_ENGINE_READY_FILE"/);
+assert.ok(vercelStart.indexOf('node /app/server.mjs &') < vercelStart.indexOf('/usr/share/dotnet/dotnet /lampac/Core.dll &'));
+assert.ok(vercelStart.indexOf('while [ ! -f "$engine_start_file" ]') < vercelStart.indexOf('/usr/share/dotnet/dotnet /lampac/Core.dll &'));
+assert.ok(vercelStart.indexOf('touch "$SOURCE_ENGINE_READY_FILE"') > vercelStart.indexOf('--remote-debugging-port=9222'));
+assert.match(vercelStart, /SOURCE_ENGINE_URL="\$\{SOURCE_ENGINE_URL:-http:\/\/127\.0\.0\.1:9118\}"/);
+assert.match(vercelStart, /require\("node:crypto"\)\.createHash\("sha256"\)/);
+assert.match(vercelStart, /runtime_dir\/cache\/aeskey/);
+assert.match(vercelStart, /export SOURCE_ENGINE_KEY=/);
+assert.doesNotMatch(vercelStart, /echo[^\n]*SOURCE_HOST_SECRET/);
+assert.match(vercelStart, /DISPLAY=:99/);
+assert.match(vercelStart, /tmp\/\.X11-unix\/X99/);
+assert.match(vercelStart, /--remote-debugging-address=127\.0\.0\.1/);
+assert.match(vercelStart, /--remote-debugging-port=9222/);
+assert.doesNotMatch(vercelStart, /--headless/i);
+assert.doesNotMatch(vercelDockerfile, /EXPOSE (?:9118|9222|9223)/);
+console.log('Lampac infrastructure config checks passed');

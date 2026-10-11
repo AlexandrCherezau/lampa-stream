@@ -1,0 +1,7 @@
+name = "lampa-source-media"
+main = "source-media-worker.mjs"
+compatibility_date = "2026-10-11"
+
+[vars]
+SOURCE_HOST_URL = "https://lampa-source-host.vercel.app"
+# SOURCE_API_KEY is a Worker secret shared with the source-host project.

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, memo } from "react";
 import { imgUrl } from "../utils/api";
 import {
   StreambertLogo,
@@ -14,7 +14,11 @@ import {
   HelpIcon,
 } from "./Icons";
 
-export default function Sidebar({
+// memo: App re-renders on every playback progress tick (5 s during a film) and
+// on every download IPC event; the sidebar maps the whole saved list to poster
+// <img>s and must not re-render with it. Props are stable (useCallback/useMemo
+// in App), so the shallow compare bails out.
+const Sidebar = memo(function Sidebar({
   page,
   onNavigate,
   onSearch,
@@ -111,39 +115,39 @@ export default function Sidebar({
       </div>
 
       {canGoBack && (
-        <SideBtn onClick={onBack} icon={<BackIcon />} label="Back (Ctrl+Z)" className="sidebar-back" />
+        <SideBtn onClick={onBack} icon={<BackIcon />} label="Назад (Ctrl+Z)" className="sidebar-back" />
       )}
 
-      <SideBtn onClick={onSearch} icon={<SearchIcon />} label="Search  (⌘F)" className="sidebar-search" />
+      <SideBtn onClick={onSearch} icon={<SearchIcon />} label="Поиск  (⌘F)" className="sidebar-search" />
       <SideBtn
         active={page === "home"}
         onClick={() => onNavigate("home")}
         icon={<HomeIcon />}
-        label="Home"
+        label="Главная"
       />
       <SideBtn
         active={page === "discover"}
         onClick={() => onNavigate("discover")}
         icon={<FilmIcon />}
-        label="Discover"
+        label="Каталог"
       />
       <SideBtn
         active={page === "together"}
         onClick={() => onNavigate("together")}
         icon={<UsersIcon />}
-        label="Watch Together"
+        label="Смотрим вместе"
       />
       <SideBtn
         active={page === "history"}
         onClick={() => onNavigate("history")}
         icon={<HistoryIcon />}
-        label="Library & History"
+        label="Библиотека и история"
       />
       <SideBtn
         active={page === "downloads"}
         onClick={() => onNavigate("downloads")}
         icon={<DownloadsQueueIcon />}
-        label="Downloads"
+        label="Загрузки"
         badge={activeDownloads > 0 ? activeDownloads : null}
       />
 
@@ -230,27 +234,27 @@ export default function Sidebar({
         <SideBtn
           onClick={onShowShortcuts}
           icon={<HelpIcon />}
-          label="Help & Shortcuts (?)"
+          label="Помощь и сочетания клавиш (?)"
         />
         <SideBtn
           active={page === "settings"}
           onClick={() => onNavigate("settings")}
           icon={<SettingsIcon />}
-          label="Settings"
+          label="Настройки"
         />
         <button
           className="sidebar-btn"
           onClick={() => window.electron?.quitApp?.()}
-          title="Quit App"
+          title="Выйти из приложения"
           style={{ color: "#e53e3e", marginTop: 4 }}
         >
           <QuitIcon />
-          <span className="tooltip">Quit App</span>
+          <span className="tooltip">Выйти из приложения</span>
         </button>
       </div>
     </div>
   );
-}
+});
 
 function SideBtn({ active, onClick, icon, label, badge, className = "" }) {
   return (
@@ -285,3 +289,5 @@ function SideBtn({ active, onClick, icon, label, badge, className = "" }) {
     </button>
   );
 }
+
+export default Sidebar;

@@ -6,6 +6,8 @@ import {
   useMemo,
   useCallback,
   memo,
+  lazy,
+  Suspense,
 } from "react";
 import {
   EPISODE_GROUP_IDS,
@@ -15,6 +17,10 @@ import {
 import {
   tmdbFetch,
   imgUrl,
+  posterSize,
+  stillSize,
+  backdropSize,
+  contentWidth,
   PLAYER_SOURCES,
   getSourceUrl,
   sourceSupportsProgress,
@@ -48,12 +54,16 @@ import {
   ShieldBlockIcon,
   PopOutIcon,
 } from "../components/Icons";
-import DownloadModal from "../components/DownloadModal";
-import TrailerModal from "../components/TrailerModal";
-import BlockedStatsModal from "../components/BlockedStatsModal";
-import TorrPlayer from "../components/TorrPlayer";
-import OnlinePlayer from "../components/OnlinePlayer";
+// The player subtree is ~400 KB of source that the detail page does not need
+// until the viewer presses Play — see the note in MoviePage.jsx.
+const DownloadModal = lazy(() => import("../components/DownloadModal"));
+const TrailerModal = lazy(() => import("../components/TrailerModal"));
+const BlockedStatsModal = lazy(() => import("../components/BlockedStatsModal"));
+const TorrPlayer = lazy(() => import("../components/TorrPlayer"));
+const OnlinePlayer = lazy(() => import("../components/OnlinePlayer"));
 import { useBlockedStats } from "../utils/useBlockedStats";
+import useElementWidth from "../utils/useElementWidth";
+import ProgressiveGrid from "../utils/useProgressiveList.jsx";
 import {
   storage,
   STORAGE_KEYS,
@@ -181,7 +191,7 @@ function ContextMenu({
             onCloseRef.current();
           }}
         >
-          ⊘ Mark as Not Started
+          ⊘ Отметить как непросмотренное
         </button>
       )}
     </div>
@@ -205,7 +215,7 @@ const EpisodeDesc = memo(function EpisodeDesc({ overview, episodeName }) {
             setOpen(true);
           }}
         >
-          More
+          Подробнее
         </button>
       </div>
 
@@ -226,7 +236,7 @@ const EpisodeDesc = memo(function EpisodeDesc({ overview, episodeName }) {
               className="ep-desc-popup-close"
               onClick={() => setOpen(false)}
             >
-              Close
+              Закрыть
             </button>
           </div>
         </div>
@@ -363,6 +373,7 @@ const INJECT_SKIP_CONTROLS = `
 export default function TVPage({
   item,
   apiKey,
+  onRouteChange,
   playerSettings,
   onSave,
   isSaved,
@@ -378,6 +389,22 @@ export default function TVPage({
   downloads,
   onGoToDownloads,
 }) {
+  // .main's measured width (ResizeObserver) for the hero backdrop rung —
+  // replaces the contentWidth() sync layout read that ran on every render.
+  const [mainWidth, setMainWidth] = useState(0);
+  const detailHeroRef = useRef(null);
+  useEffect(() => {
+    const el = detailHeroRef.current;
+    if (!el) return;
+    if (typeof ResizeObserver === "undefined") { setMainWidth(el.clientWidth || 0); return; }
+    const ro = new ResizeObserver(([entry]) => {
+      const w = Math.round(entry.contentRect?.width || el.clientWidth || 0);
+      setMainWidth((prev) => (Math.abs(prev - w) > 1 ? w : prev));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const [details, setDetails] = useState(null);
   const [seasonData, setSeasonData] = useState(null);
   const [failedSeasons, setFailedSeasons] = useState(() => new Set()); // season numbers which give 404 on TMDB
@@ -385,6 +412,14 @@ export default function TVPage({
     item.season != null ? Number(item.season) : 1,
   );
   const [selectedEp, setSelectedEp] = useState(null);
+  const requestedEpisodeRef = useRef(item.episode ? Number(item.episode) : undefined);
+  const requestedEpisodeResolvedRef = useRef(!item.episode);
+  useEffect(() => {
+    onRouteChange?.(
+      selectedSeason,
+      selectedEp?.episode_number ?? (!requestedEpisodeResolvedRef.current ? requestedEpisodeRef.current : undefined),
+    );
+  }, [onRouteChange, selectedSeason, selectedEp?.episode_number]);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingSeason, setLoadingSeason] = useState(false);
@@ -395,9 +430,11 @@ export default function TVPage({
   const [interceptedSubs, setInterceptedSubs] = useState([]);
   const [playerSource, setPlayerSource] = useState(() => {
     const saved = storage.get("playerSource");
+    // New browser sessions use our source host; keep supported saved choices.
     if (!!window.__webShim) {
-      if (saved && saved !== "online") storage.set("playerSource", "online");
-      return "online";
+      if (saved && availableSources().some((s) => s.id === saved)) return saved;
+      if (saved) storage.set("playerSource", "lampac");
+      return "lampac";
     }
     return saved || NON_ANIME_DEFAULT_SOURCE;
   });
@@ -420,6 +457,15 @@ export default function TVPage({
     () => sourceProgressViaFrames(playerSource),
     [playerSource],
   );
+  // Web build has no <webview>, no pop-out window and no request blocker;
+  // in-app sources (OnlinePlayer / TorrPlayer) render their own <video> and
+  // save progress themselves. Both make parts of the player chrome dead.
+  const webMode = typeof window !== "undefined" && !!window.__webShim;
+  const inAppSource = useMemo(
+    () => sourceIsInApp(playerSource),
+    [playerSource],
+  );
+  const showWebviewChrome = !webMode && !inAppSource;
   const [dubMode, setDubMode] = useState(
     () => storage.get(STORAGE_KEYS.ALLMANGA_DUB_MODE) || "sub",
   );
@@ -450,6 +496,9 @@ export default function TVPage({
   );
   const sourceRef = useRef(null);
   const playerWrapRef = useRef(null);
+  // `.detail-poster` is 200 / 120 / 100 px across breakpoints; measuring picks
+  // the rung (w185 vs w154 vs w92) without duplicating those media queries here.
+  const [detailPosterRef, detailPosterWidth] = useElementWidth();
   const webviewRef = useRef(null);
   // Always-current refs for interval callbacks, avoids stale closures without restarting the interval
   const saveProgressRef = useRef(saveProgress);
@@ -754,7 +803,7 @@ export default function TVPage({
                 setM3u8Url(res.url);
               })
               .catch(() => {
-                if (mounted) setResolveError("Failed to start local player");
+                if (mounted) setResolveError("Не удалось запустить локальный плеер");
               });
           } else {
             resolvedPlayerUrlRef.current = res.url;
@@ -773,12 +822,12 @@ export default function TVPage({
             setResolveError(null);
             setPlayerSource(next);
           } else {
-            setResolveError(res?.error || "Episode not found on AllManga");
+            setResolveError(res?.error || "Эпизод не найден на AllManga");
           }
         }
       })
       .catch((e) => {
-        if (mounted) setResolveError(e.message || "Error");
+        if (mounted) setResolveError(e.message || "Ошибка");
       })
       .finally(() => {
         if (mounted) {
@@ -965,11 +1014,15 @@ export default function TVPage({
     if (autoSelectKeyRef.current === key) return; // already handled this target
     const target = Number(item.episode);
     const ep = currentSeasonEpisodes.find((e) => e.episode_number === target);
+    requestedEpisodeResolvedRef.current = true;
     if (ep) {
       autoSelectKeyRef.current = key;
       setSelectedEp(ep);
+    } else {
+      requestedEpisodeRef.current = undefined;
+      onRouteChange?.(selectedSeason, undefined);
     }
-  }, [item.id, item.episode, currentSeasonEpisodes]);
+  }, [item.id, item.episode, currentSeasonEpisodes, onRouteChange, selectedSeason]);
 
   // ── Downloads lookup map: O(1) per episode instead of O(n) ───────────────
   const downloadsByEpisodeKey = useMemo(() => {
@@ -1127,6 +1180,20 @@ export default function TVPage({
   // its own loading state for the "online" source).
   useEffect(() => {
     if (playing && !!!window.__webShim) setWebviewLoading(true);
+  }, [playing]);
+
+  // ── Theater mode: scroll the player into view when playback starts ────────
+  // Only on the false→true transition, so autoplaying the next episode does
+  // not yank the view away from wherever the user scrolled.
+  useEffect(() => {
+    if (!playing) return;
+    const raf = requestAnimationFrame(() => {
+      playerWrapRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+    return () => cancelAnimationFrame(raf);
   }, [playing]);
 
   // ── Webview memory cleanup ────────────────────────────────────────────────
@@ -1471,6 +1538,11 @@ export default function TVPage({
 
   const playEpisode = useCallback(
     (ep) => {
+      // Cancel any in-flight autoplay countdown BEFORE the state change commits.
+      // The episode-change effect's resetAutoplay() only fires after the render
+      // commits — a setInterval tick in that window would call
+      // playEpisode(stale_nextEp) and start the wrong episode.
+      resetAutoplayRef.current?.();
       setM3u8Url(null);
       setInterceptedSubs([]);
       resolvedPlayerUrlRef.current = null;
@@ -1596,18 +1668,28 @@ export default function TVPage({
       )}
       {!loading && (
         <>
-          <div className="detail-hero">
+          <div className="detail-hero" ref={detailHeroRef}>
             <div
               className="detail-bg"
               style={{
-                backgroundImage: `url(${imgUrl(d.backdrop_path, "w1280")})`,
+                backgroundImage: `url(${imgUrl(
+                  d.backdrop_path,
+                  backdropSize(mainWidth || 1280),
+                )})`,
               }}
             />
             <div className="detail-gradient" />
             <div className="detail-content">
-              <div className="detail-poster">
+              <div className="detail-poster" ref={detailPosterRef}>
                 {d.poster_path ? (
-                  <img src={imgUrl(d.poster_path)} alt={title} loading="lazy" />
+                  detailPosterWidth > 0 && (
+                    <img
+                      src={imgUrl(d.poster_path, posterSize(detailPosterWidth))}
+                      alt={title}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  )
                 ) : (
                   <div
                     style={{
@@ -1624,7 +1706,7 @@ export default function TVPage({
                 )}
               </div>
               <div className="detail-info">
-                <div className="detail-type">Series</div>
+                <div className="detail-type">Сериал</div>
                 <div className="detail-title">{title}</div>
                 <div className="genres">
                   {displayGenres.map((g) => (
@@ -1642,14 +1724,12 @@ export default function TVPage({
                   {year && <span>{year}</span>}
                   {displaySeasonCount > 0 && (
                     <span>
-                      {displaySeasonCount} Season
-                      {displaySeasonCount !== 1 ? "s" : ""}
+                  Сезонов: {displaySeasonCount}
                     </span>
                   )}
                   {displayEpisodeCount > 0 && (
                     <span>
-                      {displayEpisodeCount} Episode
-                      {displayEpisodeCount !== 1 ? "s" : ""}
+                  Эпизодов: {displayEpisodeCount}
                     </span>
                   )}
                 </div>
@@ -1665,7 +1745,7 @@ export default function TVPage({
                     <span className="age-rating-pill-cert">{rating.cert}</span>
                     {restricted && (
                       <span className="age-rating-pill-label">
-                        Inappropriate for your age setting
+                        Не подходит для выбранного возрастного ограничения
                       </span>
                     )}
                   </div>
@@ -1677,24 +1757,24 @@ export default function TVPage({
                       <button
                         className="btn btn-secondary btn-restricted"
                         disabled
-                        title="Inappropriate for your age rating setting"
+                        title="Не подходит для выбранного возрастного ограничения"
                       >
-                        🔒 Trailer
+                        🔒 Трейлер
                       </button>
                     ) : (
                       <button
                         className="btn btn-secondary"
                         onClick={() => setShowTrailer(true)}
                       >
-                        <TrailerIcon /> Trailer
+                        <TrailerIcon /> Трейлер
                       </button>
                     ))}
                   <button className="btn btn-secondary" onClick={onSave}>
                     {isSaved ? <BookmarkFillIcon /> : <BookmarkIcon />}
-                    {isSaved ? "Saved" : "Save"}
+                    {isSaved ? "Сохранено" : "В избранное"}
                   </button>
                   <button className="btn btn-ghost" onClick={onBack}>
-                    <BackIcon /> Back
+                    <BackIcon /> Назад
                   </button>
                 </div>
               </div>
@@ -1712,7 +1792,7 @@ export default function TVPage({
                 }}
               >
                 <span className="tag tag-red">
-                  Season {selectedSeason} · E{selectedEp.episode_number}
+                  Сезон {selectedSeason} · Э{selectedEp.episode_number}
                 </span>
                 <span style={{ fontSize: 14, fontWeight: 500 }}>
                   {selectedEp.name}
@@ -1723,7 +1803,7 @@ export default function TVPage({
                     style={{ marginLeft: "auto" }}
                     onClick={() => onMarkUnwatched?.(currentProgressKey)}
                   >
-                    <WatchedIcon size={14} /> Watched
+                    <WatchedIcon size={14} /> Просмотрено
                   </button>
                 ) : (
                   <button
@@ -1731,7 +1811,7 @@ export default function TVPage({
                     style={{ marginLeft: "auto" }}
                     onClick={() => onMarkWatched?.(currentProgressKey)}
                   >
-                    ✓ Mark Watched
+                    ✓ Отметить просмотренным
                   </button>
                 )}
               </div>
@@ -1741,8 +1821,11 @@ export default function TVPage({
               >
                 {sourceIsInApp(playerSource) && (
                   <div className="torrplayer-stage">
-                    {playerSource === "online" ? (
+                    <Suspense fallback={<div className="torrplayer-loading">Загрузка плеера…</div>}>
+                    {playerSource === "online" || playerSource === "lampac" ? (
                       <OnlinePlayer
+                        key={playerSource}
+                        provider={playerSource}
                         apiKey={apiKey}
                         item={item}
                         details={details}
@@ -1754,6 +1837,16 @@ export default function TVPage({
                         onMarkWatched={onMarkWatched}
                         watchedThreshold={watchedThreshold}
                         onNext={triggerAutoplay}
+                        onSourceFailed={({ provider: failedProvider }) => {
+                          // Auto-failover: Collaps 410 → Lampac picker. Per-title
+                          // (per dub) so a dead Collaps title doesn't poison
+                          // future opens of OTHER titles.
+                          if (failedProvider === "online" && playerSource === "online") {
+                            const epKey = `tv_${item.id}_s${selectedSeason}e${selectedEp?.episode_number}`;
+                            setFailoverSource(epKey, "lampac");
+                            setPlayerSource("lampac");
+                          }
+                        }}
                       />
                     ) : (
                       <TorrPlayer
@@ -1771,6 +1864,7 @@ export default function TVPage({
                         onNext={triggerAutoplay}
                       />
                     )}
+                    </Suspense>
                   </div>
                 )}
                 {/* Universal source-loading overlay, shown instantly on every source/episode switch */}
@@ -1792,8 +1886,8 @@ export default function TVPage({
                     <div className="spinner" />
                     <span style={{ fontSize: 14, color: "var(--text2)" }}>
                       {resolvingUrl
-                        ? "Looking up episode on AllManga…"
-                        : `Loading ${PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "source"}…`}
+                        ? "Ищем эпизод на AllManga…"
+                        : `Загрузка: ${PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ?? "источник"}…`}
                     </span>
                   </div>
                 )}
@@ -1866,7 +1960,7 @@ export default function TVPage({
                       onClick={() => window.electron?.closePipWindow?.()}
                       style={{ marginTop: 4 }}
                     >
-                      Close pop-out &amp; return
+                      Закрыть отдельное окно и вернуться
                     </button>
                   </div>
                 )}
@@ -1967,7 +2061,7 @@ export default function TVPage({
                           marginBottom: "4px",
                         }}
                       >
-                        Season {selectedSeason} · Episode{" "}
+                        Сезон {selectedSeason} · эпизод{" "}
                         {nextEp?.episode_number}
                       </div>
                       <div
@@ -2092,11 +2186,12 @@ export default function TVPage({
                         setMenuPos({ top: rect.bottom + 6, left: rect.left });
                       setShowSourceMenu((v) => !v);
                     }}
-                    title="Change source"
+                    title="Сменить источник"
                   >
                     <SourceIcon />
                     {PLAYER_SOURCES.find((s) => s.id === playerSource)?.label ??
-                      "Source"}
+                      "Источник"}
+                    <span className="player-overlay-caret">▾</span>
                   </button>
                   {/* Sub/Dub toggle, only for AllManga */}
                   {isAsync && (
@@ -2114,19 +2209,20 @@ export default function TVPage({
                         setResolvingUrl(false);
                         setResolveError(null);
                       }}
-                      title="Toggle Sub/Dub"
+                    title="Переключить субтитры / дубляж"
                     >
-                      {dubMode === "sub" ? "SUB" : "DUB"}
+                      {dubMode === "sub" ? "СУБТИТРЫ" : "ДУБЛЯЖ"}
                     </button>
                   )}
-                  {/* Blocked ads & trackers button */}
+                  {/* Blocked ads & trackers button — webview sources only */}
+                  {showWebviewChrome && (
                   <button
                     className="player-overlay-btn"
                     onClick={() => {
                       setShowSourceMenu(false);
                       setShowBlockedModal(true);
                     }}
-                    title="Blocked ads & trackers"
+                    title="Блокировка рекламы и трекеров"
                   >
                     <ShieldBlockIcon />
                     {blockedSession > 0 && (
@@ -2135,7 +2231,9 @@ export default function TVPage({
                       </span>
                     )}
                   </button>
-                  {/* Pop-out button */}
+                  )}
+                  {/* Pop-out button — desktop webview sources only */}
+                  {showWebviewChrome && (
                   <button
                     className="player-overlay-btn"
                     onClick={() => {
@@ -2162,7 +2260,7 @@ export default function TVPage({
                         item.name ?? item.title,
                       );
                     }}
-                    title={pipOpen ? "Close pop-out" : "Pop out player"}
+                    title={pipOpen ? "Закрыть отдельное окно" : "Открыть плеер в отдельном окне"}
                     disabled={
                       !pipOpen &&
                       (webviewLoading || !!(isAsync && !resolvedPlayerUrl))
@@ -2171,6 +2269,7 @@ export default function TVPage({
                   >
                     <PopOutIcon />
                   </button>
+                  )}
                 </div>
                 {showSourceMenu && menuPos && (
                   <div
@@ -2222,6 +2321,7 @@ export default function TVPage({
                     ))}
                   </div>
                 )}
+                {!webMode && (
                 <button
                   className="player-overlay-btn"
                   onClick={() =>
@@ -2232,9 +2332,9 @@ export default function TVPage({
                   title={
                     currentEpDownload
                       ? currentEpDownload.status === "downloading"
-                        ? "Downloading… - view in Downloads"
-                        : "Already downloaded - view in Downloads"
-                      : "Download"
+                        ? "Загружается… · открыть загрузки"
+                        : "Уже загружено · открыть загрузки"
+                      : "Скачать"
                   }
                 >
                   {currentEpDownload ? (
@@ -2258,12 +2358,13 @@ export default function TVPage({
                   {!supportsProgress && (
                     <span
                       className="player-no-progress-hint"
-                      title="No automatic progress tracking for this source"
+                      title="Для этого источника прогресс не отслеживается автоматически"
                     >
                       ⚠ no tracking
                     </span>
                   )}
                 </button>
+                )}
 
                 {/* Skip controls are injected directly into the webview DOM*/}
 
@@ -2309,7 +2410,7 @@ export default function TVPage({
                         letterSpacing: 1,
                       }}
                     >
-                      SKIP
+                      ПРОПУСТИТЬ
                     </span>
                     <span
                       style={{
@@ -2319,10 +2420,10 @@ export default function TVPage({
                       }}
                     >
                       {skipPrompt === "intro"
-                        ? "INTRO"
+                        ? "ЗАСТАВКУ"
                         : skipPrompt === "outro"
-                          ? "OUTRO"
-                          : "RECAP"}
+                          ? "ЭНДИНГ"
+                          : "РЕКАП"}
                     </span>
                   </button>
                 )}
@@ -2350,7 +2451,7 @@ export default function TVPage({
                         {/* AniSkip intro/outro markers */}
                         {dur > 0 && skipTimings?.intro && (
                           <div
-                            title="Intro"
+                            title="Заставка"
                             style={{
                               position: "absolute",
                               top: 0,
@@ -2365,7 +2466,7 @@ export default function TVPage({
                         )}
                         {dur > 0 && skipTimings?.outro && (
                           <div
-                            title="Outro"
+                            title="Эндинг"
                             style={{
                               position: "absolute",
                               top: 0,
@@ -2381,7 +2482,7 @@ export default function TVPage({
                         {/* AniSkip recap marker (blue, to distinguish from intro/outro) */}
                         {dur > 0 && skipTimings?.recap && (
                           <div
-                            title="Recap"
+                            title="Рекап"
                             style={{
                               position: "absolute",
                               top: 0,
@@ -2401,7 +2502,7 @@ export default function TVPage({
                     </div>
                   ) : null;
                 })()}
-              {currentProgressKey && (
+              {currentProgressKey && !inAppSource && (
                 <div className="progress-mark-row">
                   <span
                     style={{
@@ -2410,7 +2511,7 @@ export default function TVPage({
                       marginRight: 4,
                     }}
                   >
-                    Mark progress:
+                    Отметить просмотр:
                   </span>
                   {[25, 50, 75, 100].map((p) => (
                     <button
@@ -2428,7 +2529,7 @@ export default function TVPage({
           )}
 
           <div className="section">
-            <div className="section-title">Episodes</div>
+            <div className="section-title">Эпизоды</div>
             {seasons.length > 0 && (
               <div className="season-selector">
                 {seasons.map((s) => {
@@ -2437,7 +2538,13 @@ export default function TVPage({
                     <button
                       key={s.season_number}
                       className={`season-btn ${selectedSeason === s.season_number ? "active" : ""} ${sw === "all" ? "season-watched" : sw.startsWith("some") ? "season-partial" : ""}`}
-                      onClick={() => setSelectedSeason(s.season_number)}
+                      onClick={() => {
+                        requestedEpisodeRef.current = undefined;
+                        requestedEpisodeResolvedRef.current = true;
+                        setSelectedEp(null);
+                        setSelectedSeason(s.season_number);
+                        onRouteChange?.(s.season_number, undefined);
+                      }}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -2447,7 +2554,7 @@ export default function TVPage({
                           seasonNum: s.season_number,
                         });
                       }}
-                      title="Right-click to mark season as watched/unwatched"
+                      title="Нажмите правой кнопкой, чтобы отметить сезон просмотренным или непросмотренным"
                     >
                       {sw === "all" && (
                         <span className="season-watched-icon">✓</span>
@@ -2456,8 +2563,8 @@ export default function TVPage({
                       {sw === "some50" && <PartialCircleIcon pct={50} />}
                       {sw === "some75" && <PartialCircleIcon pct={75} />}
                       {s.season_number === 0
-                        ? "Specials"
-                        : `Season ${s.season_number}`}
+                        ? "Спецвыпуски"
+                        : `Сезон ${s.season_number}`}
                     </button>
                   );
                 })}
@@ -2493,8 +2600,8 @@ export default function TVPage({
             )}
             {!loadingSeason &&
               (seasonData?.episodes || episodeGroupCurrentEpisodes?.length) && (
-                <div className="episodes-grid">
-                  {currentSeasonEpisodes.map((ep) => {
+                <ProgressiveGrid className="episodes-grid" items={currentSeasonEpisodes} step={18}>
+                  {(visibleEps) => visibleEps.map((ep) => {
                     const pk = `tv_${item.id}_s${selectedSeason}e${ep.episode_number}`;
                     return (
                       <EpisodeCard
@@ -2514,18 +2621,20 @@ export default function TVPage({
                       />
                     );
                   })}
-                </div>
+                </ProgressiveGrid>
               )}
           </div>
         </>
       )}
 
       {showTrailer && trailerKey && (
-        <TrailerModal
-          trailerKey={trailerKey}
-          title={title}
-          onClose={() => setShowTrailer(false)}
-        />
+        <Suspense fallback={null}>
+          <TrailerModal
+            trailerKey={trailerKey}
+            title={title}
+            onClose={() => setShowTrailer(false)}
+          />
+        </Suspense>
       )}
 
       {epMenu && (
@@ -2534,8 +2643,8 @@ export default function TVPage({
           y={epMenu.y}
           isWatched={!!watched?.[epMenu.pk]}
           hasProgress={(progress?.[epMenu.pk] ?? 0) > 0}
-          watchedLabel="Mark as Watched"
-          unwatchedLabel="Mark as Unwatched"
+          watchedLabel="Отметить просмотренным"
+          unwatchedLabel="Отметить непросмотренным"
           onMarkWatched={() => onMarkWatched?.(epMenu.pk)}
           onMarkUnwatched={() => onMarkUnwatched?.(epMenu.pk)}
           onMarkNotStarted={() => {
@@ -2552,8 +2661,8 @@ export default function TVPage({
           x={seasonMenu.x}
           y={seasonMenu.y}
           isWatched={isSeasonWatched(seasonMenu.seasonNum)}
-          watchedLabel="Mark Season as Watched"
-          unwatchedLabel="Mark Season as Unwatched"
+          watchedLabel="Отметить сезон просмотренным"
+          unwatchedLabel="Отметить сезон непросмотренным"
           onMarkWatched={() => markSeasonWatched(seasonMenu.seasonNum)}
           onMarkUnwatched={() => markSeasonUnwatched(seasonMenu.seasonNum)}
           onClose={() => setSeasonMenu(null)}
@@ -2561,16 +2670,19 @@ export default function TVPage({
       )}
 
       {showBlockedModal && (
-        <BlockedStatsModal
-          sessionDomains={getBlockedDomains()}
-          sessionTotal={blockedSession}
-          alltimeTotal={blockedAlltime}
-          onClose={() => setShowBlockedModal(false)}
-        />
+        <Suspense fallback={null}>
+          <BlockedStatsModal
+            sessionDomains={getBlockedDomains()}
+            sessionTotal={blockedSession}
+            alltimeTotal={blockedAlltime}
+            onClose={() => setShowBlockedModal(false)}
+          />
+        </Suspense>
       )}
 
       {showDownload && (
-        <DownloadModal
+        <Suspense fallback={null}>
+          <DownloadModal
           onClose={() => setShowDownload(false)}
           m3u8Url={m3u8Url}
           subtitles={interceptedSubs}
@@ -2586,6 +2698,7 @@ export default function TVPage({
           posterPath={d.poster_path}
           tmdbId={item.id}
         />
+        </Suspense>
       )}
     </div>
   );
@@ -2622,6 +2735,9 @@ const EpisodeCard = memo(function EpisodeCard({
   const epDownload =
     downloadsByEpisodeKey.get(`s${selectedSeason}e${ep.episode_number}`) ??
     null;
+  // 110 px (80 on ≤480) → w185 at 1×, where the fixed w300 was ~1.75× the
+  // bytes; a season of 24 stills was 213 KB and is now ~122 KB.
+  const [thumbRef, thumbWidth] = useElementWidth();
 
   return (
     <div
@@ -2635,13 +2751,16 @@ const EpisodeCard = memo(function EpisodeCard({
       }}
       style={epUnreleased ? { cursor: "default" } : undefined}
     >
-      <div className="episode-thumb">
+      <div className="episode-thumb" ref={thumbRef}>
         {ep.still_path ? (
-          <img
-            src={imgUrl(ep.still_path, "w300")}
-            alt={ep.name}
-            loading="lazy"
-          />
+          thumbWidth > 0 && (
+            <img
+              src={imgUrl(ep.still_path, stillSize(thumbWidth))}
+              alt={ep.name}
+              loading="lazy"
+              decoding="async"
+            />
+          )
         ) : (
           <div
             style={{
@@ -2658,16 +2777,16 @@ const EpisodeCard = memo(function EpisodeCard({
         )}
         {restricted ? (
           <div className="episode-restricted-overlay">
-            🔒<span>Inappropriate for your age</span>
+            🔒<span>Ограничено по возрасту</span>
           </div>
         ) : epUnreleased ? (
           <div className="episode-restricted-overlay">
-            🔒<span>Unreleased</span>
+            🔒<span>Ещё не вышел</span>
           </div>
         ) : isPlaying ? (
           <div className="episode-playing-badge">
             <span className="episode-playing-dot" />
-            Playing
+            Сейчас смотрите
           </div>
         ) : (
           <div className="episode-thumb-play">
@@ -2687,8 +2806,8 @@ const EpisodeCard = memo(function EpisodeCard({
               className="ep-downloaded-badge"
               title={
                 epDownload.status === "downloading"
-                  ? "Downloading… - click to view in Downloads"
-                  : "Downloaded - click to view in Downloads"
+                  ? "Загружается… · нажмите, чтобы открыть загрузки"
+                  : "Загружено · нажмите, чтобы открыть загрузки"
               }
               style={{
                 borderColor:

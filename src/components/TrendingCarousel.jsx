@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
-import { imgUrl, isAnimeContent } from "../utils/api";
+import { imgUrl, isAnimeContent, posterSize } from "../utils/api";
+import useElementWidth from "../utils/useElementWidth";
 import { StarIcon, ChevronLeftIcon, ChevronRightIcon } from "./Icons";
 
 const VISIBLE = 5;
@@ -7,17 +8,71 @@ const HALF = Math.floor(VISIBLE / 2);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Compute visibility ratio of el inside scrollRoot (or viewport)
-function visibilityRatio(el, scrollRoot) {
-  const r = el.getBoundingClientRect();
+// ── Shared focus tracking (ONE listener for ALL carousels) ───────────────────
+// Each carousel used to register its OWN scroll + resize listener, and every
+// handler did a live querySelectorAll(".carousel-section") plus ~3
+// getBoundingClientRect() per section — a forced synchronous layout flush per
+// scroll event. With 4 carousels on the Home page that is 4 listeners × 4
+// sections × 3 rect reads per scroll frame (~48 layout reads/frame at 60 Hz,
+// double at 120 Hz): the direct cause of the reported scrolling jank. One
+// shared rAF-throttled listener now measures ONCE per frame and hands every
+// carousel its verdict through a ref callback (no re-render).
+const focusSubs = new Set();
+let focusRaf = 0;
+let focusBound = false;
+
+function measureFocus() {
+  focusRaf = 0;
+  const scrollRoot = document.querySelector(".main");
   const rootTop = scrollRoot ? scrollRoot.getBoundingClientRect().top : 0;
   const rootHeight = scrollRoot
     ? scrollRoot.getBoundingClientRect().height
     : window.innerHeight;
-  const visTop = Math.max(r.top, rootTop);
-  const visBottom = Math.min(r.bottom, rootTop + rootHeight);
-  const px = Math.max(0, visBottom - visTop);
-  return r.height > 0 ? px / r.height : 0;
+  const all = document.querySelectorAll(".carousel-section");
+  let bestEl = null;
+  let bestRatio = -1;
+  all.forEach((el) => {
+    const r = el.getBoundingClientRect();
+    const visTop = Math.max(r.top, rootTop);
+    const visBottom = Math.min(r.bottom, rootTop + rootHeight);
+    const px = Math.max(0, visBottom - visTop);
+    const ratio = r.height > 0 ? px / r.height : 0;
+    if (ratio > bestRatio) {
+      bestRatio = ratio;
+      bestEl = el;
+    }
+  });
+  for (const cb of focusSubs) cb(bestEl, bestRatio);
+}
+
+function scheduleFocusMeasure() {
+  if (focusRaf) return;
+  focusRaf = requestAnimationFrame(measureFocus);
+}
+
+function subscribeFocus(cb) {
+  focusSubs.add(cb);
+  if (!focusBound) {
+    focusBound = true;
+    // scroll events don't bubble, so a div scroller (.main) never reaches a
+    // window listener — bind both. Double delivery is harmless: the rAF
+    // throttle coalesces them into one measurement.
+    const main = document.querySelector(".main");
+    window.addEventListener("scroll", scheduleFocusMeasure, { passive: true });
+    if (main) main.addEventListener("scroll", scheduleFocusMeasure, { passive: true });
+    window.addEventListener("resize", scheduleFocusMeasure, { passive: true });
+  }
+  return () => {
+    focusSubs.delete(cb);
+    if (!focusSubs.size && focusBound) {
+      focusBound = false;
+      if (focusRaf) { cancelAnimationFrame(focusRaf); focusRaf = 0; }
+      const main = document.querySelector(".main");
+      window.removeEventListener("scroll", scheduleFocusMeasure);
+      if (main) main.removeEventListener("scroll", scheduleFocusMeasure);
+      window.removeEventListener("resize", scheduleFocusMeasure);
+    }
+  };
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -43,13 +98,22 @@ const CarouselSlot = memo(function CarouselSlot({
   ageRating,
   restricted,
   isAnime,
+  posterWidth,
+  posterRef,
 }) {
   if (!item) return null;
   const isCenter = offset === 0;
   const abs = Math.abs(offset);
   const title = item.title || item.name;
   const year = (item.release_date || item.first_air_date || "").slice(0, 4);
-  const poster = imgUrl(item.poster_path, "w342");
+  // One rung for every slot, sized for the centre (the biggest, and the only one
+  // read closely). Sizing each slot to its own `scale()` would look tempting —
+  // the ±2 slots render at 54 % — but items rotate through the offsets, so the
+  // same poster would be re-fetched at a new width on every step. A single URL
+  // is served from cache for the whole cycle.
+  const poster = posterWidth
+    ? imgUrl(item.poster_path, posterSize(posterWidth))
+    : null;
 
   const scale = isCenter ? 1 : abs === 1 ? 0.75 : 0.54;
   const opacity = isCenter ? 1 : abs === 1 ? 0.65 : 0.35;
@@ -88,15 +152,21 @@ const CarouselSlot = memo(function CarouselSlot({
       }}
       onClick={isCenter ? onSelect : onFocus}
     >
-      <div className="carousel-poster-wrap">
-        {poster ? (
-          <img
-            src={poster}
-            alt={title}
-            className="carousel-poster"
-            draggable={false}
-            loading={abs > 1 ? "lazy" : "eager"}
-          />
+      <div className="carousel-poster-wrap" ref={posterRef}>
+        {item.poster_path ? (
+          poster && (
+            <img
+              src={poster}
+              alt={title}
+              className="carousel-poster"
+              draggable={false}
+              loading={abs > 1 ? "lazy" : "eager"}
+              decoding="async"
+              /* lowercase: React 18 has no fetchPriority prop and warns on
+                 camelCase unknown attributes, but passes lowercase through. */
+              fetchpriority={isCenter ? "high" : undefined}
+            />
+          )
         ) : (
           <div className="carousel-poster carousel-poster--placeholder">
             <span>{title}</span>
@@ -124,7 +194,7 @@ const CarouselSlot = memo(function CarouselSlot({
           </div>
         )}
         {isCenter && isAnime && (
-          <div className="carousel-anime-badge">ANIME</div>
+          <div className="carousel-anime-badge">АНИМЕ</div>
         )}
       </div>
 
@@ -135,7 +205,7 @@ const CarouselSlot = memo(function CarouselSlot({
             {year && <span>{year}</span>}
             {item.media_type && (
               <span className="carousel-info__type">
-                {item.media_type === "tv" ? "Series" : "Movie"}
+                {item.media_type === "tv" ? "Сериал" : "Фильм"}
               </span>
             )}
           </div>
@@ -206,18 +276,7 @@ export default function TrendingCarousel({
     if (!sectionEl) return;
     const scrollRoot = document.querySelector(".main");
 
-    const updateFocus = () => {
-      const allSections = document.querySelectorAll(".carousel-section");
-      let bestEl = null;
-      let bestRatio = -1;
-      allSections.forEach((el) => {
-        const r = visibilityRatio(el, scrollRoot);
-        if (r > bestRatio) {
-          bestRatio = r;
-          bestEl = el;
-        }
-      });
-
+    const updateFocus = (bestEl, bestRatio) => {
       const should = bestEl === sectionEl && bestRatio > 0.1;
       if (should && !isFocusedRef.current) {
         isFocusedRef.current = true;
@@ -228,9 +287,7 @@ export default function TrendingCarousel({
       }
     };
 
-    const scrollEl = scrollRoot || window;
-    scrollEl.addEventListener("scroll", updateFocus, { passive: true });
-    window.addEventListener("resize", updateFocus, { passive: true });
+    const unsub = subscribeFocus(updateFocus);
 
     // IntersectionObserver for out-of-view fast-path (stop immediately when hidden)
     const observer = new IntersectionObserver(
@@ -239,7 +296,9 @@ export default function TrendingCarousel({
           isFocusedRef.current = false;
           clearInterval(intervalRef.current);
         } else {
-          updateFocus();
+          // Back on screen: re-measure through the shared listener so every
+          // carousel's verdict updates together in one layout pass.
+          scheduleFocusMeasure();
         }
       },
       { root: scrollRoot, threshold: 0 },
@@ -247,11 +306,10 @@ export default function TrendingCarousel({
     observer.observe(sectionEl);
 
     // Initial check after first paint
-    const id = requestAnimationFrame(updateFocus);
+    const id = requestAnimationFrame(() => measureFocus());
 
     return () => {
-      scrollEl.removeEventListener("scroll", updateFocus);
-      window.removeEventListener("resize", updateFocus);
+      unsub();
       observer.disconnect();
       cancelAnimationFrame(id);
       clearInterval(intervalRef.current);
@@ -365,6 +423,13 @@ export default function TrendingCarousel({
   const activeRatingKey = activeItem ? `${activeType}_${activeItem.id}` : null;
   const activeRating = activeRatingKey ? ratingsMap[activeRatingKey] || {} : {};
 
+  // Every slot has the same CSS width (`.carousel-poster-wrap`, 170 px / 120 px
+  // on mobile) — `scale()` is a transform and doesn't change layout width — so
+  // one measurement, taken on the centre slot, sizes all five. The ref rides on
+  // the slot whose DOM node is keyed by offset, so it stays attached across
+  // rotations.
+  const [posterRef, posterWidth] = useElementWidth();
+
   const dotCount = Math.min(count, 15);
 
   if (!items || count === 0) return null;
@@ -391,7 +456,7 @@ export default function TrendingCarousel({
         <button
           className="carousel-btn carousel-btn--left"
           onClick={handlePrev}
-          aria-label="Previous"
+          aria-label="Предыдущий"
         >
           <ChevronLeftIcon size={22} />
         </button>
@@ -414,6 +479,8 @@ export default function TrendingCarousel({
                 ageRating={isCenter ? ratingData.cert : null}
                 restricted={isCenter ? ratingData.restricted : false}
                 isAnime={isCenter ? isAnimeContent(items[idx]) : false}
+                posterWidth={posterWidth}
+                posterRef={isCenter ? posterRef : undefined}
               />
             );
           })}
@@ -422,7 +489,7 @@ export default function TrendingCarousel({
         <button
           className="carousel-btn carousel-btn--right"
           onClick={handleNext}
-          aria-label="Next"
+          aria-label="Следующий"
         >
           <ChevronRightIcon size={22} />
         </button>
@@ -434,7 +501,7 @@ export default function TrendingCarousel({
             key={`dot-${i}`}
             className={`carousel-dot${active === i ? " carousel-dot--active" : ""}`}
             onClick={() => handleDot(i)}
-            aria-label={`Go to ${i + 1}`}
+            aria-label={`Перейти к ${i + 1}`}
           />
         ))}
         {count > 15 && (

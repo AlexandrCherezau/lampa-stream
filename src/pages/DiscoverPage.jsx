@@ -23,18 +23,18 @@ const DEFAULT_FILTERS = {
 };
 
 const SORT_OPTIONS = [
-  { id: "popularity.desc", label: "Most popular" },
-  { id: "vote_average.desc", label: "Highest rated" },
-  { id: "primary_release_date.desc", label: "Newest" },
-  { id: "primary_release_date.asc", label: "Oldest" },
-  { id: "revenue.desc", label: "Highest grossing" },
-  { id: "original_title.asc", label: "Title A-Z" },
+  { id: "popularity.desc", label: "Самые популярные" },
+  { id: "vote_average.desc", label: "С высоким рейтингом" },
+  { id: "primary_release_date.desc", label: "Сначала новые" },
+  { id: "primary_release_date.asc", label: "Сначала старые" },
+  { id: "revenue.desc", label: "Самые кассовые" },
+  { id: "original_title.asc", label: "Название А–Я" },
 ];
 // TV uses first_air_date.* instead of primary_release_date.*
 const tvSort = (s) => s.replace("primary_release_date", "first_air_date");
 
 const MIN_RATING_OPTIONS = [
-  { id: 0, label: "Any rating" },
+  { id: 0, label: "Любой рейтинг" },
   { id: 5, label: "★ 5.0+" },
   { id: 6, label: "★ 6.0+" },
   { id: 7, label: "★ 7.0+" },
@@ -44,7 +44,7 @@ const MIN_RATING_OPTIONS = [
 // Build the year dropdown: current year down to 1960, plus "Any".
 const YEAR_OPTIONS = (() => {
   const now = new Date().getFullYear();
-  const opts = [{ id: "", label: "Any year" }];
+  const opts = [{ id: "", label: "Любой год" }];
   for (let y = now; y >= 1960; y--) opts.push({ id: String(y), label: String(y) });
   return opts;
 })();
@@ -161,7 +161,7 @@ export default function DiscoverPage({
       })
       .catch((e) => {
         if (!mounted) return;
-        setError(e?.message || "Failed to load");
+        setError(e?.message || "Не удалось загрузить");
         setResults([]);
       })
       .finally(() => mounted && setLoading(false));
@@ -186,8 +186,8 @@ export default function DiscoverPage({
   return (
     <div className="fade-in">
       <div className="library-header">
-        <div className="library-title">Discover</div>
-        <div className="library-sub">Browse every title with filters</div>
+        <div className="library-title">Каталог</div>
+        <div className="library-sub">Ищите фильмы и сериалы с помощью фильтров</div>
       </div>
 
       {/* Padded content (side gutters consistent with .section, tightens on mobile) */}
@@ -225,7 +225,7 @@ export default function DiscoverPage({
                 fontSize: 13,
               }}
             >
-              {t === "movie" ? "Movies" : "Series"}
+              {t === "movie" ? "Фильмы" : "Сериалы"}
             </button>
           ))}
         </div>
@@ -233,7 +233,7 @@ export default function DiscoverPage({
         <Select
           value={filters.genreId}
           onChange={(v) => updateFilter({ genreId: v })}
-          options={[{ id: "", label: "Any genre" }, ...genreOptions]}
+          options={[{ id: "", label: "Любой жанр" }, ...genreOptions]}
         />
         <Select
           value={filters.year}
@@ -279,7 +279,7 @@ export default function DiscoverPage({
                 <MediaCard
                   key={`${item.media_type}_${item.id}`}
                   item={item}
-                  onClick={() => onSelect(item)}
+                  onClick={onSelect}
                   progress={progress?.[pk] || 0}
                   watched={watched}
                   onMarkWatched={onMarkWatched}

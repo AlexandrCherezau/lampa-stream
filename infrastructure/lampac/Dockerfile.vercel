@@ -1,0 +1,60 @@
+# Node is copied from a pinned official image. Its runtime libraries are
+# installed in the Lampac (Debian forky) image below.
+FROM node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f AS node-runtime
+
+FROM ghcr.io/lampac-nextgen/lampac:1.81.0@sha256:409ca4ebbcc9e92579872370a4c237880d624e7cb47063d573e51d6358feb808
+
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libstdc++6 libatomic1 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+
+WORKDIR /app
+COPY source-host/ /app/
+COPY infrastructure/lampac/config/vercel.init.conf /opt/lampac/vercel.init.conf
+COPY infrastructure/lampac/start-vercel.sh /usr/local/bin/start-vercel
+RUN set -eu; \
+    cp /opt/lampac/vercel.init.conf /lampac/init.conf; \
+    /usr/local/bin/node -e 'const fs=require("node:fs"), p="/lampac/init.conf", c=JSON.parse(fs.readFileSync(p)); c.listen.ip="127.0.0.1"; c.listen.port=19118; c.chromium.enable=false; fs.writeFileSync(p, JSON.stringify(c));'; \
+    mkdir -p /lampac/cache/module /lampac/logs /lampac/database; \
+    rm -rf /lampac/cache/module; \
+    mkdir -p /lampac/cache/module; \
+    ( \
+      cd /lampac; \
+      /usr/share/dotnet/dotnet /lampac/Core.dll >/tmp/lampac-module-prewarm.log 2>&1 & \
+      pid=$!; \
+      trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT; \
+      ready=0; attempt=0; \
+      while [ "$attempt" -lt 180 ]; do \
+        if grep -q '^Configure complete' /tmp/lampac-module-prewarm.log; then ready=1; break; fi; \
+        if ! kill -0 "$pid" 2>/dev/null; then cat /tmp/lampac-module-prewarm.log; exit 1; fi; \
+        attempt=$((attempt + 1)); sleep 1; \
+      done; \
+      if [ "$ready" -ne 1 ]; then cat /tmp/lampac-module-prewarm.log; exit 1; fi; \
+      kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; trap - EXIT; \
+    ); \
+    module_count="$(find /lampac/cache/module -maxdepth 1 -type f | wc -l)"; \
+    test "$module_count" -ge 50 || { cat /tmp/lampac-module-prewarm.log; exit 1; }; \
+    mkdir -p /opt/lampac/module-cache; \
+    cp -a /lampac/cache/module/. /opt/lampac/module-cache/; \
+    chmod -R a+rX /opt/lampac/module-cache; \
+    chmod 0755 /usr/local/bin/start-vercel \
+    && mkdir -p /tmp/lampac-runtime/cache /tmp/lampac-runtime/logs /tmp/lampac-runtime/database \
+    && rm -rf /lampac/init.conf /lampac/passwd /lampac/cache /lampac/logs /lampac/database /lampac/current.conf \
+    && ln -s /tmp/lampac-runtime/init.conf /lampac/init.conf \
+    && ln -s /tmp/lampac-runtime/passwd /lampac/passwd \
+    && ln -s /tmp/lampac-runtime/cache /lampac/cache \
+    && ln -s /tmp/lampac-runtime/logs /lampac/logs \
+    && ln -s /tmp/lampac-runtime/database /lampac/database \
+    && ln -s /tmp/lampac-runtime/current.conf /lampac/current.conf \
+    && chown -R lampac:lampac /app /opt/lampac /tmp/lampac-runtime
+
+ENV PORT=9120 \
+    HOST=0.0.0.0 \
+    SOURCE_ENGINE_URL=http://127.0.0.1:9118
+
+USER lampac
+EXPOSE 9120
+ENTRYPOINT ["/usr/local/bin/start-vercel"]
+CMD []

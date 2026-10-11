@@ -5,3 +5,6 @@ dist/
 .playwright-mcp/
 *.log
 .DS_Store
+.vercel
+test-results/
+playwright-report/

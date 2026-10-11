@@ -3,10 +3,10 @@
 // On desktop, the Electron IPC bridge resolves main-process-side.
 const e = () => window.electron;
 
-export async function collapsResolve(args) {
-  return e()?.collapsResolve?.(args);
+export async function collapsResolve(args, options) {
+  return window.__webShim ? e()?.collapsResolve?.(args, options) : e()?.collapsResolve?.(args);
 }
-export const collapsFindKp = (args) => e()?.collapsFindKp?.(args);
+export const collapsFindKp = (args, options) => window.__webShim ? e()?.collapsFindKp?.(args, options) : e()?.collapsFindKp?.(args);
 
 // Relabel hls.js audioTracks with the friendly names from makePlayer (`names`).
 // hls.js exposes tracks as {id, name (e.g. "rus0"), lang ("ru"|"uk"|"en")}.

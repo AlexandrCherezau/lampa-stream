@@ -17,3 +17,16 @@ ensureSiteGate().finally(() => {
     </React.StrictMode>,
   );
 });
+
+// ── Service worker (web production builds only) ──────────────────────────────
+// Cached shell + hashed assets + stale-while-revalidate TMDB metadata: repeat
+// visits paint before the network answers. Never registered in dev (it would
+// serve stale modules) or in Electron (the app already ships local assets, and
+// __webShim is the marker the shim sets for browser builds).
+if (import.meta.env.PROD && window.__webShim && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      /* SW is a progressive enhancement — ignore failures (private mode etc.) */
+    });
+  });
+}

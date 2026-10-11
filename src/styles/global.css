@@ -1779,7 +1779,7 @@ kbd {
     position: absolute;
     top: 12px;
     right: 12px;
-    z-index: 10;
+    z-index: 30;
     background: color-mix(in srgb, var(--bg) 80%, transparent);
     border: 1px solid var(--border);
     color: var(--text);
@@ -3340,6 +3340,12 @@ kbd {
     transition:
         transform 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
         opacity 0.42s ease;
+}
+/* will-change ONLY while a slide animation runs. A permanent promotion kept
+   ~20 compositor layers alive for the whole session (4 carousels × 5 slots),
+   costing VRAM and layer-tree work on every frame for a transition that runs
+   0.42 s every 4.5 s. */
+.carousel-item--animating {
     will-change: transform, opacity;
 }
 
@@ -3352,11 +3358,9 @@ kbd {
         both;
 }
 
-.carousel-item--active {
-    filter: drop-shadow(
-        0 8px 36px color-mix(in srgb, var(--bg) 75%, transparent)
-    );
-}
+/* No filter here on purpose: a filter is a main-thread raster effect that
+   re-ran on every frame of the slide animation. The wrapper's box-shadow
+   below is the same look, composited. */
 .carousel-item--active .carousel-poster-wrap {
     box-shadow:
         0 0 0 2px color-mix(in srgb, var(--text) 12%, transparent),
@@ -3366,14 +3370,21 @@ kbd {
 .carousel-poster-wrap {
     position: relative;
     display: block;
+    /* The wrapper, not the image, owns the poster's box. TrendingCarousel
+       measures this element to pick the TMDB rung and only renders the <img>
+       once it has a width, so a wrapper that sized itself from its child would
+       measure 0 forever. 170 × 3/2 = 255 and the mobile 120 × 3/2 = 180, i.e.
+       aspect-ratio reproduces both of the old explicit heights exactly. */
+    width: 170px;
+    aspect-ratio: 2 / 3;
     border-radius: 8px;
     overflow: hidden;
     line-height: 0;
 }
 
 .carousel-poster {
-    width: 170px;
-    height: 255px;
+    width: 100%;
+    height: 100%;
     object-fit: cover;
     border-radius: 10px;
     display: block;
@@ -3381,8 +3392,8 @@ kbd {
 }
 
 .carousel-poster--placeholder {
-    width: 170px;
-    height: 255px;
+    width: 100%;
+    height: 100%;
     background: var(--surface2);
     border-radius: 10px;
     display: flex;
@@ -3633,7 +3644,7 @@ kbd {
     display: flex;
     align-items: center;
     gap: 6px;
-    z-index: 10;
+    z-index: 30;
 }
 
 .player-overlay-group .player-overlay-btn {
@@ -3643,15 +3654,29 @@ kbd {
     right: auto;
 }
 
-.player-wrap .player-overlay-btn,
+/* The top-left button group (source switcher / shield / pop-out) stays visible
+   in the windowed player so the second source is discoverable at a glance — it
+   still auto-hides in fullscreen via the .player-wrap--fullscreen rule above.
+   The other standalone overlay buttons keep the fade-in-on-hover behaviour. */
 .player-wrap .player-overlay-group {
+    opacity: 1;
+}
+
+.player-wrap .player-overlay-btn {
     opacity: 0;
     transition: opacity 0.25s ease;
 }
 
 .player-wrap:hover .player-overlay-btn,
-.player-wrap:hover .player-overlay-group {
+.player-wrap .player-overlay-group .player-overlay-btn {
     opacity: 1;
+}
+
+/* ▾ affordance on the source button so it reads as a picker */
+.player-overlay-caret {
+    margin-left: 2px;
+    font-size: 10px;
+    opacity: 0.7;
 }
 
 .player-blocked-badge {
@@ -4060,6 +4085,107 @@ html[data-win-titlebar][data-maximized] .main {
     color: var(--text);
 }
 
+/* ── Lampac fleet extras: wider picker menus, section headers, the seamless-
+   switch overlay and the inline (non-fatal) balancer notice. Collaps never
+   needs these; they render only when provider === "lampac". ───────────────── */
+.torrplayer-audio-menu--wide {
+    /* Balancer / dub names run long ("Дубляж [Лицензия] · 2", torrent meta). */
+    min-width: 220px;
+    max-width: 340px;
+}
+.torrplayer-audio-head {
+    /* Section label inside the two-part Quality menu (Источник / Поток ABR)
+       and can head any grouped picker. Not a button — never clickable. */
+    padding: 6px 10px 2px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--text3, var(--text2));
+    opacity: 0.75;
+    pointer-events: none;
+    user-select: none;
+}
+.torrplayer-audio-head:not(:first-child) {
+    margin-top: 4px;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+}
+/* Seamless re-attach overlay: a balancer/dub/quality switch re-resolves a new
+   file while <video> stays mounted. Dim + spinner, but do NOT blank the frame
+   (the old frame keeps showing until the new media paints). Cleared on
+   `seeked`/`playing`, not by the hook, so it never unfreezes too early. */
+.torrplayer-switching {
+    position: absolute;
+    inset: 0;
+    z-index: 27;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(0, 0, 0, 0.55);
+    border-radius: inherit;
+    pointer-events: none;
+}
+.torrplayer-switching-label {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.85);
+    letter-spacing: 0.3px;
+}
+/* Re-resolve / fatal-error overlays drawn over a LIVE <video> element (the
+   element and its buffer stay mounted — see OnlinePlayer's hasMedia gate). */
+.torrplayer-state-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 28;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 24px;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.72);
+    border-radius: inherit;
+}
+.torrplayer-state-overlay-label {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.85);
+    letter-spacing: 0.3px;
+}
+.torrplayer-state-overlay-error {
+    font-size: 14px;
+    color: #ff8f8f;
+    max-width: 520px;
+}
+.torrplayer-state-overlay-hint {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+}
+/* Inline notice: a dead balancer AFTER something already played. Non-fatal —
+   the picker stays up so the viewer can switch. Tap to dismiss. */
+.torrplayer-notice {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 41;
+    max-width: min(80%, 460px);
+    padding: 9px 14px;
+    background: rgba(20, 20, 22, 0.94);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--red);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+}
+.torrplayer-notice-text {
+    font-size: 12.5px;
+    line-height: 1.35;
+    color: var(--text);
+}
+
 .torrplayer-busy {
     position: absolute;
     top: 50%;
@@ -4075,6 +4201,44 @@ html[data-win-titlebar][data-maximized] .main {
 }
 
 /* ── Picker (pre-play) UI ─────────────────────────────────────────────────── */
+/* ── Loading skeletons ─────────────────────────────────────────────────────
+   Perceived-speed: the page shape appears instantly while data is in flight,
+   instead of a spinner that says nothing about what is coming. Shimmer is a
+   background-position animation (compositor-friendly), not a filter. */
+@keyframes skeletonShimmer {
+    0% { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+}
+.skeleton-poster,
+.skeleton-text {
+    background: linear-gradient(
+        90deg,
+        var(--bg2, rgba(255, 255, 255, 0.04)) 25%,
+        var(--bg3, rgba(255, 255, 255, 0.09)) 37%,
+        var(--bg2, rgba(255, 255, 255, 0.04)) 63%
+    );
+    background-size: 800px 100%;
+    animation: skeletonShimmer 1.4s ease-in-out infinite;
+    border-radius: 6px;
+}
+.skeleton-poster {
+    aspect-ratio: 2 / 3;
+    width: 100%;
+    border-radius: 10px;
+}
+.skeleton-text {
+    height: 14px;
+    width: 55%;
+}
+.skeleton-card-title {
+    margin-top: 8px;
+    height: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+    .skeleton-poster,
+    .skeleton-text { animation: none; }
+}
+
 .torrpicker {
     position: absolute;
     inset: 0;
@@ -4274,6 +4438,39 @@ html[data-win-titlebar][data-maximized] .main {
     text-align: center;
     padding: 40px 20px;
     line-height: 1.6;
+}
+
+/* Lampac error-screen manual balancer fallback — turns the dead-end error into
+   a recovery point mirroring the in-player picker. */
+.torrpicker-fallback {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 4px 16px;
+}
+.torrpicker-fallback-label {
+    font-size: 13px;
+    color: var(--text2);
+}
+.torrpicker-fallback-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.torrpicker-fallback-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: var(--font-body);
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.torrpicker-fallback-btn:hover {
+    background: color-mix(in srgb, var(--accent) 22%, var(--surface2));
+    border-color: var(--accent);
 }
 
 .torrpicker-add {
@@ -4700,10 +4897,13 @@ html[data-win-titlebar][data-maximized] .main {
     max-height: calc(100dvh - 140px) !important;
   }
 
-  /* Trending coverflow: smaller padding/posters so it fits a 360px viewport. */
+  /* Trending coverflow: smaller padding/posters so it fits a 360px viewport.
+     Sized on the wrapper — it owns the poster box now (see .carousel-poster-wrap)
+     and the img/placeholder inside it fill 100 %. aspect-ratio 2/3 keeps the
+     old 120 × 180. */
   .carousel-section { padding: 12px 12px !important; }
   .carousel-wrapper { height: 240px !important; }
-  .carousel-poster { width: 120px !important; height: 180px !important; }
+  .carousel-poster-wrap { width: 120px !important; }
   .carousel-btn { width: 36px !important; height: 36px !important; }
 
   /* Horizontal scroll rows: momentum + snap. */
@@ -4762,9 +4962,9 @@ html[data-web] .window-titlebar {
     z-index: 300;
     padding: 6px 8px;
     padding-top: calc(6px + env(safe-area-inset-top, 0px));
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    /* No backdrop-filter: a full-width blur on a sticky layer re-composites on
+       every scroll frame. A near-opaque background reads the same and is free. */
+    background: var(--bg);
     border-bottom: 1px solid var(--border);
   }
   .mobile-topbar-btn {
@@ -4901,7 +5101,21 @@ html[data-web] .window-titlebar {
   }
 
   /* Picker (pre-play) screen — fill mobile viewport */
-  .torrpicker {
+/* Suspense fallback while the (lazily-imported) player chunk loads. Matches
+   the stage's aspect so the layout never jumps when the player attaches. */
+.torrplayer-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    color: var(--text2);
+    font-size: 14px;
+    aspect-ratio: 16 / 9;
+}
+
+.torrpicker {
     padding: 12px !important;
   }
   .torrpicker-title {
@@ -4973,6 +5187,21 @@ html[data-web] .window-titlebar {
     min-width: 160px !important;
     max-width: 90vw !important;
     bottom: calc(100% + 4px) !important;
+  }
+  .torrplayer-audio-menu--wide {
+    min-width: 200px !important;
+    max-width: 92vw !important;
+  }
+  .torrplayer-notice {
+    top: 8px !important;
+    max-width: 92% !important;
+    padding: 7px 11px !important;
+  }
+  .torrplayer-notice-text {
+    font-size: 11.5px !important;
+  }
+  .torrplayer-switching-label {
+    font-size: 12px !important;
   }
   .torrplayer-skip {
     bottom: 64px !important;
@@ -5890,6 +6119,10 @@ html[data-web] .window-titlebar {
   content-visibility: auto;
   contain-intrinsic-size: auto 180px;
 }
+/* A card is a 150×225 poster + ~56px of info ≈ 281px. The generic 180px hint
+   under-reported it, so the scrollbar and scroll-anchoring jumped before the
+   real size locked in. */
+.cards-grid .card { contain-intrinsic-size: auto 281px; }
 .episode-card { contain-intrinsic-size: auto 90px; }
 .search-result { contain-intrinsic-size: auto 78px; }
 .torrplayer-cast-card { contain-intrinsic-size: auto 110px; }

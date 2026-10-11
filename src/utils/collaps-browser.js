@@ -4,11 +4,15 @@
 // fetches segments (phone IP), segments return 410. Resolving client-side keeps
 // the embed → manifest → segments all on the same (browser) IP.
 //
-// api.delivembd.ws sends Access-Control-Allow-Origin: <origin>, so the browser
-// can fetch the embed HTML directly. The parser is a faithful port of the
-// server-side parseCollaps (src/ipc/collaps.js).
+// The embed HOST rotates (delivembd → luxembd → ortified → …); a hardcoded
+// host is why every title started returning HTTP 422. The live embed URL is
+// resolved through bhcesh (CORS-open, IP-agnostic search API); each result
+// carries the authoritative current `iframe_url`. The parser is a faithful port
+// of the server-side parseCollaps (src/ipc/collaps.js).
 
-const EMBED = "https://api.delivembd.ws/embed/";
+const BHCESH_BASE = "https://api.bhcesh.me";
+const BHCESH_TOKEN = "eedefb541aeba871dcfc756e6b31c02e";
+const COLLAPS_HOST = "kinokrad.my";
 const UA = ""; // browsers send their own UA; can't override (and shouldn't)
 
 async function fetchText(url, { headers = {}, timeout = 20000 } = {}) {
@@ -104,10 +108,11 @@ export function parseCollaps(html, { type, season, episode } = {}) {
     if (arr) { try { seasons = JSON.parse(arr); } catch { seasons = null; } }
     if (!seasons || !seasons.length) return { ok: false, error: "Сезоны не найдены на Collaps" };
     let seasonObj = seasons.find((s) => Number(s.season) === Number(season));
-    if (!seasonObj) seasonObj = seasons[0];
+    if (!seasonObj && season == null) seasonObj = seasons[0];
+    if (!seasonObj) return { ok: false, error: "Сезон не найден на Collaps" };
     const episodes = seasonObj.episodes || [];
     let ep = episodes.find((e) => Number(e.episode) === Number(episode));
-    if (!ep) ep = episodes[0];
+    if (!ep && episode == null) ep = episodes[0];
     if (!ep) return { ok: false, error: "Серия " + season + "x" + episode + " не найдена на Collaps" };
     hls = ep.hls || null;
     dash = ep.dash || ep.dasha || null;
@@ -130,19 +135,42 @@ export function parseCollaps(html, { type, season, episode } = {}) {
   return { ok: true, hls, dash, audioNames, subtitles, duration };
 }
 
+// imdb_id/kinopoisk_id → the live iframe embed URL via bhcesh, or null. The imdb
+// id must be BARE digits ("0167404", not "tt0167404").
+async function resolveIframe({ imdbId, kinopoiskId }) {
+  const q = new URLSearchParams({ token: BHCESH_TOKEN });
+  if (imdbId) q.set("imdb_id", String(imdbId).replace(/^tt/i, ""));
+  else if (kinopoiskId) q.set("kinopoisk_id", String(kinopoiskId));
+  else return null;
+  try {
+    const r = await fetch(`${BHCESH_BASE}/franchise/details?${q}`, { cache: "no-store" });
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    return (j && typeof j.iframe_url === "string" && j.iframe_url) || null;
+  } catch {
+    return null;
+  }
+}
+
 // Resolve a Collaps stream from the browser. The kinopoisk-id-by-title fallback
 // still hits the server (/api/collaps/find-kp) since that's not IP-bound.
 export async function collapsResolveBrowser({ imdbId, kinopoiskId, type, season, episode }, findKp) {
   if (!imdbId && !kinopoiskId) return { ok: false, error: "Нужен imdb_id или kinopoisk_id" };
-  // If no imdb_id, ask the server to map title→kinopoisk_id (not IP-bound).
-  if (!imdbId && kinopoiskId) {
-    // kinopoiskId already provided
-  }
-  const url = imdbId
-    ? EMBED + "imdb/" + encodeURIComponent(imdbId)
-    : EMBED + "kp/" + encodeURIComponent(kinopoiskId);
+  const iframe = await resolveIframe({ imdbId, kinopoiskId });
+  if (!iframe) return { ok: false, error: "Collaps: тайтл не найден в каталоге" };
+  // The embed CDN requires `Origin: https://kinokrad.my` — browser fetch()
+  // can't forge that, so the SPA goes through /api/collaps which sets the
+  // partner identity server-side and streams the HTML back.
+  const target = iframe + (iframe.includes("?") ? "&" : "?") + "host=" + COLLAPS_HOST;
+  const b64 = (s) => {
+    const bytes = new TextEncoder().encode(s);
+    let bin = "";
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  };
+  const url = "/api/collaps?u=" + b64(target);
   try {
-    const html = await fetchText(url, { headers: { Referer: "https://api.delivembd.ws/" } });
+    const html = await fetchText(url);
     return parseCollaps(html, { type, season: Number(season), episode: Number(episode) });
   } catch (e) {
     return { ok: false, error: e.message };

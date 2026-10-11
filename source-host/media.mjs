@@ -1,0 +1,495 @@
+import { createDecipheriv, createCipheriv, createHash, randomBytes } from "node:crypto";
+import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
+import { TransportError } from "./transport.mjs";
+
+const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+const PLAYLIST_MAX = 16 * 1024 * 1024;
+const RANGE_DEFAULT_MAX = 8 * 1024 * 1024;
+const RANGE_LIMIT = 96 * 1024 * 1024;
+const PROBE_PREFIX = 64 * 1024;
+const HEADER_ALLOWLIST = new Set(["referer", "origin", "user-agent", "accept", "accept-language", "cookie"]);
+const RESPONSE_HEADERS = ["accept-ranges", "cache-control", "content-length", "content-range", "content-type", "etag", "last-modified", "content-encoding"];
+
+function mediaError(message, status = 502) {
+  return Object.assign(new Error(message), { status });
+}
+
+function headersFor(resource) {
+  const result = { "accept-encoding": "identity" };
+  const targetOrigin = new URL(resource.url).origin;
+  const headerOrigin = resource.headerOrigin || targetOrigin;
+  for (const [name, value] of Object.entries(resource.headers || {})) {
+    const key = name.toLowerCase();
+    if (key === "cookie" && targetOrigin !== headerOrigin) continue;
+    if (HEADER_ALLOWLIST.has(key) && typeof value === "string" && !/[\r\n]/.test(value)) result[key] = value;
+  }
+  return result;
+}
+
+function decodeBody(bytes, encoding = "") {
+  switch (encoding.toLowerCase()) {
+    case "gzip": return gunzipSync(bytes, { maxOutputLength: PLAYLIST_MAX });
+    case "br": return brotliDecompressSync(bytes, { maxOutputLength: PLAYLIST_MAX });
+    case "deflate": return inflateSync(bytes, { maxOutputLength: PLAYLIST_MAX });
+    default: return bytes;
+  }
+}
+
+async function collect(response, maxBytes, { signal, prefix = false } = {}) {
+  const chunks = [];
+  let length = 0;
+  try {
+    for await (const chunk of response) {
+      if (signal?.aborted) throw signal.reason || Object.assign(new Error("aborted"), { name: "AbortError" });
+      const take = prefix ? Math.min(chunk.length, maxBytes - length) : chunk.length;
+      if (take > 0) { chunks.push(chunk.subarray(0, take)); length += take; }
+      if (prefix && length >= maxBytes) {
+        response.destroy();
+        break;
+      }
+      if (!prefix && length > maxBytes) {
+        response.destroy();
+        throw mediaError("Upstream media response is too large");
+      }
+    }
+  } catch (error) {
+    if (error.status) throw error;
+    if (signal?.aborted) throw signal.reason || Object.assign(new Error("aborted"), { name: "AbortError" });
+    if (response.destroyed && length >= maxBytes && prefix) return Buffer.concat(chunks, length);
+    throw mediaError("Upstream media response ended early");
+  }
+  if (!length) throw mediaError("Upstream returned an empty media response");
+  return Buffer.concat(chunks, length);
+}
+
+function isPlaylist(contentType, bytes) {
+  return /mpegurl|vnd\.apple\.mpegurl/i.test(contentType || "") || playlistSignature(bytes);
+}
+
+function playlistSignature(bytes) {
+  return bytes.toString("utf8", 0, Math.min(bytes.length, 16_384)).replace(/^\uFEFF/, "").trimStart().startsWith("#EXTM3U");
+}
+
+function looksLikeErrorPage(contentType, bytes) {
+  const prefix = bytes.toString("utf8", 0, Math.min(bytes.length, 512)).replace(/^\uFEFF/, "").trimStart().toLowerCase();
+  const playlist = playlistSignature(bytes);
+  return /application\/(?:json|problem\+json)/i.test(contentType || "")
+    || (/text\/html/i.test(contentType || "") && !playlist)
+    || (!playlist && /^<!doctype\s+html\b|^<html\b|^<(?:head|body|script|title|meta|form)\b/.test(prefix))
+    || /^\{\s*"[^"\r\n]+"\s*:/.test(prefix)
+    || /^\[\s*(?:\{|\[|"(?:[^"\\]|\\.)*"|-?\d|true\b|false\b|null\b)/.test(prefix);
+}
+
+function hlsUri(value, base) {
+  const raw = value.trim();
+  if (!raw || /^(?:data:|skd:|urn:)/i.test(raw)) return raw;
+  return new URL(raw, base).toString();
+}
+
+function rewritePlaylist(text, baseUrl, makeUrl) {
+  const wrap = (raw) => {
+    const target = hlsUri(raw, baseUrl);
+    return /^https?:\/\//i.test(target) ? makeUrl(target) : target;
+  };
+  return text.split(/\r?\n/).map((line) => {
+    if (!line || line[0] === "#") {
+      return line.replace(/\bURI=(['"])(.*?)\1/gi, (_match, quote, raw) => `URI=${quote}${wrap(raw)}${quote}`);
+    }
+    return wrap(line);
+  }).join("\n");
+}
+
+function parseRange(value) {
+  if (!value) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(value.trim());
+  if (!match || (!match[1] && !match[2])) return false;
+  if (!match[1]) {
+    const suffix = Number(match[2]);
+    if (!Number.isSafeInteger(suffix) || suffix <= 0) return false;
+    return { suffix: Math.min(suffix, RANGE_LIMIT) };
+  }
+  const start = Number(match[1]);
+  if (!Number.isSafeInteger(start) || start < 0 || start > Number.MAX_SAFE_INTEGER - RANGE_LIMIT) return false;
+  if (!match[2]) return { start, end: start + RANGE_DEFAULT_MAX - 1 };
+  const end = Number(match[2]);
+  if (!Number.isSafeInteger(end) || end < start) return false;
+  return { start, end: Math.min(end, start + RANGE_LIMIT - 1) };
+}
+
+function rangeHeader(range) {
+  if (!range) return null;
+  return range.suffix ? `bytes=-${range.suffix}` : `bytes=${range.start}-${range.end}`;
+}
+
+function responseError(res, status, message) {
+  if (res.headersSent) { res.destroy(); return; }
+  res.writeHead(status, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", ...(status === 416 ? { "content-range": "bytes */*" } : {}) });
+  res.end(message);
+}
+
+function redirectUrl(publicOrigin, token) {
+  const path = `/v1/media?token=${encodeURIComponent(token)}`;
+  return publicOrigin ? new URL(path, publicOrigin).toString() : path;
+}
+
+function decodeTokenPart(value) {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error("invalid");
+  const bytes = Buffer.from(value, "base64url");
+  if (bytes.toString("base64url") !== value) throw new Error("invalid");
+  return bytes;
+}
+
+function parseToken(token, key) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length !== 4 || parts[0] !== "v1") throw new Error("invalid");
+    const iv = decodeTokenPart(parts[1]);
+    const tag = decodeTokenPart(parts[2]);
+    const ciphertext = decodeTokenPart(parts[3]);
+    if (iv.length !== 12 || tag.length !== 16 || ciphertext.length === 0) throw new Error("invalid");
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+    const value = JSON.parse(Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8"));
+    if (!value || !Number.isFinite(value.exp) || value.exp <= Date.now() || typeof value.url !== "string") throw new Error("expired");
+    return value;
+  } catch {
+    throw mediaError("Invalid or expired media token", 404);
+  }
+}
+
+function makeToken(resource, key) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const value = Buffer.from(JSON.stringify({
+    url: String(resource.url),
+    headers: headersFor(resource),
+    headerOrigin: resource.headerOrigin || new URL(resource.url).origin,
+    exp: Date.now() + TOKEN_TTL_MS,
+  }));
+  const encrypted = Buffer.concat([cipher.update(value), cipher.final()]);
+  return `v1.${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${encrypted.toString("base64url")}`;
+}
+
+async function readPlaylist(transport, resource, signal) {
+  const { response, url, headers, headerOrigin } = await transport.request(resource.url, { headers: headersFor(resource), signal, timeout: 15_000 });
+  const raw = await collect(response, PLAYLIST_MAX, { signal });
+  const bytes = decodeBody(raw, response.headers["content-encoding"]);
+  const type = response.headers["content-type"] || "";
+  if (looksLikeErrorPage(type, bytes) || !isPlaylist(type, bytes)) throw mediaError("Upstream did not return an HLS playlist");
+  return { text: bytes.toString("utf8"), url, headers: headers || headersFor(resource), headerOrigin: headerOrigin || url.origin };
+}
+
+async function readProbeBytes(transport, url, headers, signal, range = true) {
+  const requestHeaders = { ...headers, ...(range ? { range: range === true ? `bytes=0-${PROBE_PREFIX - 1}` : range } : {}) };
+  const { response } = await transport.request(url, { headers: requestHeaders, signal, timeout: 15_000 });
+  if (typeof range === "string" && response.statusCode !== 206) {
+    response.resume();
+    throw mediaError("Upstream did not honor the HLS byte range");
+  }
+  const type = response.headers["content-type"] || "";
+  const bytes = await collect(response, PROBE_PREFIX, { signal, prefix: true });
+  if (looksLikeErrorPage(type, bytes)) throw mediaError("Upstream returned an error page instead of media");
+  return bytes;
+}
+
+function firstVariant(text) {
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index++) {
+    if (!/^#EXT-X-STREAM-INF:/i.test(lines[index])) continue;
+    for (let next = index + 1; next < lines.length; next++) if (lines[next] && lines[next][0] !== "#") return lines[next].trim();
+  }
+  return null;
+}
+
+function firstMediaSegment(text) {
+  const lines = text.split(/\r?\n/);
+  const map = lines.find((line) => /^#EXT-X-MAP:/i.test(line));
+  const key = lines.find((line) => /^#EXT-X-KEY:/i.test(line) && /METHOD=AES-128/i.test(line));
+  let nextRange = null;
+  let segment = null;
+  let segmentRange = null;
+  for (const line of lines) {
+    const range = /^#EXT-X-BYTERANGE:(\d+)(?:@(\d+))?/i.exec(line);
+    if (range) nextRange = { length: Number(range[1]), offset: range[2] ? Number(range[2]) : 0 };
+    else if (line && line[0] !== "#") { segment = line.trim(); segmentRange = nextRange; break; }
+  }
+  const uriAttr = (line) => line && (/\bURI="([^"]+)"/i.exec(line)?.[1] || /\bURI='([^']+)'/i.exec(line)?.[1]);
+  const mapRange = map && /\bBYTERANGE="(\d+)(?:@(\d+))?"/i.exec(map);
+  return {
+    map: uriAttr(map),
+    mapRange: mapRange ? { length: Number(mapRange[1]), offset: Number(mapRange[2] || 0) } : null,
+    key: uriAttr(key),
+    segment,
+    segmentRange,
+  };
+}
+
+function vodDuration(text) {
+  if (!/^#EXT-X-ENDLIST\s*$/m.test(text)) return null;
+  const durations = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith("#EXTINF:")) continue;
+    const match = /^#EXTINF:([0-9]+(?:\.[0-9]+)?)(?:,.*)?$/.exec(line);
+    if (!match) return null;
+    const seconds = Number(match[1]);
+    if (!Number.isFinite(seconds) || seconds <= 0) return null;
+    durations.push(seconds);
+  }
+  return durations.length ? durations.reduce((sum, seconds) => sum + seconds, 0) : null;
+}
+
+function rangeForProbe(range) {
+  if (!range) return true;
+  if (!Number.isSafeInteger(range.length) || !Number.isSafeInteger(range.offset) || range.length < 1 || range.offset < 0 || range.offset > Number.MAX_SAFE_INTEGER - range.length) {
+    throw mediaError("Invalid HLS byte range");
+  }
+  const length = Math.min(PROBE_PREFIX, range.length);
+  return `bytes=${range.offset}-${range.offset + length - 1}`;
+}
+
+function looksLikeFile(contentType, bytes) {
+  if (/^(?:video|audio)\//i.test(contentType || "")) return true;
+  const ts = bytes.length >= 188 && bytes[0] === 0x47 && (bytes.length < 376 || bytes[188] === 0x47) && (bytes.length < 564 || bytes[376] === 0x47);
+  return (bytes.length >= 8 && bytes.toString("ascii", 4, 8) === "ftyp")
+    || (bytes.length >= 4 && bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3])))
+    || ts
+    || bytes.subarray(0, 3).toString("ascii") === "ID3"
+    || bytes.subarray(0, 4).toString("ascii") === "OggS"
+    || bytes.subarray(0, 3).toString("ascii") === "FLV";
+}
+
+async function inspectRoot(transport, resource, signal) {
+  const { response, url, headers, headerOrigin } = await transport.request(resource.url, { headers: headersFor(resource), signal, timeout: 15_000 });
+  const contentType = response.headers["content-type"] || "";
+  const iterator = response[Symbol.asyncIterator]();
+  const first = await iterator.next();
+  if (first.done || !first.value?.length) throw mediaError("Upstream returned an empty media response");
+  const firstBytes = first.value.subarray(0, PROBE_PREFIX);
+  if (looksLikeErrorPage(contentType, firstBytes)) throw mediaError("Upstream returned an error page instead of media");
+  if (!isPlaylist(contentType, firstBytes)) {
+    response.destroy();
+    if (!looksLikeFile(contentType, firstBytes)) throw mediaError("Upstream did not return a media file");
+    return { kind: "file", url, bytes: firstBytes.length, headers: headers || headersFor(resource), headerOrigin: headerOrigin || url.origin };
+  }
+  const chunks = [first.value];
+  let size = first.value.length;
+  if (size > PLAYLIST_MAX) throw mediaError("HLS playlist is too large");
+  while (true) {
+    const next = await iterator.next();
+    if (next.done) break;
+    size += next.value.length;
+    if (size > PLAYLIST_MAX) throw mediaError("HLS playlist is too large");
+    chunks.push(next.value);
+  }
+  const bytes = decodeBody(Buffer.concat(chunks, size), response.headers["content-encoding"]);
+  if (!isPlaylist(contentType, bytes)) throw mediaError("Upstream returned an invalid playlist");
+  return { kind: "hls", url, text: bytes.toString("utf8"), headers: headers || headersFor(resource), headerOrigin: headerOrigin || url.origin };
+}
+
+export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
+  if (!transport || typeof transport.request !== "function") throw new TypeError("transport.request is required");
+  if (typeof secret !== "string" || Buffer.byteLength(secret) < 32) throw new TypeError("secret must be at least 32 bytes");
+  if (publicOrigin) {
+    const origin = new URL(publicOrigin);
+    if (!/^https?:$/.test(origin.protocol)) throw new TypeError("publicOrigin must use HTTP(S)");
+  }
+  const key = createHash("sha256").update(String(secret)).digest();
+
+  function url(resource) {
+    if (!resource || typeof resource.url !== "string") throw new TypeError("resource.url is required");
+    const target = new URL(resource.url);
+    if (!/^https?:$/.test(target.protocol) || target.username || target.password) throw new TypeError("resource.url must be credential-free HTTP(S)");
+    return redirectUrl(publicOrigin, makeToken(resource, key));
+  }
+
+  async function handle(req, res, token) {
+    let resource;
+    try { resource = parseToken(token, key); }
+    catch (error) { responseError(res, error.status || 404, "Media token is invalid or expired"); return; }
+    const range = parseRange(req.headers.range);
+    if (range === false) { responseError(res, 416, "Invalid range"); return; }
+    const abort = new AbortController();
+    const onClose = () => { if (!res.writableEnded) abort.abort(); };
+    req.once("aborted", onClose);
+    res.once("close", onClose);
+    try {
+      const headers = headersFor(resource);
+      const requestedRange = rangeHeader(range);
+      if (requestedRange) headers.range = requestedRange;
+      const { response, url: finalUrl, headers: upstreamHeaders, headerOrigin } = await transport.request(resource.url, { headers, method: req.method === "HEAD" ? "HEAD" : "GET", signal: abort.signal, timeout: 30_000 });
+      const type = response.headers["content-type"] || "application/octet-stream";
+      const honoredRange = !range || response.statusCode === 206;
+      if (req.method === "HEAD" && looksLikeErrorPage(type, Buffer.alloc(0))) {
+        response.resume();
+        throw mediaError("Upstream returned an error page instead of media");
+      }
+      if (req.method === "HEAD") {
+        const output = Object.fromEntries(RESPONSE_HEADERS
+          .filter((name) => response.headers[name] !== undefined && (honoredRange || name !== "content-range"))
+          .map((name) => [name, response.headers[name]]));
+        res.writeHead(response.statusCode || 200, output);
+        res.end();
+        response.resume();
+        return;
+      }
+      const iterator = response[Symbol.asyncIterator]();
+      const playlistType = /mpegurl|vnd\.apple\.mpegurl/i.test(type);
+      const initial = [];
+      let initialSize = 0;
+      let pendingNext = null;
+      const sniffDeadline = Date.now() + 50;
+      while (initialSize < (playlistType || /^(?:video|audio)\//i.test(type) ? 1 : 7)) {
+        let part;
+        if (pendingNext) {
+          const remaining = sniffDeadline - Date.now();
+          if (remaining <= 0) break;
+          let timer;
+          const result = await Promise.race([
+            pendingNext.then((value) => ({ value })),
+            new Promise((resolve) => { timer = setTimeout(() => resolve({ timeout: true }), remaining); }),
+          ]);
+          clearTimeout(timer);
+          if (result.timeout) break;
+          part = result.value;
+          pendingNext = null;
+        } else {
+          part = await iterator.next();
+        }
+        if (part.done) break;
+        initial.push(part.value);
+        initialSize += part.value.length;
+        if (!playlistType && !/^(?:video|audio)\//i.test(type)) {
+          const currentPrefix = Buffer.concat(initial, initialSize).toString("utf8").trimStart();
+          if (!"#EXTM3U".startsWith(currentPrefix)) break;
+          if (currentPrefix.length >= 7) break;
+          pendingNext = iterator.next();
+        }
+      }
+      if (!initialSize) throw mediaError("Upstream returned an empty media response");
+      const prefix = Buffer.concat(initial, initialSize);
+      if (looksLikeErrorPage(type, prefix)) throw mediaError("Upstream returned an error page instead of media");
+      if (playlistType || isPlaylist(type, prefix)) {
+        const chunks = initial.slice();
+        let size = initialSize;
+        if (size > PLAYLIST_MAX) throw mediaError("HLS playlist is too large");
+        while (true) {
+          const part = pendingNext ? await pendingNext : await iterator.next();
+          pendingNext = null;
+          if (part.done) break;
+          size += part.value.length;
+          if (size > PLAYLIST_MAX) {
+            response.destroy();
+            throw mediaError("HLS playlist is too large");
+          }
+          chunks.push(part.value);
+        }
+        const body = decodeBody(Buffer.concat(chunks, size), response.headers["content-encoding"]);
+        if (looksLikeErrorPage(type, body) || !isPlaylist(type, body)) throw mediaError("Upstream returned an invalid playlist");
+        const rewritten = rewritePlaylist(body.toString("utf8"), finalUrl, (childUrl) => url({
+          url: childUrl,
+          headers: upstreamHeaders || resource.headers,
+          headerOrigin: headerOrigin || finalUrl.origin,
+        }));
+        const output = { "content-type": "application/vnd.apple.mpegurl", "content-length": Buffer.byteLength(rewritten), "cache-control": response.headers["cache-control"] || "no-store" };
+        res.writeHead(response.statusCode || 200, output);
+        res.end(rewritten);
+        return;
+      }
+      const outputHeaders = Object.fromEntries(RESPONSE_HEADERS
+        .filter((name) => response.headers[name] !== undefined && (honoredRange || name !== "content-range"))
+        .map((name) => [name, response.headers[name]]));
+      if (!outputHeaders["content-type"]) outputHeaders["content-type"] = type;
+      res.writeHead(response.statusCode || 200, outputHeaders);
+      let bytes = 0;
+      const write = async (chunk) => {
+        if (!chunk?.length) return;
+        bytes += chunk.length;
+        if (!res.write(chunk)) await new Promise((resolve) => {
+          const finish = () => {
+            res.removeListener("drain", finish);
+            res.removeListener("close", finish);
+            abort.signal.removeEventListener("abort", finish);
+            resolve();
+          };
+          res.once("drain", finish);
+          res.once("close", finish);
+          abort.signal.addEventListener("abort", finish, { once: true });
+        });
+      };
+      for (const part of initial) await write(part);
+      while (!abort.signal.aborted) {
+        const next = pendingNext ? await pendingNext : await iterator.next();
+        pendingNext = null;
+        if (next.done) break;
+        const chunk = next.value;
+        if (abort.signal.aborted) break;
+        await write(chunk);
+      }
+      if (!res.writableEnded && !abort.signal.aborted) res.end();
+    } catch (error) {
+      if (abort.signal.aborted) return;
+      console.error("Media upstream failed", error.code || error.name, error.status || 502, new URL(resource.url).host);
+      responseError(res, error.status === 504 ? 504 : 502, error.status === 416 ? "Invalid range" : "Media source unavailable");
+    } finally {
+      req.removeListener("aborted", onClose);
+      res.removeListener("close", onClose);
+    }
+  }
+
+  async function probe(resource, { signal } = {}) {
+    try {
+      let inspected = await inspectRoot(transport, resource, signal);
+      if (inspected.kind === "file") return {
+        ok: true,
+        kind: "file",
+        url: inspected.url.toString(),
+        headers: inspected.headers,
+        headerOrigin: inspected.headerOrigin,
+        bytes: inspected.bytes,
+      };
+      let playlist = { text: inspected.text, url: inspected.url, headers: inspected.headers, headerOrigin: inspected.headerOrigin };
+      let masters = 0;
+      while (true) {
+        const variant = firstVariant(playlist.text);
+        if (!variant) break;
+        if (masters >= 3) throw mediaError("Too many HLS master playlist levels");
+        masters++;
+        playlist = await readPlaylist(transport, {
+          ...resource,
+          url: new URL(variant, playlist.url).toString(),
+          headers: playlist.headers,
+          headerOrigin: playlist.headerOrigin,
+        }, signal);
+      }
+      const parts = firstMediaSegment(playlist.text);
+      if (!parts.segment) throw mediaError("HLS playlist has no media segment");
+      if (parts.map) {
+        const mapUrl = new URL(parts.map, playlist.url).toString();
+        await readProbeBytes(transport, mapUrl, headersFor({ ...resource, url: mapUrl, headers: playlist.headers, headerOrigin: playlist.headerOrigin }), signal, rangeForProbe(parts.mapRange));
+      }
+      if (parts.key) {
+        const keyUrl = new URL(parts.key, playlist.url).toString();
+        const keyBytes = await readProbeBytes(transport, keyUrl, headersFor({ ...resource, url: keyUrl, headers: playlist.headers, headerOrigin: playlist.headerOrigin }), signal, false);
+        if (keyBytes.length !== 16) throw mediaError("Invalid AES-128 HLS key");
+      }
+      const segmentUrl = new URL(parts.segment, playlist.url).toString();
+      const segment = await readProbeBytes(transport, segmentUrl, headersFor({ ...resource, url: segmentUrl, headers: playlist.headers, headerOrigin: playlist.headerOrigin }), signal, rangeForProbe(parts.segmentRange));
+      return {
+        ok: true,
+        kind: "hls",
+        url: inspected.url.toString(),
+        headers: inspected.headers,
+        headerOrigin: inspected.headerOrigin,
+        bytes: segment.length,
+        initBytes: parts.map ? true : false,
+        encrypted: parts.key ? true : false,
+        duration: vodDuration(playlist.text),
+      };
+    } catch (error) {
+      console.warn("Media probe failed", error.code || error.name, error.status || 502, new URL(resource.url).host);
+      return { ok: false, kind: null, reason: error.status === 504 ? "timeout" : error.name === "AbortError" ? "aborted" : error.code || "probe-failed" };
+    }
+  }
+
+  return { url, handle, probe, resource: (token) => parseToken(token, key) };
+}

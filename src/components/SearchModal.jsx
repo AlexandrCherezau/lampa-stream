@@ -119,7 +119,7 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
           <input
             ref={inputRef}
             className="search-input"
-            placeholder="Search movies and series..."
+            placeholder="Поиск фильмов и сериалов..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKey}
@@ -152,7 +152,7 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
                 gap: 8,
               }}
             >
-              🌐 No internet, search is unavailable offline.
+              🌐 Нет подключения к интернету. Поиск офлайн недоступен.
             </div>
           )}
 
@@ -163,7 +163,7 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
           )}
 
           {!loading && query && results.length === 0 && (
-            <div className="search-empty">No results for "{query}"</div>
+            <div className="search-empty">По запросу «{query}» ничего не найдено</div>
           )}
 
           {!loading &&
@@ -191,7 +191,7 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
                 <span
                   className={`search-result-type ${r.media_type === "tv" ? "type-tv" : "type-movie"}`}
                 >
-                  {r.media_type === "tv" ? "Series" : "Movie"}
+                  {r.media_type === "tv" ? "Сериал" : "Фильм"}
                 </span>
               </div>
             ))}
@@ -199,9 +199,9 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
           {showHistory && (
             <div className="search-history">
               <div className="search-history-header">
-                <span className="search-history-label">Recent searches</span>
+                <span className="search-history-label">Недавние запросы</span>
                 <button className="search-history-clear" onClick={clearHistory}>
-                  Clear all
+                  Очистить
                 </button>
               </div>
               {history.map((term) => (
@@ -217,7 +217,7 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
                   <button
                     className="search-history-remove"
                     onClick={(e) => removeFromHistory(e, term)}
-                    title="Remove"
+                    title="Удалить"
                   >
                     <CloseIcon />
                   </button>
@@ -228,7 +228,7 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
 
           {!query && history.length === 0 && (
             <div className="search-hint">
-              Search for movies and series &nbsp;·&nbsp; <kbd>ESC</kbd> to close
+                Ищите фильмы и сериалы &nbsp;·&nbsp; <kbd>ESC</kbd> — закрыть
             </div>
           )}
         </div>

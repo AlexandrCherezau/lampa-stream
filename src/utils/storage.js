@@ -31,6 +31,27 @@ export const storage = {
   },
 };
 
+// ── Capped map persistence ──────────────────────────────────────────────────
+// Several maps (resume timecodes, watch progress) grow one entry per title AND
+// per episode ever watched. Unbounded, they (a) bloat the localStorage blob
+// toward the 5 MB quota and (b) make every save a synchronous JSON.parse +
+// JSON.stringify of the whole map on the main thread — during playback, on the
+// same thread as video decoding. `setCappedMap` evicts the oldest-inserted
+// entries once the map passes `cap`, keeping the recent tail the viewer
+// actually resumes.
+export function setCappedMap(key, map, cap = 300) {
+  try {
+    let m = map;
+    const keys = Object.keys(m);
+    if (keys.length > cap) {
+      m = {};
+      // Object key order is insertion order, so the first keys are the oldest.
+      for (const k of keys.slice(keys.length - cap)) m[k] = map[k];
+    }
+    storage.set(key, m);
+  } catch {}
+}
+
 // Centralised storage key registry
 export const STORAGE_KEYS = {
   API_KEY: "apikey",
@@ -75,18 +96,26 @@ export const STORAGE_KEYS = {
   NOTIFY_NEW_EPISODE: "notifyNewEpisode",
   // TMDB metadata lang (BCP-47 locale, e.g. "de-DE")
   TMDB_LANG: "tmdbLang",
-  // Intro skip (anime only, allmanga source)
+  // Anime opening/ending/recap skip (AniSkip)
   // Values: "off" | "auto" | "manual"
   INTRO_SKIP_MODE: "introSkipMode",
-  // Skip intro/outro/credits for MOVIES & NON-ANIME series (heuristic detector).
+  // Confirmed IntroDB intro/recap/credits for movies and non-anime series.
   // Values: "off" | "auto" | "manual". Separate from INTRO_SKIP_MODE so the user
-  // can enable exact AniSkip for anime while leaving the heuristic off (or vice
+  // can enable AniSkip for anime while leaving general skipping off (or vice
   // versa). Anime series still use INTRO_SKIP_MODE (AniSkip, exact).
   SKIP_HEURISTIC_MODE: "skipHeuristicMode",
   // Autoplay next preferences
   AUTOPLAY_NEXT_ENABLED: "autoplayNextEnabled",
   AUTOPLAY_NEXT_DURATION: "autoplayNextDuration",
   AUTOPLAY_NEXT_LAYOUT: "autoplayNextLayout",
+  // Lampac picker state per IMDB id (so balancer/voice/quality survive between
+  // episodes of the same series and across opens of the same movie). Keys look
+  // up via getLampacState(imdbId); writes go through setLampacState().
+  LAMPAC_STATE: "streambert_lampacState",
+  // Player volume / mute — survive full player remounts (source change,
+  // key={playerSource}). Single global value, not per-title.
+  PLAYER_VOLUME: "streambert_playerVolume",
+  PLAYER_MUTED: "streambert_playerMuted",
   AUTOPLAY_NEXT_INSTANT: "autoplayNextInstant",
   // Download page UI preferences
   DL_SORT_BY: "dlSortBy",
@@ -151,6 +180,69 @@ export const clearFailoverSource = (epKey) => {
     storage.set(STORAGE_KEYS.SOURCE_FAILOVER_CACHE, cache);
   }
 };
+
+// ── Lampac picker state per IMDB id ──────────────────────────────────────────
+// Persist the user's balancer / voice / quality picks per title (imdb_id for
+// movies, series imdb_id for tv) so an episode switch inside a series — or a
+// re-open of the same film — restores the picker without a manual re-pick.
+// Stored as a flat map keyed by imdbId; each entry holds whatever subset of
+// {balanser, voice, quality} the caller wrote.
+const LAMPAC_STATE_MAX = 500;
+const sanitizeLampacState = (s) => {
+  if (!s || typeof s !== "object") return null;
+  const out = {};
+  if (typeof s.balanser === "string" && s.balanser) out.balanser = s.balanser;
+  if (typeof s.voice === "string" && s.voice) out.voice = s.voice;
+  if (typeof s.quality === "string" && s.quality) out.quality = s.quality;
+  return Object.keys(out).length ? out : null;
+};
+export const getLampacState = (imdbId) => {
+  if (!imdbId) return null;
+  const cache = storage.get(STORAGE_KEYS.LAMPAC_STATE) || {};
+  return sanitizeLampacState(cache[imdbId]);
+};
+export const setLampacState = (imdbId, partial) => {
+  if (!imdbId) return;
+  const cache = storage.get(STORAGE_KEYS.LAMPAC_STATE) || {};
+  const cur = sanitizeLampacState(cache[imdbId]) || {};
+  const next = { ...cur, ...sanitizeLampacState(partial) };
+  if (!Object.keys(next).length) return;
+  cache[imdbId] = next;
+  // Evict oldest entries when at capacity (insertion order via Object.keys)
+  const keys = Object.keys(cache);
+  if (keys.length > LAMPAC_STATE_MAX) {
+    const evict = keys.slice(0, keys.length - LAMPAC_STATE_MAX);
+    evict.forEach((k) => delete cache[k]);
+  }
+  storage.set(STORAGE_KEYS.LAMPAC_STATE, cache);
+};
+export const clearLampacState = (imdbId) => {
+  const cache = storage.get(STORAGE_KEYS.LAMPAC_STATE) || {};
+  if (cache[imdbId] !== undefined) {
+    delete cache[imdbId];
+    storage.set(STORAGE_KEYS.LAMPAC_STATE, cache);
+  }
+};
+
+// ── Player volume / mute (single global value, not per-title) ──────────────────
+const clampVol = (v) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(1, Math.max(0, n));
+};
+export const getStoredVolume = () => {
+  const v = clampVol(storage.get(STORAGE_KEYS.PLAYER_VOLUME));
+  return v == null ? 1 : v;
+};
+export const getStoredMuted = () => {
+  const raw = storage.get(STORAGE_KEYS.PLAYER_MUTED);
+  return raw === true || raw === "true";
+};
+export const setStoredVolume = (v) => {
+  const c = clampVol(v);
+  if (c != null) storage.set(STORAGE_KEYS.PLAYER_VOLUME, c);
+};
+export const setStoredMuted = (m) => storage.set(STORAGE_KEYS.PLAYER_MUTED, !!m);
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 

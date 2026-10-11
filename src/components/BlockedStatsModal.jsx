@@ -26,12 +26,12 @@ export default function BlockedStatsModal({
         <div className="blocked-modal-header">
           <div className="blocked-modal-title">
             <ShieldBlockIcon size={15} />
-            Ads &amp; Trackers Blocked
+            Заблокированная реклама и трекеры
           </div>
           <button
             className="blocked-modal-close"
             onClick={onClose}
-            title="Close"
+            title="Закрыть"
           >
             <CloseIcon />
           </button>
@@ -39,14 +39,14 @@ export default function BlockedStatsModal({
 
         <div className="blocked-modal-subtitle">
           {sessionTotal > 0
-            ? `${sessionTotal} ad/tracker request${sessionTotal === 1 ? "" : "s"} blocked this session`
-            : "Start playing content to see blocked ads & trackers."}
+            ? `За этот сеанс заблокировано запросов рекламы и трекеров: ${sessionTotal}`
+            : "Запустите просмотр, чтобы увидеть заблокированную рекламу и трекеры."}
         </div>
 
         <div className="blocked-modal-list">
           {sessionDomains.length === 0 ? (
             <div className="blocked-modal-empty">
-              No ads or trackers blocked yet, play something to start.
+              Пока ничего не заблокировано. Запустите просмотр, чтобы начать.
             </div>
           ) : (
             sessionDomains.map(([domain, count]) => (
@@ -62,12 +62,11 @@ export default function BlockedStatsModal({
 
         <div className="blocked-modal-footer">
           <ShieldBlockIcon size={13} />
-          All-time:&nbsp;
+          Всего:&nbsp;
           <strong>
-            {alltimeTotal.toLocaleString()} ad &amp; tracker request
-            {alltimeTotal === 1 ? "" : "s"}
+            {alltimeTotal.toLocaleString()} запросов рекламы и трекеров
           </strong>
-          &nbsp;blocked
+          &nbsp;заблокировано
         </div>
       </div>
     </div>

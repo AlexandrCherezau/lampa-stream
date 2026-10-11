@@ -1,12 +1,12 @@
 // Keyboard Shortcuts reference modal
 export default function KeyboardShortcutsModal({ onClose }) {
   const shortcuts = [
-    { keys: ["Ctrl", "F"], desc: "Open search" },
-    { keys: ["Ctrl", "K"], desc: "Search on a page" },
-    { keys: ["Esc"], desc: "Close search / modal" },
-    { keys: ["Ctrl", "Z"], desc: "Navigate back" },
-    { keys: ["Ctrl", "R"], desc: "Reload app" },
-    { keys: ["?"], desc: "Show this shortcuts overview" },
+    { keys: ["Ctrl", "F"], desc: "Открыть поиск" },
+    { keys: ["Ctrl", "K"], desc: "Поиск по странице" },
+    { keys: ["Esc"], desc: "Закрыть поиск или окно" },
+    { keys: ["Ctrl", "Z"], desc: "Назад" },
+    { keys: ["Ctrl", "R"], desc: "Перезагрузить приложение" },
+    { keys: ["?"], desc: "Показать список сочетаний" },
   ];
 
   return (
@@ -53,7 +53,7 @@ export default function KeyboardShortcutsModal({ onClose }) {
               color: "var(--text)",
             }}
           >
-            KEYBOARD SHORTCUTS
+            СОЧЕТАНИЯ КЛАВИШ
           </div>
           <button
             onClick={onClose}
