@@ -2,7 +2,7 @@
 
 Source host is an independent Node API plus Lampac NextGen `1.81.0` and hidden Chromium. The Vercel deployment runs them together in a custom container; Lampac and Chrome DevTools Protocol listen only on loopback. The container image has already been built remotely with the provider-module cache prewarmed. At runtime that cache and browser profile are copied to ephemeral storage, so restarts can require a fresh browser session.
 
-The production source host is `https://lampa-source-host.vercel.app` (READY deployment `dpl_7U8C3zFNiJrJAgX5AUUGBCxZoBic`); its Cloudflare media Worker is `https://lampa-source-media.ocr-gemini-proxy.workers.dev`. The frontend is READY at `dpl_7zhcx5FmQKGAgwnqwDet1o3r64cM`. The project also includes a local Docker Compose setup. From the repository root:
+The production source host is `https://lampa-source-host.vercel.app` (READY deployment `dpl_ESZ97qQfU6QEHxt3VjhsSxeSuZD3`); its Cloudflare media Worker is `https://lampa-source-media.ocr-gemini-proxy.workers.dev`. The frontend is READY at `dpl_CjS3ophsjFVRbKVpM4gqGwi1LoMD`. The project also includes a local Docker Compose setup. From the repository root:
 
 ```sh
 ./infrastructure/lampac/setup.sh
@@ -88,3 +88,10 @@ Filmix / «Дубляж [Rus, 4K, SDR]» 480p для «Интерстеллар�
 
 
 После деплоя исправления качества повторная скрытая браузерная проверка «Начала» прошла через VeoVeo / «Оригинал» auto: 8888 секунд, 152 кадра, seek на 60,51 секунды с 135 новыми кадрами; ошибок HTTP или media error в этой попытке не было. Это подтверждает этот кандидат, но не все озвучки VeoVeo. TMDB использовал fixtures; видео было реальным. Парная проверка ранее выданного ZetflixDB дала плейлист, затем 502 следующего ресурса через Node и Worker; позднее сам root вернул 502. Устойчивое воспроизведение ZetflixDB не подтверждено.
+
+
+Zetflix теперь, как и ZetflixDB, перед resolve обновляет точный same-origin каталог выбранной озвучки и серии. Это восстанавливает нужный нативному движку контекст после смены инстанса; несовпавшие свежие данные отклоняются без обращения к старым call/stream. Регрессия холодного процесса была красной до исправления; полный source-host прошёл 27/27. После READY-деплоя единственный контрольный resolve Haikyuu S1E14 / «MVO | AniLibria.TV» вернул 503 `UPSTREAM_HTTP_ERROR` на обновлении каталога, до media probe. Воспроизведение Zetflix остаётся неподтверждённым.
+
+Плеер теперь использует оставшиеся источники после поздней фатальной сетевой ошибки HLS и сохраняет позицию до отключения HLS. Повторять четыре дополнительных `startLoad` после исчерпания внутренней политики HLS больше не требуется для собственного source host. Регрессия с настоящим FFmpeg-видео проверяет успешный запуск, отказ сегментов после seek на минуту, кадры после переключения и окончательную ошибку при исчерпании пула без третьего resolve. Полный файл плеера прошёл 7/7; после окончательного ограничения правки собственным source host заново прошёл focused test 1/1 с `CI=1`, свежей production-сборкой и скрытым Chromium. Доставка Collaps сохраняет прежние повторы.
+
+После обоих READY-деплоев настоящий плеер «Начала» ограничивался двумя ранее выданными реальными кандидатами: ZetflixDB / «DUB | Мосфильм» и Vibix / «Профессиональный (дублированный)». ZetflixDB разрешился в 1080p, но вернул две media 502 до декодирования; затем Vibix 720p дал 8887,991 секунды, 15 кадров при старте и 74 после seek на 60,509 секунды. Это начальный перебор, а не живое доказательство позднего восстановления ZetflixDB. Только TMDB использовал fixtures; resolve и видео были реальными.

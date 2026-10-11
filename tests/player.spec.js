@@ -226,6 +226,75 @@ test("decoded movie playback recovers after HTTP and decode failures from manual
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThanOrEqual(29);
 });
 
+test("late HLS network failures fail over once and preserve the playback position", async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.addInitScript(() => {
+    localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
+    localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
+  });
+  const tmdb = (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ id: 550, title: "Movie 550", original_title: "Movie 550", imdb_id: "tt0111161", original_language: "en", runtime: 100, genres: [], credits: { cast: [] } }),
+  });
+  await page.route("**/api/tmdb/**", tmdb);
+  await page.route("https://api.themoviedb.org/**", tmdb);
+  await page.route(/\/api\/source-host\?op=discover(?:&|$)/, (route) => route.fulfill({
+    status: 200, contentType: "text/event-stream",
+    body: ["first", "second"].map((id) => `event: candidate\ndata: ${JSON.stringify({ id, providerId: "test-provider", providerName: id === "first" ? "First source" : "Second source", voiceName: "Russian dub" })}\n\n`).join("") + "event: done\ndata: {}\n\n",
+  }));
+  const resolves = [];
+  await page.route(/\/api\/source-host\?op=resolve(?:&|$)/, (route) => {
+    const { id } = route.request().postDataJSON();
+    resolves.push(id);
+    const url = `https://media.example/${id}/fixture.m3u8`;
+    return route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ kind: "hls", selected: { label: "720p", height: 720, url }, qualities: [{ label: "720p", height: 720, url }] }),
+    });
+  });
+
+  let failCurrentSource = false;
+  let currentSource = "first";
+  let failedSegmentRequests = 0;
+  await page.route("https://media.example/**", async (route) => {
+    const url = new URL(route.request().url());
+    currentSource = url.pathname.split("/")[1];
+    if (url.pathname.endsWith(".m3u8")) {
+      return route.fulfill({ status: 200, contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" }, body: readFileSync(join(fixtureDir, "fixture.m3u8"), "utf8") });
+    }
+    const segmentIndex = Number(url.pathname.match(/fixture(\d+)\.ts$/)?.[1]);
+    if (failCurrentSource && segmentIndex >= (currentSource === "first" ? 30 : 40)) {
+      failedSegmentRequests += 1;
+      return route.fulfill({ status: 503, contentType: "text/plain", headers: { "access-control-allow-origin": "*" }, body: "temporary segment failure" });
+    }
+    return route.fulfill({ status: 200, contentType: "video/mp2t", headers: { "access-control-allow-origin": "*" }, body: readFileSync(join(fixtureDir, `fixture${String(segmentIndex).padStart(3, "0")}.ts`)) });
+  });
+
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  const video = page.locator("video");
+  await expect(video).toBeVisible({ timeout: 20_000 });
+  await expect.poll(() => video.evaluate((v) => v.getVideoPlaybackQuality().totalVideoFrames), { timeout: 30_000 }).toBeGreaterThan(15);
+  await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThan(1);
+
+  const framesBeforeHandoff = await video.evaluate((v) => v.getVideoPlaybackQuality().totalVideoFrames);
+  failCurrentSource = true;
+  await video.evaluate((v) => { v.currentTime = 60; });
+  await expect.poll(() => failedSegmentRequests, { timeout: 20_000 }).toBeGreaterThan(0);
+  await expect.poll(() => resolves.length, { timeout: 75_000 }).toBeGreaterThan(1);
+  await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 25_000 }).toBeGreaterThan(60.5);
+  await expect.poll(() => video.evaluate((v) => v.getVideoPlaybackQuality().totalVideoFrames), { timeout: 15_000 }).toBeGreaterThan(framesBeforeHandoff + 2);
+  await expect(page.getByRole("button", { name: "Second source" })).toBeVisible();
+  expect(resolves).toEqual(["first", "second"]);
+
+  // The second source proves the pool was used, then the same real segment
+  // failure exhausts it. No third resolve/retry loop should follow.
+  await video.evaluate((v) => { v.currentTime = 80; });
+  await expect.poll(() => failedSegmentRequests, { timeout: 10_000 }).toBeGreaterThan(1);
+  await expect(page.getByText(/Поток прерван/)).toBeVisible({ timeout: 75_000 });
+  expect(resolves).toEqual(["first", "second"]);
+});
+
 test("automatic recovery keeps another voice after HTTP and decode failures in the same provider", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");

@@ -217,28 +217,29 @@ function itemVoiceName(item) {
   return String(item?.translate || item?.voice_name || item?.name || "Основная");
 }
 
-function refreshedVideoDbItem(candidate, json) {
+function refreshedVideoDbItem(candidate, json, providerName = "ZetflixDB") {
+  const label = String(providerName || "ZetflixDB");
   const ref = candidate.ref;
   if (candidate.season != null || candidate.episode != null) {
-    if (kindOf(json) !== "episode") throw new Error("ZetflixDB did not refresh the selected episode");
+    if (kindOf(json) !== "episode") throw new Error(`${label} did not refresh the selected episode`);
     let voiceVerified = false;
     if (Array.isArray(json.voice) && json.voice.length) {
       const matchingVoices = json.voice.filter((voice) =>
         String(voice?.id ?? voice?.name ?? "") === String(candidate.voiceId)
         || String(voice?.name || "") === String(candidate.voiceName));
       if (matchingVoices.length !== 1 || matchingVoices[0].active !== true) {
-        throw new Error("ZetflixDB did not refresh the selected voice");
+        throw new Error(`${label} did not refresh the selected voice`);
       }
       voiceVerified = true;
     }
     const episode = requestedEpisode(dataItems(json), candidate.episode, candidate.season, true);
     if (!episode || (!voiceVerified && itemVoiceName(episode) !== String(candidate.voiceName))) {
-      throw new Error("ZetflixDB did not refresh the selected episode and voice");
+      throw new Error(`${label} did not refresh the selected episode and voice`);
     }
     return episode;
   }
 
-  if (!(["movie", ""].includes(kindOf(json)))) throw new Error("ZetflixDB did not refresh the selected movie");
+  if (!(["movie", ""].includes(kindOf(json)))) throw new Error(`${label} did not refresh the selected movie`);
   const previous = ref.item || {};
   const previousTitle = normalizedTitle(previous.title || previous.original_title || previous.name);
   const previousYear = yearOf(previous.year || previous.release_date || previous.date || previous.title);
@@ -261,7 +262,7 @@ function refreshedVideoDbItem(candidate, json) {
     if (year && requestedYear && year !== String(requestedYear)) return false;
     return true;
   });
-  if (matches.length !== 1) throw new Error("ZetflixDB did not uniquely refresh the selected movie and voice");
+  if (matches.length !== 1) throw new Error(`${label} did not uniquely refresh the selected movie and voice`);
   return matches[0];
 }
 
@@ -456,7 +457,10 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
       throw new Error("Lampac candidate does not match the selected season");
     }
     if (/^заблокировано(?: |$)/.test(normalizedText(candidate.voiceName))) throw new Error("Lampac candidate is a blocked placeholder");
-    const isZetflixDb = String(candidate.providerId || "").toLowerCase() === "zetflixdb";
+    const providerId = String(candidate.providerId || "").toLowerCase();
+    const isZetflixDb = providerId === "zetflixdb";
+    const refreshProvider = isZetflixDb || providerId === "zetflix";
+    const providerName = isZetflixDb ? "ZetflixDB" : "Zetflix";
     let item = ref.item;
     let currentUrl = httpUrl(ref.url, base);
     let method = ref.method;
@@ -464,17 +468,17 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
     let freshStream = null;
     let fallbackItem = ref.item;
 
-    if (isZetflixDb) {
+    if (refreshProvider) {
       const providerUrl = sameOriginUrl(ref.providerUrl, base);
       if (!providerUrl) throw new Error("Invalid Lampac provider reference");
       const freshJson = await requestJson(providerUrl, signal);
       if (signal?.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
-      item = refreshedVideoDbItem(candidate, freshJson);
+      item = refreshedVideoDbItem(candidate, freshJson, providerName);
       fallbackItem = item;
       method = item.method === "call" ? "call" : "play";
       currentUrl = httpUrl(item.url || item.stream, base);
       freshStream = validMediaUrl(item.stream, base);
-      if (!currentUrl) throw new Error("ZetflixDB did not refresh the selected media URL");
+      if (!currentUrl) throw new Error(`${providerName} did not refresh the selected media URL`);
     }
     const wasCall = method === "call";
 
@@ -500,13 +504,13 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
     }
     if (method === "call") lastCallError ||= new Error("Lampac call depth exceeded");
     if (lastCallError) {
-      const stream = isZetflixDb ? freshStream : ref.stream;
+      const stream = refreshProvider ? freshStream : ref.stream;
       if (!stream || signal?.aborted) throw lastCallError;
       item = { ...fallbackItem, method: "play", url: stream };
     }
 
     let qualities = mediaQualities(item, base);
-    const fallbackStream = isZetflixDb ? freshStream : ref.stream;
+    const fallbackStream = refreshProvider ? freshStream : ref.stream;
     if (!qualities.length && wasCall && fallbackStream && !signal?.aborted) {
       item = { ...fallbackItem, method: "play", url: fallbackStream };
       qualities = mediaQualities(item, base);

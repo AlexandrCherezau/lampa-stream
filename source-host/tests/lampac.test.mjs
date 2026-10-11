@@ -81,7 +81,7 @@ async function testMovieProvidersAndResolve() {
   const zetflixDb = await provider.resolve(candidates[1]);
   assert.equal(zetflixDb.qualities[0].height, 1080);
   assert.match(zetflixDb.qualities[0].url, /videodb\/manifest\.m3u8/);
-  assert.equal(calls.filter((url) => url.pathname === "/lite/zetflix").length, 1, "ordinary providers are not primed redundantly");
+  assert.equal(calls.filter((url) => url.pathname === "/lite/zetflix").length, 2, "Zetflix refreshes its selected provider item before resolve");
   assert.equal(calls.filter((url) => url.pathname === "/lite/zetflixdb").length, 2, "ZetflixDB index is re-entered exactly once during resolve");
 }
 
@@ -383,6 +383,73 @@ async function testZetflixDbRefreshPreservesExactTvEpisodeAndVoice() {
   await assert.rejects(staleRoot.resolve({ ...candidate, ref: { ...candidate.ref, providerUrl: `${baseUrl}lite/zetflixdb` } }), /selected episode/);
 }
 
+async function testZetflixRefreshesExactEpisodeBeforeCallAndRejectsStaleCandidate() {
+  const candidate = {
+    providerId: "zetflix", voiceId: "Dub B", voiceName: "Dub B", season: 1, episode: 14,
+    ref: {
+      origin: new URL(baseUrl).origin,
+      providerUrl: `${baseUrl}lite/zetflix?serial=1&s=1&t=Dub+B&rjson=true`,
+      method: "call",
+      url: `${baseUrl}lite/zetflix/video?stale=call`,
+      stream: `${baseUrl}lite/zetflix/video?stale=play`,
+      headers: {},
+      item: { method: "call", s: 1, e: 14, name: "14 серия", details: "Dub B" },
+    },
+  };
+  const calls = [];
+  const provider = createLampacProvider({
+    baseUrl,
+    fetchJson: async (raw) => {
+      const url = new URL(raw);
+      calls.push(url.pathname + url.search);
+      if (url.pathname === "/lite/zetflix" && url.searchParams.get("t") === "Dub B") {
+        return response("episode", [{
+          method: "call", s: 1, e: 14, details: "Dub B", name: "14 серия",
+          url: `${baseUrl}lite/zetflix/video?fresh=call`,
+          stream: `${baseUrl}lite/zetflix/video?fresh=play`,
+        }], { voice: [{ name: "Dub B", active: true, url: `${baseUrl}lite/zetflix?serial=1&s=1&t=Dub+B` }] });
+      }
+      if (url.pathname === "/lite/zetflix/video" && url.searchParams.get("fresh") === "call") {
+        return { method: "play", quality: { "720p": "https://cdn.example/fresh-episode14.m3u8" } };
+      }
+      throw new Error("A stale episode URL or unexpected endpoint was requested");
+    },
+  });
+  const resolved = await provider.resolve(candidate);
+  assert.deepEqual(calls, [
+    "/lite/zetflix?serial=1&s=1&t=Dub+B&rjson=true",
+    "/lite/zetflix/video?fresh=call",
+  ], "a cold resolver must refresh the selected voice/episode endpoint before calling it");
+  assert.equal(resolved.qualities[0].url, "https://cdn.example/fresh-episode14.m3u8");
+
+  const wrongVoiceCalls = [];
+  const wrongVoice = createLampacProvider({
+    baseUrl,
+    fetchJson: async (raw) => {
+      const url = new URL(raw);
+      wrongVoiceCalls.push(url.pathname);
+      return response("episode", [{ method: "play", s: 1, e: 14, details: "Dub A", url: "https://cdn.example/stale.m3u8" }], {
+        voice: [{ name: "Dub A", active: true }],
+      });
+    },
+  });
+  await assert.rejects(wrongVoice.resolve(candidate), /selected voice/);
+  assert.deepEqual(wrongVoiceCalls, ["/lite/zetflix"], "a refresh mismatch must fail before stale call or stream fallback");
+
+  const wrongEpisodeCalls = [];
+  const wrongEpisode = createLampacProvider({
+    baseUrl,
+    fetchJson: async (raw) => {
+      wrongEpisodeCalls.push(new URL(raw).pathname);
+      return response("episode", [{ method: "play", s: 1, e: 13, details: "Dub B", url: "https://cdn.example/stale.m3u8" }], {
+        voice: [{ name: "Dub B", active: true }],
+      });
+    },
+  });
+  await assert.rejects(wrongEpisode.resolve(candidate), /selected episode and voice/);
+  assert.deepEqual(wrongEpisodeCalls, ["/lite/zetflix"], "a wrong refreshed episode must not fall back to the old candidate URL");
+}
+
 async function testExternalCallEndpointAndProviderError() {
   const seen = [];
   const fetchJson = async (raw) => {
@@ -500,6 +567,7 @@ await testZetflixDbRefreshPreservesMovieVoiceAndRejectsAmbiguity();
 await testZetflixDbRefreshPrecedesCallAndNeverUsesStaleFallback();
 await testZetflixDbRefreshAcceptsSingleCallObject();
 await testZetflixDbRefreshPreservesExactTvEpisodeAndVoice();
+await testZetflixRefreshesExactEpisodeBeforeCallAndRejectsStaleCandidate();
 await testExternalCallEndpointAndProviderError();
 await testProviderOrderCompletionAndEarlyClose();
 await testAnimeRetainsRussianMovieProviders();
