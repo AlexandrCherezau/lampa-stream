@@ -5,16 +5,176 @@ import { pathToFileURL } from "node:url";
 const MARKER = "[ZetflixDiag]";
 const replacements = [
   [
+    '                string html = hybridCache.TryGetValue($"zetfix:view:{kinopoisk_id}:{season}:{proxyManager?.CurrentProxyIp}", out string cachedHtml) ? cachedHtml : null;',
+    '                string html = hybridCache.TryGetValue($"zetfix:view:v2:{ztfhost?.TrimEnd(\'/\')}:{kinopoisk_id}:{season}:{proxyManager?.CurrentProxyIp}", out string cachedHtml) ? cachedHtml : null;',
+  ],
+  [
+    '            string html = await InvokeCache($"zetfix:view:{kinopoisk_id}:{rs}:{proxyManager?.CurrentProxyIp}", 20, async () =>',
+    '            string html = await InvokeCache($"zetfix:view:v2:{ztfhost?.TrimEnd(\'/\')}:{kinopoisk_id}:{rs}:{proxyManager?.CurrentProxyIp}", 20, async () =>',
+  ],
+  [
+    '                string result = string.IsNullOrEmpty(PHPSESSID) ? null : await Http.Get(uri, proxy: proxy, cookie: $"PHPSESSID={PHPSESSID}", headers: headers);\n                if (result != null && !result.StartsWith("<script>(function"))\n                {\n                    if (!result.Contains("new Playerjs"))\n                        return null;\n\n                    proxyManager?.Success();\n                    return result;\n                }',
+    '                var nativeIndexCookies = new CookieContainer();\n                if (string.IsNullOrEmpty(PHPSESSID))\n                    Console.WriteLine("[ZetflixDiag] stage=http_skipped_no_session");\n                if (!string.IsNullOrEmpty(PHPSESSID))\n                    nativeIndexCookies.Add(new Uri(uri), new System.Net.Cookie("PHPSESSID", PHPSESSID));\n                var nativeIndexResult = string.IsNullOrEmpty(PHPSESSID) ? default : await Http.BaseGet(uri, proxy: proxy, headers: headers, cookieContainer: nativeIndexCookies);\n                string result = nativeIndexResult.content;\n                string nativeIndexUri = nativeIndexResult.response?.RequestMessage?.RequestUri?.AbsoluteUri ?? uri;\n                string nativeUserAgent = headers.LastOrDefault(header => string.Equals(header.name, "user-agent", StringComparison.OrdinalIgnoreCase))?.val;\n                if (string.IsNullOrWhiteSpace(nativeUserAgent))\n                    nativeUserAgent = Http.UserAgent;\n                if (result == null)\n                    Console.WriteLine("[ZetflixDiag] stage=http_empty");\n                else if (result.StartsWith("<script>(function"))\n                    Console.WriteLine("[ZetflixDiag] stage=http_challenge");\n                if (result != null && !result.StartsWith("<script>(function"))\n                {\n                    if (!result.Contains("new Playerjs"))\n                    {\n                        Console.WriteLine("[ZetflixDiag] stage=http_playerjs_missing");\n                        return null;\n                    }\n                    Console.WriteLine("[ZetflixDiag] stage=http_playerjs_present");\n\n                    var nativeIndexEmbed = BuildSerialEmbedFromHtml(result, rs);\n                    if (serial == 1 && rs > 0 && nativeIndexEmbed?.pl?.Count > 0 && !nativeIndexEmbed.movie)\n                        await WarmSerialVideoCache(nativeIndexEmbed, ztfhost, kinopoisk_id, rs, nativeIndexUri, nativeUserAgent, nativeIndexCookies, null).ConfigureAwait(false);\n\n                    proxyManager?.Success();\n                    return result;\n                }',
+  ],
+  [
+    '                        if (!result.Contains("new Playerjs"))\n                            return null;\n\n                        return result;',
+    '                        if (!result.Contains("new Playerjs"))\n                        {\n                            Console.WriteLine("[ZetflixDiag] stage=browser_playerjs_missing");\n                            return null;\n                        }\n                        Console.WriteLine("[ZetflixDiag] stage=browser_playerjs_present");\n\n                        string browserUserAgent = await page.EvaluateAsync<string>("() => navigator.userAgent").ConfigureAwait(false);\n                        var browserIndexEmbed = BuildSerialEmbedFromHtml(result, rs);\n                        if (serial == 1 && rs > 0 && browserIndexEmbed?.pl?.Count > 0 && !browserIndexEmbed.movie)\n                            await WarmSerialVideoCache(browserIndexEmbed, ztfhost, kinopoisk_id, rs, page.Url, browserUserAgent, null, page).ConfigureAwait(false);\n\n                        return result;',
+  ],
+  [
+    '            string memKey = $"zetflix:live_serial_tpl:v1:{kinopoisk_id}:{season}:{proxyManager?.CurrentProxyIp}";',
+    '            string memKey = $"zetflix:live_serial_tpl:v2:{ztfhost?.TrimEnd(\'/\')}:{kinopoisk_id}:{season}:{proxyManager?.CurrentProxyIp}";',
+  ],
+  [
+    '            var cache = await InvokeCache($"zetflix:live_serial:v8:{kinopoisk_id}:{s}:{e}:{t}:{proxyManager?.CurrentProxyIp}", 300,',
+    '            var cache = await InvokeCache(SerialVideoCacheKey(ztfhost, kinopoisk_id, s, e, t), 300,',
+  ],
+  [
+    '                string playerHtml = await Http.Get(playerUri, headers: HeadersModel.Init(\n                    ("Referer", $"{ztfhost}/"),\n                    ("Origin", ztfhost)\n                ), timeoutSeconds: 15, statusCodeOK: false);\n\n                var direct = await TrySerialEmbedFromPlayerHtml(playerHtml, playerUri, ztfhost, season);',
+    '                var playerResult = await Http.BaseGet(playerUri, headers: HeadersModel.Init(\n                    ("Referer", $"{ztfhost}/"),\n                    ("Origin", ztfhost)\n                ), timeoutSeconds: 15, statusCodeOK: false);\n                string actualPlayerUri = playerResult.response?.RequestMessage?.RequestUri?.AbsoluteUri ?? playerUri;\n\n                var direct = await TrySerialEmbedFromPlayerHtml(playerResult.content, actualPlayerUri, ztfhost, kinopoisk_id, season);',
+  ],
+  [
+    '                if (page == null)\n                    return default;\n\n                await page.RouteAsync("**/*", async route =>',
+    '                if (page == null)\n                    return default;\n\n                string browserUserAgent = await page.EvaluateAsync<string>("() => navigator.userAgent").ConfigureAwait(false);\n                await page.RouteAsync("**/*", async route =>',
+  ],
+  [
+    '                        var direct = await TrySerialEmbedFromPlayerHtml(playerHtml, playerUri, ztfhost, season);',
+    '                        var direct = await TrySerialEmbedFromPlayerHtml(playerHtml, page.Url, ztfhost, kinopoisk_id, season, page, browserUserAgent);',
+  ],
+  [
+    '                            var direct = BuildSerialEmbedFromHtml(frameHtml, season);\n                            if (direct?.pl?.Count > 0 && !direct.movie)\n                            {',
+    '                            var direct = BuildSerialEmbedFromHtml(frameHtml, season);\n                            if (direct?.pl?.Count > 0 && !direct.movie)\n                            {\n                                await WarmSerialVideoCache(direct, ztfhost, kinopoisk_id, season, frame.Url, browserUserAgent, null, page).ConfigureAwait(false);',
+  ],
+  [
+    '        async ValueTask<EmbedModel> TrySerialEmbedFromPlayerHtml(string playerHtml, string playerUri, string ztfhost, int season)',
+    '        async ValueTask<EmbedModel> TrySerialEmbedFromPlayerHtml(string playerHtml, string playerUri, string ztfhost, long kinopoisk_id, int season, IPage browserPage = null, string browserUserAgent = null)',
+  ],
+  [
+    '            var direct = BuildSerialEmbedFromHtml(playerHtml, season);\n            if (direct?.pl?.Count > 0 && !direct.movie)\n                return direct;',
+    '            var direct = BuildSerialEmbedFromHtml(playerHtml, season);\n            if (direct?.pl?.Count > 0 && !direct.movie)\n            {\n                string documentUri = string.IsNullOrWhiteSpace(browserPage?.Url) ? playerUri : browserPage.Url;\n                string userAgent = string.IsNullOrWhiteSpace(browserUserAgent) ? Http.UserAgent : browserUserAgent;\n                await WarmSerialVideoCache(direct, ztfhost, kinopoisk_id, season, documentUri, userAgent, null, browserPage).ConfigureAwait(false);\n                return direct;\n            }',
+  ],
+  [
+    '            string iframeUri = iframeSrc.StartsWith("//") ? $"https:{iframeSrc}" :\n                               iframeSrc.StartsWith("/") ? $"{ztfhost}{iframeSrc}" :\n                               iframeSrc;',
+    '            string iframeUri = Uri.TryCreate(playerUri, UriKind.Absolute, out var playerDocument)\n                ? new Uri(playerDocument, iframeSrc).AbsoluteUri\n                : iframeSrc.StartsWith("//") ? $"https:{iframeSrc}" :\n                  iframeSrc.StartsWith("/") ? $"{ztfhost}{iframeSrc}" :\n                  iframeSrc;',
+  ],
+  [
+    '            var iframeResult = await Http.BaseGet(iframeUri,\n                headers: HeadersModel.Init(\n                    ("Referer", playerUri),\n                    ("Origin", ztfhost),\n                    ("Sec-Fetch-Dest", "iframe"),\n                    ("Sec-Fetch-Mode", "navigate"),\n                    ("Sec-Fetch-Site", "cross-site")\n                ),\n                timeoutSeconds: 15,\n                statusCodeOK: false,\n                cookieContainer: new CookieContainer()\n            );\n\n            return BuildSerialEmbedFromHtml(iframeResult.content, season);',
+    '            var iframeCookies = new CookieContainer();\n            var iframeResult = await Http.BaseGet(iframeUri,\n                headers: HeadersModel.Init(\n                    ("Referer", playerUri),\n                    ("Origin", ztfhost),\n                    ("Sec-Fetch-Dest", "iframe"),\n                    ("Sec-Fetch-Mode", "navigate"),\n                    ("Sec-Fetch-Site", "cross-site")\n                ),\n                timeoutSeconds: 15,\n                statusCodeOK: false,\n                cookieContainer: iframeCookies\n            );\n\n            var iframeEmbed = BuildSerialEmbedFromHtml(iframeResult.content, season);\n            if (iframeEmbed?.pl?.Count > 0 && !iframeEmbed.movie)\n            {\n                string documentUri = iframeResult.response?.RequestMessage?.RequestUri?.AbsoluteUri ?? iframeUri;\n                await WarmSerialVideoCache(iframeEmbed, ztfhost, kinopoisk_id, season, documentUri, Http.UserAgent, iframeCookies, null).ConfigureAwait(false);\n            }\n            return iframeEmbed;',
+    '                cookieContainer: new CookieContainer()\n            );\n\n            return BuildSerialEmbedFromHtml(iframeResult.content, season);',
+  ],
+  [
+    '        EmbedModel BuildSerialEmbedFromHtml(string html, int season)',
+    String.raw`        string SerialVideoCacheKey(string ztfhost, long kinopoisk_id, int season, int episode, string voice)
+        {
+            return $"zetflix:live_serial:v9:{ztfhost?.TrimEnd('/')}:{kinopoisk_id}:{season}:{episode}:{NormalizeObrutNodeText(voice)}:{proxyManager?.CurrentProxyIp}";
+        }
+
+        async ValueTask WarmSerialVideoCache(EmbedModel embed, string ztfhost, long kinopoisk_id, int season, string documentUri, string userAgent, CookieContainer cookieContainer, IPage browserPage)
+        {
+            if (embed?.movie != false || embed.pl == null || !Uri.TryCreate(documentUri, UriKind.Absolute, out var document) ||
+                (document.Scheme != Uri.UriSchemeHttps && document.Scheme != Uri.UriSchemeHttp))
+                return;
+
+            int warmed = 0;
+            foreach (var voice in embed.pl)
+            {
+                string voiceName = voice.title;
+                string normalizedVoice = NormalizeObrutNodeText(voiceName);
+                if (string.IsNullOrWhiteSpace(normalizedVoice) || voice.folder == null)
+                    continue;
+
+                foreach (var episode in voice.folder)
+                {
+                    string episodeNumber = Regex.Match(episode.comment ?? string.Empty, "^([0-9]+)").Groups[1].Value;
+                    if (!int.TryParse(episodeNumber, out int episodeIndex) || episodeIndex <= 0)
+                        continue;
+
+                    string file = episode.file;
+                    if (string.IsNullOrWhiteSpace(file) || file.StartsWith("episode://", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    var qualitys = ParsePlayerjsQualityMap(file);
+                    if (qualitys.Count == 0)
+                        qualitys = ParseObrutQualityMap(file);
+                    if (qualitys.Count == 0)
+                        continue;
+
+                    string firstUrl = qualitys.OrderByDescending(item => item.Key).First().Value.Replace("#.m3u8", string.Empty);
+                    if (!Uri.TryCreate(firstUrl, UriKind.Absolute, out var firstMedia) || (firstMedia.Scheme != Uri.UriSchemeHttps && firstMedia.Scheme != Uri.UriSchemeHttp))
+                        continue;
+
+                    bool sameAuthority = qualitys.Values.All(value =>
+                        Uri.TryCreate(value.Replace("#.m3u8", string.Empty), UriKind.Absolute, out var media) &&
+                        (media.Scheme == Uri.UriSchemeHttps || media.Scheme == Uri.UriSchemeHttp) &&
+                        media.Scheme == firstMedia.Scheme &&
+                        string.Equals(media.GetLeftPart(UriPartial.Authority), firstMedia.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase));
+                    if (!sameAuthority)
+                        continue;
+
+                    var headers = HeadersModel.Init(
+                        ("accept", "*/*"),
+                        ("origin", document.GetLeftPart(UriPartial.Authority)),
+                        ("referer", document.AbsoluteUri),
+                        ("sec-fetch-dest", "empty"),
+                        ("sec-fetch-mode", "cors"),
+                        ("sec-fetch-site", "same-site"));
+                    headers.Add(new HeadersModel("user-agent", string.IsNullOrWhiteSpace(userAgent) ? Http.UserAgent : userAgent));
+
+                    async Task<string> getScopedCookieHeader(Uri mediaUri)
+                    {
+                        if (browserPage != null)
+                        {
+                            var scopedCookies = await browserPage.Context.CookiesAsync(new[] { mediaUri.AbsoluteUri }).ConfigureAwait(false);
+                            return string.Join("; ", scopedCookies
+                                .OrderBy(item => item.Name, StringComparer.Ordinal)
+                                .ThenBy(item => item.Value, StringComparer.Ordinal)
+                                .Select(item => $"{item.Name}={item.Value}"));
+                        }
+
+                        return string.Join("; ", (cookieContainer?.GetCookies(mediaUri).Cast<System.Net.Cookie>() ?? Enumerable.Empty<System.Net.Cookie>())
+                            .OrderBy(item => item.Name, StringComparer.Ordinal)
+                            .ThenBy(item => item.Value, StringComparer.Ordinal)
+                            .Select(item => $"{item.Name}={item.Value}"));
+                    }
+
+                    string cookie;
+                    string firstCookieScope;
+                    bool sameCookies = true;
+                    try
+                    {
+                        cookie = await getScopedCookieHeader(firstMedia).ConfigureAwait(false);
+                        firstCookieScope = cookie;
+                        foreach (string qualityUrl in qualitys.Values.Select(value => value.Replace("#.m3u8", string.Empty)).Distinct(StringComparer.Ordinal))
+                        {
+                            if (string.Equals(qualityUrl, firstMedia.AbsoluteUri, StringComparison.Ordinal))
+                                continue;
+                            var mediaUri = new Uri(qualityUrl, UriKind.Absolute);
+                            string qualityCookieScope = await getScopedCookieHeader(mediaUri).ConfigureAwait(false);
+                            if (!string.Equals(firstCookieScope, qualityCookieScope, StringComparison.Ordinal))
+                            {
+                                sameCookies = false;
+                                break;
+                            }
+                        }
+                    }
+                    catch { continue; }
+                    if (!sameCookies)
+                        continue;
+                    if (!string.IsNullOrWhiteSpace(cookie))
+                        headers.Add(new HeadersModel("cookie", cookie));
+
+                    hybridCache.Set(SerialVideoCacheKey(ztfhost, kinopoisk_id, season, episodeIndex, voiceName),
+                        (qualitys, headers), cacheTime(300));
+                    warmed++;
+                }
+            }
+            Console.WriteLine("[ZetflixDiag] stage=video_cache_warmed count=" + warmed);
+        }
+
+        EmbedModel BuildSerialEmbedFromHtml(string html, int season)`,
+  ],
+  [
     '            string log = $"{HttpContext.Request.Path.Value}\\n\\nstart init\\n";',
     '            Console.WriteLine("[ZetflixDiag] stage=index_start");',
-  ],
-  [
-    '                    if (!result.Contains("new Playerjs"))\n                        return null;',
-    '                    if (!result.Contains("new Playerjs"))\n                    {\n                        Console.WriteLine("[ZetflixDiag] stage=http_playerjs_missing");\n                        return null;\n                    }\n\n                    Console.WriteLine("[ZetflixDiag] stage=http_playerjs_present");',
-  ],
-  [
-    '                string result = string.IsNullOrEmpty(PHPSESSID) ? null : await Http.Get(uri, proxy: proxy, cookie: $"PHPSESSID={PHPSESSID}", headers: headers);',
-    '                string result = string.IsNullOrEmpty(PHPSESSID) ? null : await Http.Get(uri, proxy: proxy, cookie: $"PHPSESSID={PHPSESSID}", headers: headers);\n                if (string.IsNullOrEmpty(PHPSESSID))\n                    Console.WriteLine("[ZetflixDiag] stage=http_skipped_no_session");\n                else if (result == null)\n                    Console.WriteLine("[ZetflixDiag] stage=http_empty");\n                else if (result.StartsWith("<script>(function"))\n                    Console.WriteLine("[ZetflixDiag] stage=http_challenge");',
   ],
   [
     '                        log += "browser init\\n";\n\n',
@@ -35,10 +195,6 @@ const replacements = [
   [
     '                        log += $"{result}\\n\\n";\n\n                        if (result == null || result.StartsWith("<script>(function"))',
     '                        if (result == null)\n                            Console.WriteLine("[ZetflixDiag] stage=browser_empty");\n                        else if (result.StartsWith("<script>(function"))\n                            Console.WriteLine("[ZetflixDiag] stage=browser_challenge");\n\n                        if (result == null || result.StartsWith("<script>(function"))',
-  ],
-  [
-    '                        if (!result.Contains("new Playerjs"))\n                            return null;\n\n                        return result;',
-    '                        if (!result.Contains("new Playerjs"))\n                        {\n                            Console.WriteLine("[ZetflixDiag] stage=browser_playerjs_missing");\n                            return null;\n                        }\n\n                        Console.WriteLine("[ZetflixDiag] stage=browser_playerjs_present");\n                        return result;',
   ],
   [
     '                    log += $"\\nex: {ex}\\n";\n                    return null;',

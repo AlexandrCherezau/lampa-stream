@@ -17,15 +17,27 @@ const zetflixPath = "/tmp/lampac-native-1.81.0/module/OnlineRUS/Zetflix/Controll
 const zetflixServicePath = "/tmp/lampac-native-1.81.0/module/OnlineRUS/Zetflix/Service.cs";
 const httpSourcePath = "/tmp/lampac-zetflix-research/Shared/Services/HTTP/Http.cs";
 const baseControllerPath = "/tmp/lampac-zetflix-research/Shared/Controllers/BaseOnlineController.cs";
+const hybridCachePath = "/tmp/lampac-zetflix-research/Shared/Services/Hybrid/IHybridCache.cs";
+const httpPath = "/tmp/lampac-zetflix-research/Shared/Services/HTTP/Http.cs";
+const browserCookieExamplePath = "/tmp/lampac-zetflix-research/Modules/Music/Providers/Audio/Z3Fm/Z3FmSupport.cs";
 const sourcePath = process.env.LAMPAC_ZETFLIX_SOURCE || zetflixPath;
 if (!existsSync(sourcePath)) throw new Error(`Pinned Lampac Zetflix source required at ${sourcePath}; set LAMPAC_ZETFLIX_SOURCE to its path`);
 if (!existsSync(zetflixServicePath)) throw new Error(`Pinned Lampac Zetflix Service source required at ${zetflixServicePath}`);
 if (!existsSync(httpSourcePath)) throw new Error(`Pinned Lampac HTTP source required at ${httpSourcePath}`);
 if (!existsSync(baseControllerPath)) throw new Error(`Pinned Lampac BaseOnlineController source required at ${baseControllerPath}`);
+if (!existsSync(hybridCachePath)) throw new Error(`Pinned Lampac IHybridCache source required at ${hybridCachePath}`);
+if (!existsSync(browserCookieExamplePath)) throw new Error(`Pinned Lampac browser-cookie API example required at ${browserCookieExamplePath}`);
 const zetflix = readFileSync(sourcePath, "utf8");
 const zetflixService = readFileSync(zetflixServicePath, "utf8");
 const httpSource = readFileSync(httpSourcePath, "utf8");
 const baseController = readFileSync(baseControllerPath, "utf8");
+const hybridCache = readFileSync(hybridCachePath, "utf8");
+const httpApi = readFileSync(httpPath, "utf8");
+const browserCookieExample = readFileSync(browserCookieExamplePath, "utf8");
+assert.match(httpApi, /Task<\(string content, HttpResponseMessage response\)> BaseGet\(/);
+assert.match(hybridCache, /TItem Set<TItem>\(string key, TItem value, TimeSpan absoluteExpirationRelativeToNow/);
+assert.match(browserCookieExample, /IReadOnlyList<BrowserContextCookiesResult>/);
+assert.match(browserCookieExample, /page\.Context\.CookiesAsync\(\)/);
 assert.match(zetflixService, /Regex\.Match\(html, "file:/);
 assert.doesNotMatch(zetflixService, /if \(!html\.Contains\("new Playerjs"\)\)/);
 assert.match(httpSource, /public const string UserAgent =/);
@@ -40,6 +52,58 @@ assert.ok(launcher.indexOf(readinessProbe) < launcher.indexOf('touch "$SOURCE_EN
 
 const source = zetflix;
 const patched = patchController(source);
+assert.ok(patched.includes('hybridCache.TryGetValue($"zetfix:view:v2:{ztfhost?.TrimEnd(\'/\')}:{kinopoisk_id}:{season}:{proxyManager?.CurrentProxyIp}"'));
+assert.ok(patched.includes('InvokeCache($"zetfix:view:v2:{ztfhost?.TrimEnd(\'/\')}:{kinopoisk_id}:{rs}:{proxyManager?.CurrentProxyIp}"'));
+assert.ok(!patched.includes('zetfix:view:{'), 'HTML cache reader and writer must use the same host-scoped version');
+assert.match(patched, /live_serial_tpl:v2:\{ztfhost\?\.TrimEnd\('\/'\)\}:\{kinopoisk_id\}:\{season\}/);
+assert.match(patched, /zetfix:view:v2:\{ztfhost\?\.TrimEnd\('\/'\)\}:\{kinopoisk_id\}:\{rs\}/,
+  "the cached catalog must be scoped to the Zetflix host");
+assert.match(patched, /live_serial:v9:\{ztfhost\?\.TrimEnd\('\/'\)\}:\{kinopoisk_id\}:\{season\}:\{episode\}:\{NormalizeObrutNodeText\(voice\)\}:\{proxyManager\?\.CurrentProxyIp\}/);
+assert.ok(patched.includes('InvokeCache(SerialVideoCacheKey(ztfhost, kinopoisk_id, s, e, t), 300,') &&
+  patched.includes('async () => await CaptureLiveSerialEpisodeInternal(ztfhost, kinopoisk_id, s, t, e)'));
+assert.ok(!patched.includes('zetflix:live_serial:v8:') && !patched.includes('zetflix:live_serial_tpl:v1:'));
+assert.ok(patched.includes('WarmSerialVideoCache(direct, ztfhost, kinopoisk_id, season, documentUri, userAgent, null, browserPage)'));
+assert.ok(patched.includes('WarmSerialVideoCache(iframeEmbed, ztfhost, kinopoisk_id, season, documentUri, Http.UserAgent, iframeCookies, null)'));
+assert.ok(patched.includes('WarmSerialVideoCache(direct, ztfhost, kinopoisk_id, season, frame.Url, browserUserAgent, null, page)'));
+assert.ok(patched.includes('nativeIndexCookies.Add(new Uri(uri), new System.Net.Cookie("PHPSESSID", PHPSESSID))'),
+  "the session cookie must stay scoped to the initial provider URI");
+assert.ok(patched.includes('Http.BaseGet(uri, proxy: proxy, headers: headers, cookieContainer: nativeIndexCookies)'));
+assert.ok(patched.includes('nativeIndexResult.response?.RequestMessage?.RequestUri?.AbsoluteUri ?? uri'));
+assert.ok(patched.includes('headers.LastOrDefault(header => string.Equals(header.name, "user-agent", StringComparison.OrdinalIgnoreCase))?.val'));
+assert.ok(patched.includes('serial == 1 && rs > 0 && nativeIndexEmbed?.pl?.Count > 0'));
+assert.ok(patched.includes('WarmSerialVideoCache(nativeIndexEmbed, ztfhost, kinopoisk_id, rs, nativeIndexUri, nativeUserAgent, nativeIndexCookies, null)'));
+assert.ok(patched.includes('serial == 1 && rs > 0 && browserIndexEmbed?.pl?.Count > 0'));
+assert.ok(patched.includes('WarmSerialVideoCache(browserIndexEmbed, ztfhost, kinopoisk_id, rs, page.Url, browserUserAgent, null, page)'));
+assert.ok(patched.includes('cookieContainer: iframeCookies'));
+assert.ok(patched.includes('iframeResult.response?.RequestMessage?.RequestUri?.AbsoluteUri ?? iframeUri'));
+assert.ok(patched.includes('var playerResult = await Http.BaseGet(playerUri'));
+assert.ok(patched.includes('string actualPlayerUri = playerResult.response?.RequestMessage?.RequestUri?.AbsoluteUri ?? playerUri'));
+assert.ok(patched.includes('TrySerialEmbedFromPlayerHtml(playerResult.content, actualPlayerUri, ztfhost, kinopoisk_id, season)'));
+assert.ok(patched.includes('new Uri(playerDocument, iframeSrc).AbsoluteUri'),
+  "relative iframe source must resolve against the final player document URI");
+const cacheHelperStart = patched.indexOf('async ValueTask WarmSerialVideoCache(');
+const cacheHelperEnd = patched.indexOf('EmbedModel BuildSerialEmbedFromHtml(', cacheHelperStart);
+assert.ok(cacheHelperStart >= 0 && cacheHelperEnd > cacheHelperStart);
+const cacheHelper = patched.slice(cacheHelperStart, cacheHelperEnd);
+assert.ok(cacheHelper.includes('episode.file') && cacheHelper.includes('episode://'));
+assert.ok(cacheHelper.includes('ParsePlayerjsQualityMap(file)') && cacheHelper.includes('ParseObrutQualityMap(file)'));
+assert.ok(cacheHelper.includes('voice.folder') && cacheHelper.includes('NormalizeObrutNodeText(voiceName)'));
+assert.ok(cacheHelper.includes('hybridCache.Set(SerialVideoCacheKey(') && cacheHelper.includes('(qualitys, headers), cacheTime(300)'));
+assert.ok(cacheHelper.includes('browserPage.Context.CookiesAsync(new[] { mediaUri.AbsoluteUri })'));
+assert.ok(cacheHelper.includes('Http.UserAgent') && cacheHelper.includes('new HeadersModel("user-agent"'));
+assert.ok(cacheHelper.includes('media.GetLeftPart(UriPartial.Authority)') && cacheHelper.includes('sameAuthority'));
+assert.ok(cacheHelper.includes('getScopedCookieHeader(mediaUri)') && cacheHelper.includes('sameCookies') &&
+  cacheHelper.includes('if (!sameCookies)\n                        continue;'),
+  "shared headers may only be cached when all quality URLs have identical scoped cookies");
+assert.doesNotMatch(cacheHelper, /voice\?\.title|episode\?\.comment/,
+  "Lampac RootObject and Folder are value types");
+assert.ok(cacheHelper.includes('Console.WriteLine("[ZetflixDiag] stage=video_cache_warmed count=" + warmed)'));
+assert.equal((patched.match(/EvaluateAsync<string>\("\(\) => navigator\.userAgent"\)/g) || []).length, 2,
+  "browser UA should be read once for each of the two catalog-page paths");
+assert.match(cacheHelper, /Console\.WriteLine\("\[ZetflixDiag\] stage=video_cache_warmed count=" \+ warmed\);/,
+  "cache warming reports only the numeric number of tuple entries created");
+assert.doesNotMatch(cacheHelper, /PHPSESSID|Console\.Error|Console\.WriteLine\((?!"\[ZetflixDiag\] stage=video_cache_warmed count=")/,
+  "cache warming must not log content or credentials");
 assert.ok(patched.includes("[ZetflixDiag] stage=page_null"));
 assert.ok(patched.includes("[ZetflixDiag] stage=navigation_exception type="));
 assert.ok(patched.includes("[ZetflixDiag] stage=browser_exception type="));

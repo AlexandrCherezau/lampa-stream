@@ -98,3 +98,6 @@ Zetflix теперь, как и ZetflixDB, перед resolve обновляет
 
 
 Cold metadata startup waits for Zetflix's local no-lookup `checksearch` sentinel after CDP is available; the generic Chromium ping alone does not prove native Playwright readiness. The build patches the pinned Zetflix controller before module prewarm with fixed-stage diagnostics, without HTML, cookies or URLs. `node scripts/check-lampac-zetflix-diagnostics.mjs` checks patch anchors, log fields, exact serial voice selection and the readiness gate; it requires the extracted 1.81.0 Controller.cs and Service.cs sources at `/tmp/lampac-native-1.81.0` and `/tmp/lampac-zetflix-research` (or `LAMPAC_ZETFLIX_SOURCE` for the controller path).
+
+
+Текущий native patch также заполняет существующий кеш видео Zetflix из успешного serial-каталога с конечным URI, фактическим User-Agent и cookies, отдельно проверенными для всех quality URL. HTML read/write cache keys согласованы; синтетические episode placeholders не становятся видео. Vercel C# build проходит, но свежий Haikyuu S1E14 ещё возвращает ноль качеств; работа Zetflix не подтверждена. Полный контроль и оставшиеся ограничения описаны в `docs/source-host-plan.md`.
