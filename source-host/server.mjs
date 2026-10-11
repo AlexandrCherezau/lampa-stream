@@ -236,22 +236,25 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
           if (!order.length) throw failure("Качество недоступно", 404, "QUALITY_NOT_FOUND");
           let selected;
           let probe;
+          let shortVod = false;
           for (const quality of order) {
             if (controller.signal.aborted) break;
             try {
               probe = await media.probe(quality, { signal: controller.signal });
+              if (probe.ok && candidate.runtimeMinutes && probe.kind === "hls" && Number.isFinite(probe.duration)
+                && probe.duration < candidate.runtimeMinutes * 30) {
+                shortVod = true;
+                continue;
+              }
               if (probe.ok) { selected = quality; break; }
             } catch (error) {
               if (controller.signal.aborted) break;
             }
           }
           if (controller.signal.aborted) throw controller.signal.reason || failure("Истекло время проверки", 504, "TIMEOUT");
-          if (!selected) throw failure("Видео не загружается, выберите другой источник", 502, "MEDIA_UNAVAILABLE");
-          // Reject only a known VOD playlist that is grossly shorter than the movie.
-          // Unknown/live durations and direct files retain their existing behavior.
-          if (candidate.runtimeMinutes && probe.kind === "hls" && Number.isFinite(probe.duration)
-            && probe.duration < candidate.runtimeMinutes * 30) {
-            throw failure("Источник вернул слишком короткое видео", 502, "MEDIA_DURATION_MISMATCH");
+          if (!selected) {
+            if (shortVod) throw failure("Источник вернул слишком короткое видео", 502, "MEDIA_DURATION_MISMATCH");
+            throw failure("Видео не загружается, выберите другой источник", 502, "MEDIA_UNAVAILABLE");
           }
           record(candidate.providerId, { providerName: candidate.providerName, status: "verified", verifiedAt: new Date().toISOString() });
           // Keep the verified redirect target; dynamic engine manifests need a browser again.

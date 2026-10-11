@@ -355,6 +355,49 @@ test("resolution preserves the verified target when providers repeat quality lab
   assert.equal(signed.headerOrigin, "https://cdn.test");
 });
 
+test("automatic movie quality skips a short VOD without rejecting the full-length alternative", async (t) => {
+  const adapter = {
+    async *discover() { yield candidate(); },
+    async resolve() { return { qualities: [
+      { label: "720p", height: 720, url: "https://cdn.test/short.m3u8" },
+      { label: "1080p", height: 1080, url: "https://cdn.test/full.m3u8" },
+    ] }; },
+  };
+  const media = makeMedia();
+  const probes = [];
+  media.probe = async (quality) => {
+    probes.push(quality.label);
+    return { ok: true, kind: "hls", duration: quality.height === 720 ? 3652 : 8349 };
+  };
+  const app = await start(adapter, media);
+  t.after(() => app.close());
+  const discovery = await post(app.base, "/v1/discover", { type: "movie", title: "Fight Club", runtimeMinutes: 139 });
+  const stream = sseReader(discovery.body);
+  const { data: { id } } = await stream.until("candidate");
+  await stream.drain();
+
+  const automatic = await post(app.base, "/v1/resolve", { id });
+  assert.equal(automatic.status, 200);
+  assert.equal((await automatic.json()).selected.label, "1080p");
+  assert.deepEqual(probes, ["720p", "1080p"]);
+
+  probes.length = 0;
+  const manual = await post(app.base, "/v1/resolve", { id, quality: "720p" });
+  assert.equal(manual.status, 502);
+  assert.equal((await manual.json()).error, "MEDIA_DURATION_MISMATCH");
+  assert.deepEqual(probes, ["720p"], "manual quality must not silently switch");
+
+  probes.length = 0;
+  media.probe = async (quality) => {
+    probes.push(quality.label);
+    return { ok: quality.height === 720, kind: "hls", duration: 3652 };
+  };
+  const mixedFailure = await post(app.base, "/v1/resolve", { id });
+  assert.equal(mixedFailure.status, 502);
+  assert.equal((await mixedFailure.json()).error, "MEDIA_DURATION_MISMATCH");
+  assert.deepEqual(probes, ["720p", "1080p"]);
+});
+
 test("movie runtime rejects grossly short HLS and accepts full length across sealed candidate resolves", async (t) => {
   let duration = 3652;
   let kind = "hls";
@@ -389,7 +432,7 @@ test("movie runtime rejects grossly short HLS and accepts full length across sea
   const short = await post(app.base, "/v1/resolve", { id: discovered.id });
   assert.equal(short.status, 502);
   assert.equal((await short.json()).error, "MEDIA_DURATION_MISMATCH");
-  assert.equal(probeCalls, 1, "a known short VOD rejects the candidate without trying alternate qualities");
+  assert.equal(probeCalls, 2, "all automatic qualities must be checked before rejecting a short VOD");
 
   duration = null;
   const unknownLength = await post(app.base, "/v1/resolve", { id: discovered.id });
@@ -405,5 +448,5 @@ test("movie runtime rejects grossly short HLS and accepts full length across sea
   const fullLength = await post(app.base, "/v1/resolve", { id: discovered.id });
   assert.equal(fullLength.status, 200);
   assert.equal((await fullLength.json()).selected.label, "720p");
-  assert.equal(probeCalls, 4);
+  assert.equal(probeCalls, 5);
 });
