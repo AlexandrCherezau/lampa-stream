@@ -1,5 +1,6 @@
 import { createDecipheriv, createCipheriv, createHash, randomBytes } from "node:crypto";
-import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
+import { brotliDecompressSync, gunzipSync, inflateSync, gzip } from "node:zlib";
+import { promisify } from "node:util";
 import { TransportError } from "./transport.mjs";
 
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
@@ -9,6 +10,7 @@ const RANGE_LIMIT = 96 * 1024 * 1024;
 const PROBE_PREFIX = 64 * 1024;
 const HEADER_ALLOWLIST = new Set(["referer", "origin", "user-agent", "accept", "accept-language", "cookie"]);
 const RESPONSE_HEADERS = ["accept-ranges", "cache-control", "content-length", "content-range", "content-type", "etag", "last-modified", "content-encoding"];
+const gzipAsync = promisify(gzip);
 
 function mediaError(message, status = 502) {
   return Object.assign(new Error(message), { status });
@@ -392,9 +394,23 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
           headerOrigin: headerOrigin || finalUrl.origin,
           nodeOnly: resource.nodeOnly,
         }));
-        const output = { "content-type": "application/vnd.apple.mpegurl", "content-length": Buffer.byteLength(rewritten), "cache-control": response.headers["cache-control"] || "no-store" };
+        let payload = Buffer.from(rewritten);
+        const output = { "content-type": "application/vnd.apple.mpegurl", "cache-control": response.headers["cache-control"] || "no-store", vary: "Accept-Encoding" };
+        const acceptsGzip = String(req.headers["accept-encoding"] || "").toLowerCase().split(",").some((encoding) => {
+          const match = /^gzip(?:\s*;\s*q=(0(?:\.\d{0,3})?|1(?:\.0{0,3})?))?$/.exec(encoding.trim());
+          return match && Number(match[1] ?? 1) > 0;
+        });
+        if (!range && response.statusCode === 200 && payload.length >= 1024 && acceptsGzip) {
+          const compressed = await gzipAsync(payload, { level: 1 });
+          if (compressed.length < payload.length) {
+            payload = compressed;
+            output["content-encoding"] = "gzip";
+          }
+        }
+        if (abort.signal.aborted) return;
+        output["content-length"] = payload.length;
         res.writeHead(response.statusCode || 200, output);
-        res.end(rewritten);
+        res.end(payload);
         return;
       }
       const outputHeaders = Object.fromEntries(RESPONSE_HEADERS

@@ -605,6 +605,42 @@ test("media rewrites large HLS playlists, probes map/key/segment, and preserves 
   assert.equal(invalid.response.status, 416);
 });
 
+test("HLS compression negotiates gzip without changing signed children or ranged media", async (t) => {
+  const fixture = await startServer();
+  t.after(() => closeServer(fixture.server));
+  const media = createMedia({ transport: createTransport({ engineUrl: `${fixture.base}/` }), secret: SECRET, publicOrigin: fixture.base });
+  fixture.attachMedia(media.handle);
+  const playlistUrl = media.url({ url: `${fixture.base}/proxy/quality.m3u8`, nodeOnly: true });
+  const compressed = await new Promise((resolve, reject) => {
+    http.get(playlistUrl, { headers: { "accept-encoding": "br, GZip;q=0.5" } }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("error", reject);
+      response.on("end", () => resolve({ headers: response.headers, body: Buffer.concat(chunks) }));
+    }).on("error", reject);
+  });
+  assert.equal(compressed.headers["content-encoding"], "gzip");
+  assert.equal(compressed.headers.vary, "Accept-Encoding");
+  assert.equal(Number(compressed.headers["content-length"]), compressed.body.length);
+  const { gunzipSync } = await import("node:zlib");
+  const decoded = gunzipSync(compressed.body).toString("utf8");
+  assert(decoded.startsWith("#EXTM3U\n"));
+  assert(compressed.body.length < Buffer.byteLength(decoded));
+  const child = decoded.split("\n").find((line) => line.startsWith(`${fixture.base}/v1/media?`));
+  assert(child);
+  const resource = media.resource(new URL(child).searchParams.get("token"));
+  assert.equal(resource.url, `${fixture.base}/proxy/segment.ts`);
+  assert.equal(resource.nodeOnly, true);
+  const identity = await httpGet(playlistUrl, { headers: { "accept-encoding": "*;q=1, gzip;q=0" } });
+  assert.equal(identity.response.headers.get("content-encoding"), null, "explicit gzip refusal wins over wildcard");
+  assert(identity.body.toString("utf8").startsWith("#EXTM3U\n"));
+  const ranged = await httpGet(playlistUrl, { headers: { range: "bytes=0-100", "accept-encoding": "gzip" } });
+  assert.equal(ranged.response.headers.get("content-encoding"), null, "Range is never compressed");
+  const head = await httpGet(playlistUrl, { method: "HEAD", headers: { "accept-encoding": "gzip" } });
+  assert.equal(head.body.length, 0);
+  assert.equal(head.response.headers.get("content-encoding"), null);
+});
+
 test("media rejects fake video errors, empty bodies, tampered and expired tokens, and aborts upstream", async (t) => {
   const fixture = await startServer();
   t.after(() => closeServer(fixture.server));
