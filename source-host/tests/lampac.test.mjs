@@ -371,6 +371,12 @@ async function testZetflixDbRefreshPreservesExactTvEpisodeAndVoice() {
   });
   await assert.rejects(ambiguousEpisode.resolve(candidate), /selected episode and voice/);
 
+  const wrongSeason = createLampacProvider({
+    baseUrl,
+    fetchJson: async () => episodeJson(true, [{ s: 2, e: 14, translate: "Dub B", url: "https://cdn.example/wrong-season.m3u8" }]),
+  });
+  await assert.rejects(wrongSeason.resolve(candidate), /selected episode and voice/);
+
   const staleRoot = createLampacProvider({ baseUrl, fetchJson: async () => response("season", [{ id: 1, name: "Season 1" }]) });
   await assert.rejects(staleRoot.resolve({ ...candidate, ref: { ...candidate.ref, providerUrl: `${baseUrl}lite/zetflixdb` } }), /selected episode/);
 }
@@ -435,6 +441,54 @@ async function testProviderOrderCompletionAndEarlyClose() {
   assert.equal(slowAborted, true, "closing discovery should abort outstanding provider calls");
 }
 
+async function testAnimeRetainsRussianMovieProviders() {
+  const fetchJson = async (raw) => {
+    const url = new URL(raw);
+    if (url.pathname === "/lite/events") return ["vibix", "phantom", "collaps", "kodik", "kinoukr", "vkmovie"]
+      .map((balanser) => ({ name: balanser, balanser, url: `${baseUrl}lite/${balanser}` }));
+    assert.equal(url.searchParams.get("anime"), "1");
+    return response("episode", [{ method: "play", url: "https://cdn.example/episode14.m3u8", e: 14 }]);
+  };
+  const provider = createLampacProvider({ baseUrl, fetchJson });
+  const results = await collect(provider.discover({ type: "tv", title: "Волейбол!!", anime: true, season: 1, episode: 14 }));
+  assert.deepEqual(results.map((value) => value.providerId), ["vibix", "phantom", "collaps", "kodik"],
+    "anime must retain Russian general providers without adding foreign or unvetted catalogs");
+  assert(results.every((value) => value.season === 1 && value.episode === 14));
+}
+
+async function testEpisodeSeasonAndBlockedEntries() {
+  let selectedSeason = false;
+  let episodeSeason = 1;
+  const provider = createLampacProvider({ baseUrl, fetchJson: async (raw) => {
+    const url = new URL(raw);
+    if (url.pathname === "/lite/events") return [{ name: "Vibix", balanser: "vibix", url: `${baseUrl}lite/vibix` }];
+    if (selectedSeason && !url.searchParams.has("s")) return response("season", [{ id: 3, url: `${baseUrl}lite/vibix?s=3` }]);
+    return response("episode", [{ ...(episodeSeason == null ? {} : { s: episodeSeason }), e: 1, url: "https://cdn.example/episode1.m3u8" }]);
+  } });
+  const title = { type: "tv", title: "Волейбол!!", anime: true, season: 3, episode: 1 };
+  assert.equal((await collect(provider.discover(title))).length, 0, "season 1 must not be relabelled as season 3");
+  episodeSeason = null;
+  assert.equal((await collect(provider.discover(title))).length, 0, "an unmarked episode cannot establish a later season");
+  selectedSeason = true;
+  assert.equal((await collect(provider.discover(title))).length, 1, "a selected season endpoint can supply unmarked episodes");
+  episodeSeason = 1;
+  assert.equal((await collect(provider.discover(title))).length, 0, "an explicit conflicting season overrides the endpoint selection");
+  episodeSeason = 3;
+  assert.equal((await collect(provider.discover(title))).length, 1);
+
+  const filmix = createLampacProvider({ baseUrl, fetchJson: async (raw) => new URL(raw).pathname === "/lite/events"
+    ? [{ name: "Filmix", balanser: "filmix", url: `${baseUrl}lite/filmix` }]
+    : response("movie", [
+      { translate: "Заблокировано правообладателем!", url: "https://cdn.example/placeholder.mp4" },
+      { translate: "Дубляж", url: "https://cdn.example/movie.mp4" },
+    ]) });
+  assert.deepEqual((await collect(filmix.discover(movieTitle))).map((value) => value.voiceName), ["Дубляж"],
+    "a provider's explicit blocked placeholder must never become a playable voice");
+  const ref = { origin: new URL(baseUrl).origin, method: "play", url: "https://cdn.example/old.mp4", item: { s: 1, e: 1, url: "https://cdn.example/old.mp4" } };
+  await assert.rejects(provider.resolve({ providerId: "vibix", season: 3, episode: 1, ref }), /selected season/);
+  await assert.rejects(filmix.resolve({ providerId: "filmix", voiceName: "Заблокировано правообладателем!", ref }), /blocked placeholder/);
+}
+
 await testMovieProvidersAndResolve();
 await testSimilarExactMatchAndAmbiguity();
 await testTvSeasonEpisodeAndVoices();
@@ -446,4 +500,6 @@ await testZetflixDbRefreshAcceptsSingleCallObject();
 await testZetflixDbRefreshPreservesExactTvEpisodeAndVoice();
 await testExternalCallEndpointAndProviderError();
 await testProviderOrderCompletionAndEarlyClose();
+await testAnimeRetainsRussianMovieProviders();
+await testEpisodeSeasonAndBlockedEntries();
 console.log("Lampac provider adapter tests passed");

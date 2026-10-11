@@ -132,9 +132,11 @@ function episodeNumber(item, index) {
   return match ? Number(match[1]) : null;
 }
 
-function requestedEpisode(items, want) {
+function requestedEpisode(items, want, season, seasonSelected = false) {
   if (!Number.isInteger(Number(want))) return null;
-  const matches = items.filter((item, index) => episodeNumber(item, index) === Number(want));
+  // shortcut: unmarked root episodes cover season 1 only; add season mappings for split catalogs.
+  const matches = items.filter((item, index) => episodeNumber(item, index) === Number(want)
+    && (item?.s != null && item.s !== "" ? Number(item.s) === Number(season) : seasonSelected || Number(season) === 1));
   return matches.length === 1 ? matches[0] : null;
 }
 
@@ -148,8 +150,7 @@ function voiceItems(json) {
 function providerAllowed(provider, input) {
   const id = String(provider?.balanser || "").toLowerCase();
   if (!id || EXCLUDED_PROVIDERS.has(id)) return false;
-  if (input.anime) return RUS_ANIME_PROVIDERS.has(id) || id === "zetflix" || id === "zetflixdb";
-  return RUS_MOVIE_PROVIDERS.has(id);
+  return RUS_MOVIE_PROVIDERS.has(id) || (input.anime && RUS_ANIME_PROVIDERS.has(id));
 }
 
 function heightOf(label) {
@@ -230,7 +231,7 @@ function refreshedVideoDbItem(candidate, json) {
       }
       voiceVerified = true;
     }
-    const episode = requestedEpisode(dataItems(json), candidate.episode);
+    const episode = requestedEpisode(dataItems(json), candidate.episode, candidate.season, true);
     if (!episode || (!voiceVerified && itemVoiceName(episode) !== String(candidate.voiceName))) {
       throw new Error("ZetflixDB did not refresh the selected episode and voice");
     }
@@ -303,6 +304,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
       return { candidates: buildCandidates(provider, items, input, null, null, providerJsonUrl), errors: [] };
     }
 
+    let seasonSelected = false;
     if (kindOf(json) === "season") {
       const seasons = dataItems(json).map((item, index) => ({ item, number: seasonNumber(item, index + 1) }));
       const selected = seasons.filter((season) => season.number === Number(input.season));
@@ -311,6 +313,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
       if (!seasonUrl) return { candidates: [], errors: [] };
       providerJsonUrl = seasonUrl;
       json = await requestJson(seasonUrl, signal);
+      seasonSelected = true;
     }
     if (kindOf(json) !== "episode") return { candidates: [], errors: [] };
 
@@ -335,7 +338,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
         }
       }
       const episodes = dataItems(episodeJson);
-      const selected = requestedEpisode(episodes, input.episode);
+      const selected = requestedEpisode(episodes, input.episode, input.season, seasonSelected);
       if (!selected) continue;
       const values = buildCandidates(provider, [selected], input, Number(input.season), Number(input.episode), episodeUrl, voice);
       candidates.push(...values);
@@ -346,6 +349,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
   function buildCandidates(provider, items, input, season, episode, entryUrl, voice = null) {
     return items.flatMap((item, index) => {
       if (!item || (!item.url && !item.stream && !item.quality && !item.mp4quality)) return [];
+      if (/^заблокировано(?: |$)/.test(normalizedText(itemVoiceName(item)))) return [];
       const method = item.method === "call" ? "call" : "play";
       const sourceUrl = method === "call" ? item.url : item.url || item.stream;
       if (!sourceUrl || !httpUrl(sourceUrl, base)) return [];
@@ -448,6 +452,10 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
   async function resolve(candidate, { signal } = {}) {
     const ref = candidate?.ref;
     if (!ref || ref.origin !== base.origin || !httpUrl(ref.url, base)) throw new Error("Invalid Lampac candidate reference");
+    if (candidate.episode != null && ref.item?.s != null && ref.item.s !== "" && Number(ref.item.s) !== Number(candidate.season)) {
+      throw new Error("Lampac candidate does not match the selected season");
+    }
+    if (/^заблокировано(?: |$)/.test(normalizedText(candidate.voiceName))) throw new Error("Lampac candidate is a blocked placeholder");
     const isZetflixDb = String(candidate.providerId || "").toLowerCase() === "zetflixdb";
     let item = ref.item;
     let currentUrl = httpUrl(ref.url, base);
