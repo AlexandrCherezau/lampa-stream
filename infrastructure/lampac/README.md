@@ -2,7 +2,7 @@
 
 Source host is an independent Node API plus Lampac NextGen `1.81.0` and hidden Chromium. The Vercel deployment runs them together in a custom container; Lampac and Chrome DevTools Protocol listen only on loopback. The container image has already been built remotely with the provider-module cache prewarmed. At runtime that cache and browser profile are copied to ephemeral storage, so restarts can require a fresh browser session.
 
-The production source host is `https://lampa-source-host.vercel.app` (READY deployment `dpl_3WMLXk6pfUou1Ey3mbBU6EpXUJCL`); its Cloudflare media Worker is `https://lampa-source-media.ocr-gemini-proxy.workers.dev`. The frontend is READY at `dpl_CjS3ophsjFVRbKVpM4gqGwi1LoMD`. The project also includes a local Docker Compose setup. From the repository root:
+The production source host is `https://lampa-source-host.vercel.app` (READY deployment `dpl_VuEi7U4Euy2h9DsL3EnJ5uWAyREg`); its Cloudflare media Worker is `https://lampa-source-media.ocr-gemini-proxy.workers.dev`. The frontend is READY at `dpl_CjS3ophsjFVRbKVpM4gqGwi1LoMD`. The project also includes a local Docker Compose setup. From the repository root:
 
 ```sh
 ./infrastructure/lampac/setup.sh
@@ -97,4 +97,4 @@ Zetflix теперь, как и ZetflixDB, перед resolve обновляет
 После обоих READY-деплоев настоящий плеер «Начала» ограничивался двумя ранее выданными реальными кандидатами: ZetflixDB / «DUB | Мосфильм» и Vibix / «Профессиональный (дублированный)». ZetflixDB разрешился в 1080p, но вернул две media 502 до декодирования; затем Vibix 720p дал 8887,991 секунды, 15 кадров при старте и 74 после seek на 60,509 секунды. Это начальный перебор, а не живое доказательство позднего восстановления ZetflixDB. Только TMDB использовал fixtures; resolve и видео были реальными.
 
 
-Cold metadata startup waits for Zetflix's local no-lookup `checksearch` sentinel after CDP is available; the generic Chromium ping alone does not prove native Playwright readiness. The build patches the pinned Zetflix controller before module prewarm with fixed-stage diagnostics, without HTML, cookies or URLs. `node scripts/check-lampac-zetflix-diagnostics.mjs` checks patch anchors, log fields and the readiness gate.
+Cold metadata startup waits for Zetflix's local no-lookup `checksearch` sentinel after CDP is available; the generic Chromium ping alone does not prove native Playwright readiness. The build patches the pinned Zetflix controller before module prewarm with fixed-stage diagnostics, without HTML, cookies or URLs. `node scripts/check-lampac-zetflix-diagnostics.mjs` checks patch anchors, log fields and the readiness gate; it requires the extracted 1.81.0 sources at `/tmp/lampac-native-1.81.0` and `/tmp/lampac-zetflix-research` (or `LAMPAC_ZETFLIX_SOURCE` for the controller path).

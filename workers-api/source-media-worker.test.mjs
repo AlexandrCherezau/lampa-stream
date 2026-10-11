@@ -118,6 +118,37 @@ test("direct HLS sniffing falls back to Node rewrite and forwards the requested 
   assert.equal(await response.text(), "#EXTM3U\n");
 });
 
+test("direct extensionless HLS MIME falls back to Node rewrite for relative segment URIs", async () => {
+  const calls = [];
+  let directBodyCancelled = false;
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(input);
+    calls.push({ url, init });
+    if (url.pathname === "/v1/media-route") {
+      return routeResponse({ kind: "direct", url: "https://cdn.example.test/manifest", headers: {} });
+    }
+    if (url.origin === "https://cdn.example.test") {
+      return new Response(new ReadableStream({
+        start(controller) { controller.enqueue(new TextEncoder().encode("#EXTM3U\n#EXTINF:2,\nsegment.ts\n")); },
+        cancel() { directBodyCancelled = true; },
+      }), { headers: { "content-type": "application/x-mpegURL" } });
+    }
+    return new Response("#EXTM3U\nhttps://source.example.test/v1/media?token=child-token\n", {
+      headers: { "content-type": "application/vnd.apple.mpegurl" },
+    });
+  };
+
+  const response = await handleSourceMediaRequest(makeRequest("/v1/media?token=parent-token"), env, fetchImpl);
+  assert.equal(response.status, 200);
+  assert.equal(directBodyCancelled, true, "the unrewritten direct playlist is discarded");
+  assert.equal(calls.length, 3);
+  assert.equal(calls[2].url.pathname, "/v1/media", "Node rewrites the playlist through the trusted media handler");
+  assert.equal(calls[2].url.searchParams.get("token"), "parent-token");
+  const playlist = await response.text();
+  assert.match(playlist, /https:\/\/media\.example\.workers\.dev\/v1\/media\?token=child-token/);
+  assert.doesNotMatch(playlist, /(?:^|\n)segment\.ts(?:\n|$)/, "relative upstream URIs must not escape the signed media route");
+});
+
 test("direct CDN redirects fall back to Node so cookies never follow the redirect in the Worker", async () => {
   const calls = [];
   const fetchImpl = async (input, init = {}) => {

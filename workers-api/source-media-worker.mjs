@@ -244,6 +244,10 @@ export async function handleSourceMediaRequest(request, env, fetchImpl = fetch) 
     return internalFailure(publicStatus(status));
   }
   const contentType = response.headers.get("content-type") || "";
+  if (request.method !== "HEAD" && isHlsType(contentType)) {
+    await response.body?.cancel().catch(() => {});
+    return fetchAndServeNodeMedia(request, fetchImpl, sourceOrigin, token, env.SOURCE_API_KEY, route.url);
+  }
   if (request.method !== "HEAD" && !isHlsType(contentType) && !mediaPathLooksHls && response.body) {
     let reader;
     try {

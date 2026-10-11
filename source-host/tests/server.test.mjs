@@ -355,8 +355,8 @@ test("resolution preserves the verified target when providers repeat quality lab
   assert.equal(signed.headerOrigin, "https://cdn.test");
 });
 
-test("only ZetflixDB quality media tokens are sealed for direct Node serving", async (t) => {
-  for (const providerId of ["zetflixdb", "hdvb"]) {
+test("ZetflixDB and CDNVideoHub quality media tokens are sealed for direct Node serving", async (t) => {
+  for (const providerId of ["zetflixdb", "cdnvideohub", "hdvb"]) {
     const signed = [];
     const adapter = {
       async *discover() { yield candidate({ providerId, providerName: providerId }); },
@@ -378,7 +378,7 @@ test("only ZetflixDB quality media tokens are sealed for direct Node serving", a
     await reader.drain();
     assert.equal((await post(app.base, "/v1/resolve", { id })).status, 200);
     assert.equal(signed.length, 2);
-    assert.deepEqual(signed.map((resource) => resource.nodeOnly), [providerId === "zetflixdb", providerId === "zetflixdb"]);
+    assert.deepEqual(signed.map((resource) => resource.nodeOnly), [providerId !== "hdvb", providerId !== "hdvb"]);
   }
 });
 
