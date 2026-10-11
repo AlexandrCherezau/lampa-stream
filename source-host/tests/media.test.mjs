@@ -158,6 +158,153 @@ test("transport validates private destinations, redirects, status, split bodies 
   await assert.rejects(otherOrigin.request("http://[::ffff:127.0.0.1]/lite/json"), { code: "SSRF_BLOCKED" });
 });
 
+test("transport retries one opted-in direct GET 404 at the same final URL only", async (t) => {
+  const fixture = await startServer();
+  t.after(() => closeServer(fixture.server));
+  const calls = [];
+  let segmentAttempts = 0;
+  const transport = createTransport({
+    engineUrl: `${fixture.base}/`,
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async (url, options) => {
+      calls.push({ url: url.href, method: options.method, headers: { ...options.headers } });
+      if (url.pathname === "/start") return fakeResponse("", 302, { location: "https://cdn.example.test/media.ts" });
+      if (url.pathname === "/media.ts" && ++segmentAttempts === 1) return fakeResponse("missing", 404);
+      return fakeResponse("segment-bytes", 200, { "content-type": "video/mp2t" });
+    },
+  });
+  const result = await transport.request("https://redirect.example.test/start", {
+    method: "GET",
+    headers: { range: "bytes=0-99", referer: "https://provider.example/watch", cookie: "source=session" },
+    retryNotFound: true,
+  });
+  assert.deepEqual(calls.map(({ url }) => url), [
+    "https://redirect.example.test/start",
+    "https://cdn.example.test/media.ts",
+    "https://cdn.example.test/media.ts",
+  ], "retry repeats the same final public resource without restarting or consuming another redirect");
+  assert.equal(calls[1].method, "GET");
+  assert.equal(calls[2].method, "GET");
+  assert.deepEqual(calls[1].headers, { range: "bytes=0-99", referer: "https://provider.example/watch" });
+  assert.deepEqual(calls[2].headers, calls[1].headers, "Range and safe headers are identical on retry");
+  assert.equal(Buffer.concat(await Array.fromAsync(result.response)).toString(), "segment-bytes");
+
+  for (const [url, expectedCalls] of [
+    [`${fixture.base}/lite/denied`, 1],
+    ["https://cdn.example.test/denied", 1],
+  ]) {
+    let attempts = 0;
+    const noRetry = createTransport({
+      engineUrl: `${fixture.base}/`,
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      requestOnceImpl: async () => { attempts++; return fakeResponse("denied", url.startsWith("https:") ? 503 : 404); },
+    });
+    await assert.rejects(noRetry.request(url, { retryNotFound: true }), { code: "UPSTREAM_HTTP_ERROR" });
+    assert.equal(attempts, expectedCalls, "engine 404 and direct 503 are not retried");
+  }
+
+  let defaultOffCalls = 0;
+  const defaultOff = createTransport({
+    engineUrl: `${fixture.base}/`,
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async () => { defaultOffCalls++; return fakeResponse("missing", 404); },
+  });
+  await assert.rejects(defaultOff.json("https://cdn.example.test/provider.json"), { status: 404 });
+  assert.equal(defaultOffCalls, 1, "JSON/provider requests do not opt into retry");
+
+  let postCalls = 0;
+  const post = createTransport({
+    engineUrl: `${fixture.base}/`,
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async () => { postCalls++; return fakeResponse("missing", 404); },
+  });
+  await assert.rejects(post.request("https://cdn.example.test/post", { method: "POST", retryNotFound: true }), { status: 404 });
+  assert.equal(postCalls, 1, "non-GET/HEAD methods are never retried");
+
+  let headCalls = 0;
+  const head = createTransport({
+    engineUrl: `${fixture.base}/`,
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async () => fakeResponse("", ++headCalls === 1 ? 404 : 200),
+  });
+  const headResult = await head.request("https://cdn.example.test/head.ts", { method: "HEAD", retryNotFound: true });
+  headResult.response.resume();
+  assert.equal(headCalls, 2, "HEAD requests share the one-retry policy");
+
+  let repeated404Calls = 0;
+  const repeated404 = createTransport({
+    engineUrl: `${fixture.base}/`,
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async () => { repeated404Calls++; return fakeResponse("missing", 404); },
+  });
+  await assert.rejects(repeated404.request("https://cdn.example.test/missing.ts", { retryNotFound: true }), { status: 404 });
+  assert.equal(repeated404Calls, 2, "a second 404 is surfaced without a further attempt");
+
+  const aborted = new AbortController();
+  let abortedCalls = 0;
+  const abortAfter404 = createTransport({
+    engineUrl: `${fixture.base}/`,
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async () => { abortedCalls++; aborted.abort(); return fakeResponse("missing", 404); },
+  });
+  await assert.rejects(abortAfter404.request("https://cdn.example.test/aborted.ts", { signal: aborted.signal, retryNotFound: true }), { name: "AbortError" });
+  assert.equal(abortedCalls, 1, "an abort after the first 404 prevents retry");
+
+  let deadlineCalls = 0;
+  const slow404 = createTransport({
+    engineUrl: `${fixture.base}/`,
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async (_url, options) => {
+      deadlineCalls++;
+      await new Promise((resolve) => setTimeout(resolve, options.timeout + 5));
+      return fakeResponse("missing", 404);
+    },
+  });
+  await assert.rejects(slow404.request("https://cdn.example.test/slow.ts", { timeout: 20, retryNotFound: true }), { code: "UPSTREAM_TIMEOUT", status: 504 });
+  assert.equal(deadlineCalls, 1, "the retry cannot extend the original request deadline");
+});
+
+test("media opts probe and playback into bounded direct-404 retry before responding", async (t) => {
+  const fixture = await startServer();
+  t.after(() => closeServer(fixture.server));
+  const counts = new Map();
+  const transport = createTransport({
+    engineUrl: `${fixture.base}/`,
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async (url) => {
+      const count = (counts.get(url.pathname) || 0) + 1;
+      counts.set(url.pathname, count);
+      if (["/probe/master.m3u8", "/probe/segment.ts", "/playback.m3u8", "/playback-segment.ts"].includes(url.pathname) && count === 1) {
+        return fakeResponse("missing", 404);
+      }
+      if (url.pathname === "/probe/master.m3u8") return fakeResponse("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100000\nquality.m3u8\n", 200, { "content-type": "application/vnd.apple.mpegurl" });
+      if (url.pathname === "/probe/quality.m3u8") return fakeResponse("#EXTM3U\n#EXTINF:2,\nsegment.ts\n#EXT-X-ENDLIST\n", 200, { "content-type": "application/vnd.apple.mpegurl" });
+      if (url.pathname === "/probe/segment.ts" || url.pathname === "/playback-segment.ts") return fakeResponse(Buffer.alloc(188, 0x47), 200, { "content-type": "video/mp2t" });
+      if (url.pathname === "/playback.m3u8") return fakeResponse("#EXTM3U\n#EXTINF:2,\nplayback-segment.ts\n#EXT-X-ENDLIST\n", 200, { "content-type": "application/vnd.apple.mpegurl" });
+      return fakeResponse("missing", 404);
+    },
+  });
+  const media = createMedia({ transport, secret: SECRET, publicOrigin: fixture.base });
+  fixture.attachMedia(media.handle);
+  const probe = await media.probe({ url: "https://cdn.example.test/probe/master.m3u8" });
+  assert.equal(probe.ok, true);
+  assert.deepEqual(Object.fromEntries(counts), {
+    "/probe/master.m3u8": 2,
+    "/probe/quality.m3u8": 1,
+    "/probe/segment.ts": 2,
+  });
+
+  const root = await httpGet(media.url({ url: "https://cdn.example.test/playback.m3u8" }));
+  assert.equal(root.response.status, 200, "playback sends no error response before the retry succeeds");
+  const childUrl = root.body.toString("utf8").split("\n").find((line) => line.includes("/v1/media?token="));
+  assert(childUrl);
+  const child = await httpGet(childUrl);
+  assert.equal(child.response.status, 200);
+  assert.equal(child.body.length, 188);
+  assert.equal(counts.get("/playback.m3u8"), 2);
+  assert.equal(counts.get("/playback-segment.ts"), 2);
+});
+
 test("transport unwraps exact-engine AES proxy links and filters provider headers", async (t) => {
   const fixture = await startServer();
   t.after(() => closeServer(fixture.server));

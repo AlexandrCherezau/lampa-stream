@@ -13,8 +13,10 @@ COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 WORKDIR /app
 COPY source-host/ /app/
 COPY infrastructure/lampac/config/vercel.init.conf /opt/lampac/vercel.init.conf
+COPY infrastructure/lampac/patch-zetflix-diagnostics.mjs /opt/lampac/patch-zetflix-diagnostics.mjs
 COPY infrastructure/lampac/start-vercel.sh /usr/local/bin/start-vercel
 RUN set -eu; \
+    node /opt/lampac/patch-zetflix-diagnostics.mjs /lampac/module/OnlineRUS/Zetflix/Controller.cs; \
     cp /opt/lampac/vercel.init.conf /lampac/init.conf; \
     /usr/local/bin/node -e 'const fs=require("node:fs"), p="/lampac/init.conf", c=JSON.parse(fs.readFileSync(p)); c.listen.ip="127.0.0.1"; c.listen.port=19118; c.chromium.enable=false; fs.writeFileSync(p, JSON.stringify(c));'; \
     mkdir -p /lampac/cache/module /lampac/logs /lampac/database; \

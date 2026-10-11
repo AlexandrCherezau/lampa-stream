@@ -172,7 +172,7 @@ function makeToken(resource, key) {
 }
 
 async function readPlaylist(transport, resource, signal) {
-  const { response, url, headers, headerOrigin } = await transport.request(resource.url, { headers: headersFor(resource), signal, timeout: 15_000 });
+  const { response, url, headers, headerOrigin } = await transport.request(resource.url, { headers: headersFor(resource), signal, timeout: 15_000, retryNotFound: true });
   const raw = await collect(response, PLAYLIST_MAX, { signal });
   const bytes = decodeBody(raw, response.headers["content-encoding"]);
   const type = response.headers["content-type"] || "";
@@ -182,7 +182,7 @@ async function readPlaylist(transport, resource, signal) {
 
 async function readProbeBytes(transport, url, headers, signal, range = true) {
   const requestHeaders = { ...headers, ...(range ? { range: range === true ? `bytes=0-${PROBE_PREFIX - 1}` : range } : {}) };
-  const { response } = await transport.request(url, { headers: requestHeaders, signal, timeout: 15_000 });
+  const { response } = await transport.request(url, { headers: requestHeaders, signal, timeout: 15_000, retryNotFound: true });
   if (typeof range === "string" && response.statusCode !== 206) {
     response.resume();
     throw mediaError("Upstream did not honor the HLS byte range");
@@ -260,7 +260,7 @@ function looksLikeFile(contentType, bytes) {
 }
 
 async function inspectRoot(transport, resource, signal) {
-  const { response, url, headers, headerOrigin } = await transport.request(resource.url, { headers: headersFor(resource), signal, timeout: 15_000 });
+  const { response, url, headers, headerOrigin } = await transport.request(resource.url, { headers: headersFor(resource), signal, timeout: 15_000, retryNotFound: true });
   const contentType = response.headers["content-type"] || "";
   const iterator = response[Symbol.asyncIterator]();
   const first = await iterator.next();
@@ -317,7 +317,7 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
       const headers = headersFor(resource);
       const requestedRange = rangeHeader(range);
       if (requestedRange) headers.range = requestedRange;
-      const { response, url: finalUrl, headers: upstreamHeaders, headerOrigin } = await transport.request(resource.url, { headers, method: req.method === "HEAD" ? "HEAD" : "GET", signal: abort.signal, timeout: 30_000 });
+      const { response, url: finalUrl, headers: upstreamHeaders, headerOrigin } = await transport.request(resource.url, { headers, method: req.method === "HEAD" ? "HEAD" : "GET", signal: abort.signal, timeout: 30_000, retryNotFound: true });
       const type = response.headers["content-type"] || "application/octet-stream";
       const honoredRange = !range || response.statusCode === 206;
       if (req.method === "HEAD" && looksLikeErrorPage(type, Buffer.alloc(0))) {

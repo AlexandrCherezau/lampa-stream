@@ -116,7 +116,9 @@ fi
 chrome_pid=$!
 
 # Fail quickly on a broken browser/core install rather than accepting source
-# requests that can never complete.
+# requests that can never complete. The ping route only proves ASP.NET is up;
+# Zetflix's checksearch probe returns its sentinel only after native Playwright
+# has left the disabled state.
 attempt=0
 ready=0
 while [ "$attempt" -lt 60 ]; do
@@ -137,6 +139,33 @@ while [ "$attempt" -lt 60 ]; do
 done
 if [ "$ready" -ne 1 ]; then
   echo "Lampac/Chrome did not become ready within 120 seconds" >&2
+  exit 1
+fi
+
+# Program.cs initializes Playwright asynchronously after its Xvfb setup. Wait
+# for the same Zetflix status gate used by discovery, not merely the HTTP/CDP
+# listeners. checksearch is a no-lookup path and its response has no secrets.
+attempt=0
+ready=0
+while [ "$attempt" -lt 60 ]; do
+  if ! kill -0 "$node_pid" 2>/dev/null; then
+    echo "Source host exited during native Playwright startup" >&2
+    exit 1
+  fi
+  if ! kill -0 "$lampac_pid" 2>/dev/null; then
+    echo "Lampac exited during native Playwright startup" >&2
+    exit 1
+  fi
+  if response="$(curl -fsS --max-time 1 'http://127.0.0.1:9118/lite/zetflix?checksearch=true&kinopoisk_id=1' 2>/dev/null)" \
+    && [ "$response" = 'data-json=' ]; then
+    ready=1
+    break
+  fi
+  attempt=$((attempt + 1))
+  sleep 2
+done
+if [ "$ready" -ne 1 ]; then
+  echo "Lampac native Playwright did not become ready within 120 seconds" >&2
   exit 1
 fi
 

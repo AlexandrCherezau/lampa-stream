@@ -258,10 +258,12 @@ export function createTransport({ engineUrl, engineKey, lookup = dns.lookup, req
     return { kind: url.origin === engineOrigin ? "engine" : "direct", url: url.toString(), headers: providerHeaders, headerOrigin: url.origin };
   }
 
-  async function request(rawUrl, { headers = {}, method = "GET", signal, timeout = 15_000 } = {}) {
+  async function request(rawUrl, { headers = {}, method = "GET", signal, timeout = 15_000, retryNotFound = false } = {}) {
     let { url, requestHeaders, providerHeaders, trustedEngine } = unwrapResource(rawUrl, headers);
     let deadline = Date.now() + timeout;
-    for (let redirects = 0; ; redirects++) {
+    let redirects = 0;
+    let notFoundRetries = 0;
+    while (true) {
       if (signal?.aborted) throw abortError(signal);
       if (url.origin === engineOrigin) {
         const payload = decryptProxyPayload(url.pathname, proxyKey);
@@ -300,6 +302,7 @@ export function createTransport({ engineUrl, engineKey, lookup = dns.lookup, req
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
         if (redirects >= MAX_REDIRECTS) throw new TransportError("Too many upstream redirects", { code: "TOO_MANY_REDIRECTS" });
+        redirects++;
         const redirected = new URL(response.headers.location, url);
         if (redirected.origin !== url.origin) {
           dropCookie(requestHeaders);
@@ -311,6 +314,13 @@ export function createTransport({ engineUrl, engineKey, lookup = dns.lookup, req
       if (response.statusCode >= 400) {
         const status = response.statusCode;
         response.resume();
+        if (signal?.aborted) throw abortError(signal);
+        if (retryNotFound === true && status === 404 && notFoundRetries === 0
+          && (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD")
+          && url.origin !== engineOrigin && !signal?.aborted) {
+          notFoundRetries++;
+          continue;
+        }
         throw new TransportError(`Upstream returned HTTP ${status}`, { code: "UPSTREAM_HTTP_ERROR", status });
       }
       return { response, url, headers: providerHeaders, headerOrigin: url.origin };
