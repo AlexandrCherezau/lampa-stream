@@ -14,12 +14,21 @@ assert.ok(dockerfile.includes(patchCall));
 assert.ok(dockerfile.indexOf(patchCall) < dockerfile.indexOf("Core.dll >/tmp/lampac-module-prewarm.log"));
 
 const zetflixPath = "/tmp/lampac-native-1.81.0/module/OnlineRUS/Zetflix/Controller.cs";
+const zetflixServicePath = "/tmp/lampac-native-1.81.0/module/OnlineRUS/Zetflix/Service.cs";
+const httpSourcePath = "/tmp/lampac-zetflix-research/Shared/Services/HTTP/Http.cs";
 const baseControllerPath = "/tmp/lampac-zetflix-research/Shared/Controllers/BaseOnlineController.cs";
 const sourcePath = process.env.LAMPAC_ZETFLIX_SOURCE || zetflixPath;
 if (!existsSync(sourcePath)) throw new Error(`Pinned Lampac Zetflix source required at ${sourcePath}; set LAMPAC_ZETFLIX_SOURCE to its path`);
+if (!existsSync(zetflixServicePath)) throw new Error(`Pinned Lampac Zetflix Service source required at ${zetflixServicePath}`);
+if (!existsSync(httpSourcePath)) throw new Error(`Pinned Lampac HTTP source required at ${httpSourcePath}`);
 if (!existsSync(baseControllerPath)) throw new Error(`Pinned Lampac BaseOnlineController source required at ${baseControllerPath}`);
 const zetflix = readFileSync(sourcePath, "utf8");
+const zetflixService = readFileSync(zetflixServicePath, "utf8");
+const httpSource = readFileSync(httpSourcePath, "utf8");
 const baseController = readFileSync(baseControllerPath, "utf8");
+assert.match(zetflixService, /Regex\.Match\(html, "file:/);
+assert.doesNotMatch(zetflixService, /if \(!html\.Contains\("new Playerjs"\)\)/);
+assert.match(httpSource, /public const string UserAgent =/);
 assert.match(zetflix, /if \(checksearch\)\s*\{\s*if \(PlaywrightBrowser\.Status == PlaywrightStatus\.disabled\)\s*return OnError\(\);\s*return Content\("data-json="\);/);
 assert.match(baseController, /public ActionResult OnError\(int statusCode = 503/);
 const readinessProbe = "http://127.0.0.1:9118/lite/zetflix?checksearch=true&kinopoisk_id=1";
@@ -35,6 +44,32 @@ assert.ok(patched.includes("[ZetflixDiag] stage=page_null"));
 assert.ok(patched.includes("[ZetflixDiag] stage=navigation_exception type="));
 assert.ok(patched.includes("[ZetflixDiag] stage=browser_exception type="));
 assert.ok(patched.includes("[ZetflixDiag] stage=serial_fallback_result count="));
+const httpRootFailure = patched.indexOf('if (!TryParseObrutPlayerRoot(iframeHtml, out JsonObject root))');
+const httpPlayerjsAttempt = patched.indexOf('var legacyQualitys = ParsePlayerjsSerialEpisode(iframeHtml, episode, voice);');
+const browserHelperNames = ['TryObrutSerialWithBrowser', 'TryParseBrowserSerialDocument', 'BuildBrowserStreamHeaders'];
+assert.ok(httpRootFailure >= 0 && httpPlayerjsAttempt > httpRootFailure,
+  "the native file: parser must run after the HTTP Obrut parser fails");
+assert.ok(patched.includes('if (legacyQualitys.Count > 0)') && patched.includes('return default;'),
+  "HTTP file-parser failure must stop without a blind browser retry");
+for (const helper of browserHelperNames) assert.ok(!patched.includes(helper), `removed unproductive helper remains: ${helper}`);
+assert.ok(patched.includes('new ZetflixInvoke(null, null, init.hls, null, link => link);'));
+assert.match(zetflixService, /Regex\.Match\(html, "file:/);
+assert.doesNotMatch(zetflixService, /if \(!html\.Contains\("new Playerjs"\)\)/);
+assert.match(httpSource, /public const string UserAgent =/);
+const playerjsHelperStart = patched.indexOf('Dictionary<int, string> ParsePlayerjsSerialEpisode(string html, int episode, string voice)');
+const playerjsHelperEnd = patched.indexOf('List<HeadersModel> BuildNativeStreamHeaders', playerjsHelperStart);
+assert.ok(playerjsHelperStart >= 0 && playerjsHelperEnd > playerjsHelperStart);
+assert.doesNotMatch(patched.slice(playerjsHelperStart, playerjsHelperEnd), /html\.Contains\("new Playerjs"\)/,
+  "serial helper must use Lampac's file: parser without requiring a Playerjs marker");
+assert.ok(patched.includes('bool voiceMatch = !string.IsNullOrWhiteSpace(normalizedVoice) && plVoice == normalizedVoice;'),
+  "normal Playerjs resolution must require the selected voice exactly");
+assert.ok(patched.includes('if (current == wanted)'));
+assert.ok(!patched.includes('voiceNode ??= voices[0]'), "wrong voice must not silently fall back to the first voice");
+assert.ok(!patched.includes('if (embed.pl.Count > 0 && IsGenericVoiceLabel(normalizedVoice))'),
+  "Playerjs must not substitute the first voice for a generic or missing selection");
+assert.ok(patched.includes('BuildNativeStreamHeaders(iframeUri, legacyQualitys.First().Value, cookieContainer)'));
+assert.ok(patched.includes('BuildCookieHeader(cookieContainer, mediaUri)'), "cookies remain scoped to the selected stream URL");
+assert.ok(patched.includes('stage=playerjs_quality_count count=0'));
 const originalPlayerjsFetch = '                    html = string.IsNullOrEmpty(PHPSESSID) ? null :\n                        await Http.Get(uri, proxy: proxy, cookie: $"PHPSESSID={PHPSESSID}", headers: reqHeaders);';
 assert.ok(patched.includes(originalPlayerjsFetch), "diagnostics must preserve native Playerjs fetch behavior");
 assert.ok(patched.indexOf("stage=playerjs_fetch_skipped_no_session") < patched.indexOf(originalPlayerjsFetch));
