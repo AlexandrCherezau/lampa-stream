@@ -10,6 +10,7 @@ const RUS_ANIME_PROVIDERS = new Set([
   "animelib", "animeon", "animevost", "dreamerscast", "kodik", "mikai",
 ]);
 const MOVIE_ONLY_PROVIDERS = new Set(["rutubemovie", "vkmovie"]);
+const KODIK_LANGUAGES = new Set(["ja", "ko", "zh", "cn", "th", "vi", "tl"]);
 
 const EXCLUDED_PROVIDERS = new Set([
   "kinotochka", "pidtor", "kinoukr", "uakino", "uafilm", "geosaitebi", "zetflix", "zetflixdb",
@@ -153,6 +154,8 @@ function providerAllowed(provider, input) {
   const id = String(provider?.balanser || "").toLowerCase();
   if (!id || EXCLUDED_PROVIDERS.has(id)) return false;
   if (MOVIE_ONLY_PROVIDERS.has(id) && input.type !== "movie") return false;
+  if (id === "rudub") return input.type === "tv";
+  if (id === "kodik" && KODIK_LANGUAGES.has(String(input.language || "").split("|")[0])) return true;
   return RUS_MOVIE_PROVIDERS.has(id) || (input.anime && RUS_ANIME_PROVIDERS.has(id));
 }
 
@@ -450,6 +453,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
       .map(({ provider }) => provider);
 
     const running = new Set();
+    const waiting = [];
     let next = 0;
     const scheduleNext = (entry) => {
       entry.pending = entry.iterator.next().then(
@@ -462,7 +466,17 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
       running.add(entry);
       scheduleNext(entry);
     };
-    while (next < events.length && running.size < MAX_PROVIDER_CONCURRENCY) startProvider(events[next++]);
+    const fillSlots = () => {
+      while (running.size < MAX_PROVIDER_CONCURRENCY) {
+        if (next < events.length) startProvider(events[next++]);
+        else if (waiting.length) {
+          const entry = waiting.shift();
+          running.add(entry);
+          scheduleNext(entry);
+        } else break;
+      }
+    };
+    fillSlots();
     while (running.size) {
       if (requestSignal.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
       const settled = await Promise.race([...running.values()].map((entry) => entry.pending));
@@ -472,16 +486,19 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
       if (settled.error) {
         running.delete(entry);
         if (settled.error?.name === "AbortError" || requestSignal.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
-        if (next < events.length) startProvider(events[next++]);
+        fillSlots();
         yield { providerId, providerName, error: String(settled.error?.message || settled.error) };
         continue;
       }
       if (settled.result.done) {
         running.delete(entry);
-        if (next < events.length) startProvider(events[next++]);
+        fillSlots();
         continue;
       }
-      scheduleNext(entry);
+      // Search other providers before spending their slots on alternate voices.
+      running.delete(entry);
+      waiting.push(entry);
+      fillSlots();
       if (settled.result.value?.error) yield { providerId, providerName, error: settled.result.value.error };
       else yield settled.result.value;
     }

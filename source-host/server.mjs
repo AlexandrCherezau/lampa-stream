@@ -10,7 +10,7 @@ import { createMedia } from "./media.mjs";
 const CANDIDATE_TTL = 12 * 60 * 60_000;
 const DISCOVERY_MS = 50_000;
 const RESOLVE_MS = 45_000;
-const PROVIDER_ORDER = ["vibix", "animedia", "hdvb", "vkmovie", "rutubemovie", "kodik", "aniliberty", "phantom", "veoveo", "animevost"];
+const PROVIDER_ORDER = ["vibix", "animedia", "cdnvideohub", "hdvb", "filmix", "kodik", "aniliberty", "vkmovie", "rutubemovie", "phantom", "veoveo", "animevost"];
 
 function failure(message, status = 400, code = "INVALID_REQUEST") {
   return Object.assign(new Error(message), { status, code });

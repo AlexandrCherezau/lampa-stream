@@ -449,6 +449,75 @@ test("manual source resolution preserves a near-end resume position after the se
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThanOrEqual(95);
 });
 
+test("a timeline seek made during source resolution overrides the captured resume position", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
+    localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
+  });
+  const tmdb = (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ id: 550, title: "Movie 550", original_title: "Movie 550", imdb_id: "tt0111161", original_language: "en", runtime: 100, genres: [], credits: [] }),
+  });
+  await page.route("**/api/tmdb/**", tmdb);
+  await page.route("https://api.themoviedb.org/**", tmdb);
+  let manifestRequests = 0;
+  await page.route("**/*seek-fixture*.m3u8", async (route) => {
+    manifestRequests++;
+    await route.fulfill({
+      status: 200, contentType: "application/vnd.apple.mpegurl",
+      headers: { "access-control-allow-origin": "*" },
+      body: readFileSync(join(fixtureDir, "fixture.m3u8"), "utf8"),
+    });
+  });
+  await page.route("**/fixture*.ts", (route) => route.fulfill({
+    status: 200, contentType: "video/mp2t",
+    headers: { "access-control-allow-origin": "*" },
+    body: readFileSync(join(fixtureDir, new URL(route.request().url()).pathname.split("/").pop())),
+  }));
+
+  let startResolve;
+  const resolveStarted = new Promise((resolve) => { startResolve = resolve; });
+  let finishResolve;
+  const resolveGate = new Promise((resolve) => { finishResolve = resolve; });
+  await page.route(/\/api\/source-host\?op=discover(?:&|$)/, (route) => route.fulfill({
+    status: 200, contentType: "text/event-stream",
+    body: ["ready", "pending"].map((id) => `event: candidate\ndata: ${JSON.stringify({ id, providerId: id, providerName: id === "ready" ? "Ready source" : "Pending source", voiceName: "Dub" })}\n\n`).join("") + "event: done\ndata: {}\n\n",
+  }));
+  await page.route(/\/api\/source-host\?op=resolve(?:&|$)/, async (route) => {
+    const { id } = route.request().postDataJSON();
+    if (id === "pending") { startResolve(); await resolveGate; }
+    const source = id === "pending" ? "pending-seek-fixture" : "ready-seek-fixture";
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ kind: "hls", selected: { label: "720p", height: 720, url: `https://media.example/${source}.m3u8` }, qualities: [{ label: "720p", height: 720, url: `https://media.example/${source}.m3u8` }] }),
+    });
+  });
+
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  const video = page.locator("video");
+  await expect(video).toBeVisible({ timeout: 20_000 });
+  await expect.poll(() => manifestRequests, { timeout: 15_000 }).toBeGreaterThan(0);
+  await expect.poll(() => video.evaluate((v) => v.readyState), { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThan(0.5);
+  await video.evaluate((v) => { v.currentTime = 70; v.pause(); });
+  await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 5_000 }).toBeGreaterThanOrEqual(69);
+
+  await page.getByRole("button", { name: "Ready source" }).click();
+  await page.getByRole("button", { name: "Pending source" }).click();
+  await resolveStarted;
+  const seekBar = page.locator(".torrplayer-seek");
+  const seekBox = await seekBar.boundingBox();
+  await seekBar.click({ position: { x: seekBox.width * 0.4, y: seekBox.height / 2 } });
+  await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 5_000 }).toBeGreaterThanOrEqual(39);
+  finishResolve();
+
+  await expect.poll(() => manifestRequests, { timeout: 20_000 }).toBeGreaterThan(1);
+  await expect.poll(() => video.evaluate((v) => v.readyState), { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThanOrEqual(39);
+  await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 2_000 }).toBeLessThan(50);
+});
+
 test("Haikyuu season 3 uses mapped AniSkip episode and skips its opening", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");

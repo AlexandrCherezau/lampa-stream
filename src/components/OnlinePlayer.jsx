@@ -163,6 +163,7 @@ export default function OnlinePlayer({
   // is still settling and currentTime can momentarily read 0, which would
   // overwrite the real saved position). Cleared on `seeked` (or after 5s safety).
   const resumeTargetRef = useRef(null);
+  const seekTargetTimerRef = useRef(null);
   const sourceSelectionRef = useRef(0);
   const sourceSeekTimerRef = useRef(null);
   const hideTimerRef = useRef(null);
@@ -716,6 +717,12 @@ export default function OnlinePlayer({
     lastFleetTimeRef.current = null;
   }, [item?.id, item?.imdb_id, details?.imdb_id, details?.external_ids?.imdb_id, season, episode]);
 
+  useEffect(() => () => {
+    clearTimeout(seekTargetTimerRef.current);
+    seekTargetTimerRef.current = null;
+    resumeTargetRef.current = null;
+  }, [item?.id, season, episode]);
+
   useEffect(() => {
     if (!stream) return;
     const v = videoRef.current;
@@ -1190,6 +1197,8 @@ export default function OnlinePlayer({
     const onSeeked = () => {
       if (resumeTargetRef.current != null && Math.abs(v.currentTime - resumeTargetRef.current) > 1) return;
       resumeTargetRef.current = null;
+      clearTimeout(seekTargetTimerRef.current);
+      seekTargetTimerRef.current = null;
       if (isLampac) lampac.clearSwitching();
     };
     const onRate = () => setRate(v.playbackRate || 1);
@@ -1555,8 +1564,23 @@ export default function OnlinePlayer({
 
   // ── Controls (engine-agnostic) ──────────────────────────────────────────────
   const togglePlay = () => { const v = videoRef.current; if (!v) return; if (v.paused) v.play().catch(() => {}); else v.pause(); };
-  const seekBy = (delta) => { const v = videoRef.current; if (!v || !v.duration) return; v.currentTime = Math.min(v.duration, Math.max(0, v.currentTime + delta)); };
-  const seekTo = (ratio) => { const v = videoRef.current; if (!v || !v.duration) return; v.currentTime = Math.min(v.duration, Math.max(0, ratio * v.duration)); };
+  const seekTo = (ratio) => {
+    const v = videoRef.current;
+    if (!v || !Number.isFinite(v.duration) || v.duration <= 0 || !Number.isFinite(ratio)) return;
+    const target = Math.min(v.duration, Math.max(0, ratio * v.duration));
+    // A pending resume/source switch must follow the viewer's newer seek, or
+    // the next reattach can start at the older saved offset and snap backward.
+    resumeTargetRef.current = target;
+    resumeDoneRef.current = true;
+    saveResumeTime(target);
+    clearTimeout(seekTargetTimerRef.current);
+    seekTargetTimerRef.current = setTimeout(() => {
+      if (resumeTargetRef.current === target) resumeTargetRef.current = null;
+      seekTargetTimerRef.current = null;
+    }, 5000);
+    v.currentTime = target;
+  };
+  const seekBy = (delta) => { const v = videoRef.current; if (!v || !v.duration) return; seekTo((v.currentTime + delta) / v.duration); };
   const onSeekClick = (e) => { const v = videoRef.current; if (!v || !v.duration) return; const r = e.currentTarget.getBoundingClientRect(); seekTo((e.clientX - r.left) / r.width); };
   // rAF-throttled: mousemove fires 60+×/sec; only one setHoverTime per frame.
   const onSeekMove = (e) => {

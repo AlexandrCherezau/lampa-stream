@@ -789,3 +789,66 @@ async function testDiscoveryRequestBudgetsAndRuntime() {
   assert.equal(calls.at(-1).timeout, 45_000, "selected stream resolution retains its budget");
 }
 await testDiscoveryRequestBudgetsAndRuntime();
+
+async function testOtherProvidersBeforeSlowAlternateVoices() {
+  const ids = ["vibix", "hdvb", "phantom", "aladin"];
+  let release;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const started = [];
+  const provider = createLampacProvider({ baseUrl, fetchJson: async (raw, { signal }) => {
+    const url = new URL(raw);
+    if (url.pathname === "/lite/events") return ids.map(balanser => ({ balanser, url: `${baseUrl}lite/${balanser}` }));
+    const id = url.pathname.split("/").at(-1);
+    if (url.searchParams.has("voice")) {
+      await Promise.race([blocked, new Promise((_, reject) => signal.addEventListener("abort", () =>
+        reject(Object.assign(new Error("aborted"), { name: "AbortError" })), { once: true }))]);
+      return response("episode", [{ e: 1, url: `https://cdn.example/${id}-b.m3u8` }]);
+    }
+    started.push(id);
+    return response("episode", [{ e: 1, url: `https://cdn.example/${id}.m3u8` }], { voice: [
+      { name: "Dub A", active: true },
+      { name: "Dub B", url: `${baseUrl}lite/${id}?voice=b` },
+    ] });
+  } });
+  const iterator = provider.discover({ type: "tv", title: "Breaking Bad", season: 1, episode: 1 });
+  try {
+    const candidates = [];
+    for (let i = 0; i < ids.length; i++) {
+      const result = await Promise.race([iterator.next(), new Promise(resolve => setTimeout(() => resolve(null), 100))]);
+      assert(result, "slow alternate voices must not prevent other providers from being searched");
+      candidates.push(result.value);
+    }
+    assert.deepEqual(new Set(candidates.map(value => value.providerId)), new Set(ids));
+    assert(candidates.every(value => value.voiceName === "Dub A"));
+    release();
+    const rest = await collect(iterator);
+    assert.equal(rest.filter(value => value.voiceName === "Dub B").length, ids.length, "alternate voices remain available");
+    assert.deepEqual(started, ids);
+  } finally {
+    release();
+    await iterator.return();
+  }
+}
+await testOtherProvidersBeforeSlowAlternateVoices();
+
+async function testRussianSeriesAndAsianDramaProviders() {
+  const requested = [];
+  const provider = createLampacProvider({ baseUrl, fetchJson: async raw => {
+    const url = new URL(raw);
+    if (url.pathname === "/lite/events") return ["rudub", "kodik", "animedia", "kinopub"]
+      .map(balanser => ({ balanser, url: `${baseUrl}lite/${balanser}` }));
+    requested.push(url.pathname);
+    return response("episode", [{ s: 1, e: 1, voice_name: "Русская озвучка", url: "https://cdn.example/episode.m3u8" }]);
+  } });
+  const title = { type: "tv", title: "Дорама", language: "ko", season: 1, episode: 1 };
+  assert.deepEqual((await collect(provider.discover(title))).map(value => value.providerId), ["rudub", "kodik"],
+    "Russian series and native Kodik drama coverage must not require the anime flag");
+  assert.deepEqual((await collect(provider.discover({ ...title, language: "ko|en" }))).map(value => value.providerId), ["rudub", "kodik"],
+    "Kodik uses the first language, matching its native module");
+  requested.length = 0;
+  assert.deepEqual((await collect(provider.discover({ ...title, language: "en" }))).map(value => value.providerId), ["rudub"]);
+  requested.length = 0;
+  await collect(provider.discover({ type: "movie", title: "Film", language: "en" }));
+  assert.deepEqual(requested, [], "series-only and credential-gated providers must not enter movie search");
+}
+await testRussianSeriesAndAsianDramaProviders();
