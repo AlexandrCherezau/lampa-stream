@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { patchController } from "../infrastructure/lampac/patch-zetflix-diagnostics.mjs";
+import { patchController, SERIAL_FRAME_DOCUMENT_SCRIPT } from "../infrastructure/lampac/patch-zetflix-diagnostics.mjs";
 
 const dockerfile = readFileSync(new URL("../infrastructure/lampac/Dockerfile.vercel", import.meta.url), "utf8");
 const launcher = readFileSync(new URL("../infrastructure/lampac/start-vercel.sh", import.meta.url), "utf8");
@@ -52,6 +52,21 @@ assert.ok(launcher.indexOf(readinessProbe) < launcher.indexOf('touch "$SOURCE_EN
 
 const source = zetflix;
 const patched = patchController(source);
+const movieQualityPattern = patched.match(/var quality = Regex\.Match\(url \?\? string\.Empty, @"([^"\n]+)"/);
+assert.ok(movieQualityPattern, "patched movie browser capture must retain its quality matcher");
+const movieQualityRegex = new RegExp(movieQualityPattern[1], "i");
+for (const height of [240, 360, 480, 720, 1080, 1440, 2160]) {
+  const mediaUrl = `https://cdn.example/video/${height}.mp4:hls:manifest.m3u8?session=fixture`;
+  assert.equal(movieQualityRegex.exec(mediaUrl)?.[1], String(height), `normal ${height}p manifest should match`);
+}
+for (const rejectedUrl of [
+  "https://cdn.example/video/720.mp4:manifest.m3u8?session=fixture",
+  "https://cdn.example/video/720Xmp4:hls:manifest.m3u8?session=fixture",
+  "https://foreign.example/video/720.mp4:hls:manifest.m3u8.evil",
+  "https://cdn.example/video/trailer.mp4?session=fixture",
+]) {
+  assert.equal(movieQualityRegex.test(rejectedUrl), false, `nonmanifest resource should not match: ${rejectedUrl}`);
+}
 assert.ok(patched.includes('hybridCache.TryGetValue($"zetfix:view:v2:{ztfhost?.TrimEnd(\'/\')}:{kinopoisk_id}:{season}:{proxyManager?.CurrentProxyIp}"'));
 assert.ok(patched.includes('InvokeCache($"zetfix:view:v2:{ztfhost?.TrimEnd(\'/\')}:{kinopoisk_id}:{rs}:{proxyManager?.CurrentProxyIp}"'));
 assert.ok(!patched.includes('zetfix:view:{'), 'HTML cache reader and writer must use the same host-scoped version');
@@ -64,7 +79,8 @@ assert.ok(patched.includes('InvokeCache(SerialVideoCacheKey(ztfhost, kinopoisk_i
 assert.ok(!patched.includes('zetflix:live_serial:v8:') && !patched.includes('zetflix:live_serial_tpl:v1:'));
 assert.ok(patched.includes('WarmSerialVideoCache(direct, ztfhost, kinopoisk_id, season, documentUri, userAgent, null, browserPage)'));
 assert.ok(patched.includes('WarmSerialVideoCache(iframeEmbed, ztfhost, kinopoisk_id, season, documentUri, Http.UserAgent, iframeCookies, null)'));
-assert.ok(patched.includes('WarmSerialVideoCache(direct, ztfhost, kinopoisk_id, season, frame.Url, browserUserAgent, null, page)'));
+assert.ok(patched.includes('WarmSerialVideoCache(direct, ztfhost, kinopoisk_id, season, frameDocumentUri, browserUserAgent, null, page)'));
+assert.ok(patched.includes(`frame.EvaluateAsync<string>(${JSON.stringify(SERIAL_FRAME_DOCUMENT_SCRIPT)})`));
 assert.ok(patched.includes('nativeIndexCookies.Add(new Uri(uri), new System.Net.Cookie("PHPSESSID", PHPSESSID))'),
   "the session cookie must stay scoped to the initial provider URI");
 assert.ok(patched.includes('Http.BaseGet(uri, proxy: proxy, headers: headers, cookieContainer: nativeIndexCookies)'));
@@ -98,11 +114,18 @@ assert.ok(cacheHelper.includes('getScopedCookieHeader(mediaUri)') && cacheHelper
 assert.doesNotMatch(cacheHelper, /voice\?\.title|episode\?\.comment/,
   "Lampac RootObject and Folder are value types");
 assert.ok(cacheHelper.includes('Console.WriteLine("[ZetflixDiag] stage=video_cache_warmed count=" + warmed)'));
+for (const stage of ['video_cache_enter', 'video_cache_embed_rejected', 'video_cache_document_rejected']) {
+  assert.ok(cacheHelper.includes(`Console.WriteLine("[ZetflixDiag] stage=${stage}");`));
+}
+assert.ok(patched.includes('stage=serial_template_cache_lookup hit=" + templateHit'));
+for (const source of ['parent', 'iframe', 'frame']) {
+  assert.ok(patched.includes(`Console.WriteLine("[ZetflixDiag] stage=serial_${source}_document_capture");`));
+}
 assert.equal((patched.match(/EvaluateAsync<string>\("\(\) => navigator\.userAgent"\)/g) || []).length, 2,
   "browser UA should be read once for each of the two catalog-page paths");
 assert.match(cacheHelper, /Console\.WriteLine\("\[ZetflixDiag\] stage=video_cache_warmed count=" \+ warmed\);/,
   "cache warming reports only the numeric number of tuple entries created");
-assert.doesNotMatch(cacheHelper, /PHPSESSID|Console\.Error|Console\.WriteLine\((?!"\[ZetflixDiag\] stage=video_cache_warmed count=")/,
+assert.doesNotMatch(cacheHelper, /PHPSESSID|Console\.Error|Console\.WriteLine\((?!"\[ZetflixDiag\] stage=video_cache_(?:warmed count="|(?:enter|embed_rejected|document_rejected)"\);))/,
   "cache warming must not log content or credentials");
 assert.ok(patched.includes("[ZetflixDiag] stage=page_null"));
 assert.ok(patched.includes("[ZetflixDiag] stage=navigation_exception type="));

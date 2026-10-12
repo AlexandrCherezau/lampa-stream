@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const MARKER = "[ZetflixDiag]";
+export const SERIAL_FRAME_DOCUMENT_SCRIPT = "() => { const href = location.href; if (/^https?:/.test(href)) return href; if (href !== 'about:blank' && href !== 'about:srcdoc') return null; try { const parentUrl = parent.document.URL; const parentOrigin = new URL(parentUrl).origin; return /^https?:/.test(parentUrl) && document.baseURI === parentUrl && globalThis.origin === parentOrigin ? parentUrl : null; } catch { return null; } }";
 const replacements = [
   [
     '                string html = hybridCache.TryGetValue($"zetfix:view:{kinopoisk_id}:{season}:{proxyManager?.CurrentProxyIp}", out string cachedHtml) ? cachedHtml : null;',
@@ -25,6 +26,10 @@ const replacements = [
     '            string memKey = $"zetflix:live_serial_tpl:v2:{ztfhost?.TrimEnd(\'/\')}:{kinopoisk_id}:{season}:{proxyManager?.CurrentProxyIp}";',
   ],
   [
+    '            string memKey = $"zetflix:live_serial_tpl:v2:{ztfhost?.TrimEnd(\'/\')}:{kinopoisk_id}:{season}:{proxyManager?.CurrentProxyIp}";\n            if (!hybridCache.TryGetValue(memKey, out EmbedModel cache))',
+    '            string memKey = $"zetflix:live_serial_tpl:v2:{ztfhost?.TrimEnd(\'/\')}:{kinopoisk_id}:{season}:{proxyManager?.CurrentProxyIp}";\n            bool templateHit = hybridCache.TryGetValue(memKey, out EmbedModel cache);\n            Console.WriteLine("[ZetflixDiag] stage=serial_template_cache_lookup hit=" + templateHit);\n            if (!templateHit)',
+  ],
+  [
     '            var cache = await InvokeCache($"zetflix:live_serial:v8:{kinopoisk_id}:{s}:{e}:{t}:{proxyManager?.CurrentProxyIp}", 300,',
     '            var cache = await InvokeCache(SerialVideoCacheKey(ztfhost, kinopoisk_id, s, e, t), 300,',
   ],
@@ -42,7 +47,7 @@ const replacements = [
   ],
   [
     '                            var direct = BuildSerialEmbedFromHtml(frameHtml, season);\n                            if (direct?.pl?.Count > 0 && !direct.movie)\n                            {',
-    '                            var direct = BuildSerialEmbedFromHtml(frameHtml, season);\n                            if (direct?.pl?.Count > 0 && !direct.movie)\n                            {\n                                await WarmSerialVideoCache(direct, ztfhost, kinopoisk_id, season, frame.Url, browserUserAgent, null, page).ConfigureAwait(false);',
+    `                            var direct = BuildSerialEmbedFromHtml(frameHtml, season);\n                            if (direct?.pl?.Count > 0 && !direct.movie)\n                            {\n                                Console.WriteLine("[ZetflixDiag] stage=serial_frame_document_capture");\n                                string frameDocumentUri = await frame.EvaluateAsync<string>(${JSON.stringify(SERIAL_FRAME_DOCUMENT_SCRIPT)}).ConfigureAwait(false);\n                                await WarmSerialVideoCache(direct, ztfhost, kinopoisk_id, season, frameDocumentUri, browserUserAgent, null, page).ConfigureAwait(false);`,
   ],
   [
     '        async ValueTask<EmbedModel> TrySerialEmbedFromPlayerHtml(string playerHtml, string playerUri, string ztfhost, int season)',
@@ -50,7 +55,7 @@ const replacements = [
   ],
   [
     '            var direct = BuildSerialEmbedFromHtml(playerHtml, season);\n            if (direct?.pl?.Count > 0 && !direct.movie)\n                return direct;',
-    '            var direct = BuildSerialEmbedFromHtml(playerHtml, season);\n            if (direct?.pl?.Count > 0 && !direct.movie)\n            {\n                string documentUri = string.IsNullOrWhiteSpace(browserPage?.Url) ? playerUri : browserPage.Url;\n                string userAgent = string.IsNullOrWhiteSpace(browserUserAgent) ? Http.UserAgent : browserUserAgent;\n                await WarmSerialVideoCache(direct, ztfhost, kinopoisk_id, season, documentUri, userAgent, null, browserPage).ConfigureAwait(false);\n                return direct;\n            }',
+    '            var direct = BuildSerialEmbedFromHtml(playerHtml, season);\n            if (direct?.pl?.Count > 0 && !direct.movie)\n            {\n                string documentUri = string.IsNullOrWhiteSpace(browserPage?.Url) ? playerUri : browserPage.Url;\n                string userAgent = string.IsNullOrWhiteSpace(browserUserAgent) ? Http.UserAgent : browserUserAgent;\n                Console.WriteLine("[ZetflixDiag] stage=serial_parent_document_capture");\n                await WarmSerialVideoCache(direct, ztfhost, kinopoisk_id, season, documentUri, userAgent, null, browserPage).ConfigureAwait(false);\n                return direct;\n            }',
   ],
   [
     '            string iframeUri = iframeSrc.StartsWith("//") ? $"https:{iframeSrc}" :\n                               iframeSrc.StartsWith("/") ? $"{ztfhost}{iframeSrc}" :\n                               iframeSrc;',
@@ -58,7 +63,7 @@ const replacements = [
   ],
   [
     '            var iframeResult = await Http.BaseGet(iframeUri,\n                headers: HeadersModel.Init(\n                    ("Referer", playerUri),\n                    ("Origin", ztfhost),\n                    ("Sec-Fetch-Dest", "iframe"),\n                    ("Sec-Fetch-Mode", "navigate"),\n                    ("Sec-Fetch-Site", "cross-site")\n                ),\n                timeoutSeconds: 15,\n                statusCodeOK: false,\n                cookieContainer: new CookieContainer()\n            );\n\n            return BuildSerialEmbedFromHtml(iframeResult.content, season);',
-    '            var iframeCookies = new CookieContainer();\n            var iframeResult = await Http.BaseGet(iframeUri,\n                headers: HeadersModel.Init(\n                    ("Referer", playerUri),\n                    ("Origin", ztfhost),\n                    ("Sec-Fetch-Dest", "iframe"),\n                    ("Sec-Fetch-Mode", "navigate"),\n                    ("Sec-Fetch-Site", "cross-site")\n                ),\n                timeoutSeconds: 15,\n                statusCodeOK: false,\n                cookieContainer: iframeCookies\n            );\n\n            var iframeEmbed = BuildSerialEmbedFromHtml(iframeResult.content, season);\n            if (iframeEmbed?.pl?.Count > 0 && !iframeEmbed.movie)\n            {\n                string documentUri = iframeResult.response?.RequestMessage?.RequestUri?.AbsoluteUri ?? iframeUri;\n                await WarmSerialVideoCache(iframeEmbed, ztfhost, kinopoisk_id, season, documentUri, Http.UserAgent, iframeCookies, null).ConfigureAwait(false);\n            }\n            return iframeEmbed;',
+    '            var iframeCookies = new CookieContainer();\n            var iframeResult = await Http.BaseGet(iframeUri,\n                headers: HeadersModel.Init(\n                    ("Referer", playerUri),\n                    ("Origin", ztfhost),\n                    ("Sec-Fetch-Dest", "iframe"),\n                    ("Sec-Fetch-Mode", "navigate"),\n                    ("Sec-Fetch-Site", "cross-site")\n                ),\n                timeoutSeconds: 15,\n                statusCodeOK: false,\n                cookieContainer: iframeCookies\n            );\n\n            var iframeEmbed = BuildSerialEmbedFromHtml(iframeResult.content, season);\n            if (iframeEmbed?.pl?.Count > 0 && !iframeEmbed.movie)\n            {\n                string documentUri = iframeResult.response?.RequestMessage?.RequestUri?.AbsoluteUri ?? iframeUri;\n                Console.WriteLine("[ZetflixDiag] stage=serial_iframe_document_capture");\n                await WarmSerialVideoCache(iframeEmbed, ztfhost, kinopoisk_id, season, documentUri, Http.UserAgent, iframeCookies, null).ConfigureAwait(false);\n            }\n            return iframeEmbed;',
     '                cookieContainer: new CookieContainer()\n            );\n\n            return BuildSerialEmbedFromHtml(iframeResult.content, season);',
   ],
   [
@@ -70,9 +75,18 @@ const replacements = [
 
         async ValueTask WarmSerialVideoCache(EmbedModel embed, string ztfhost, long kinopoisk_id, int season, string documentUri, string userAgent, CookieContainer cookieContainer, IPage browserPage)
         {
-            if (embed?.movie != false || embed.pl == null || !Uri.TryCreate(documentUri, UriKind.Absolute, out var document) ||
-                (document.Scheme != Uri.UriSchemeHttps && document.Scheme != Uri.UriSchemeHttp))
+            Console.WriteLine("[ZetflixDiag] stage=video_cache_enter");
+            if (embed?.movie != false || embed.pl == null)
+            {
+                Console.WriteLine("[ZetflixDiag] stage=video_cache_embed_rejected");
                 return;
+            }
+            if (!Uri.TryCreate(documentUri, UriKind.Absolute, out var document) ||
+                (document.Scheme != Uri.UriSchemeHttps && document.Scheme != Uri.UriSchemeHttp))
+            {
+                Console.WriteLine("[ZetflixDiag] stage=video_cache_document_rejected");
+                return;
+            }
 
             int warmed = 0;
             foreach (var voice in embed.pl)
@@ -324,6 +338,10 @@ const replacements = [
   [
     "                string normalizedVoice = NormalizeObrutNodeText(voice);\n\n                foreach (var pl in embed.pl)\n                {\n                    string plVoice = NormalizeObrutNodeText(pl.title);\n                    bool voiceMatch = string.IsNullOrEmpty(normalizedVoice) ||\n                                      plVoice.Contains(normalizedVoice, StringComparison.OrdinalIgnoreCase) ||\n                                      normalizedVoice.Contains(plVoice, StringComparison.OrdinalIgnoreCase);\n                    if (!voiceMatch)\n                        continue;\n\n                    if (pl.folder == null)\n                        continue;\n\n                    foreach (var ep in pl.folder)\n                    {\n                        string epNum = Regex.Match(ep.comment ?? string.Empty, \"^([0-9]+)\").Groups[1].Value;\n                        if (epNum != episode.ToString())\n                            continue;\n\n                        var qualitys = ParsePlayerjsQualityMap(ep.file);\n                        if (qualitys.Count > 0)\n                        {\n                            Console.WriteLine(\"[ZetflixDiag] stage=playerjs_quality_count count=\" + qualitys.Count);\n                            return (qualitys, null);\n                        }\n                    }\n                }\n\n                if (embed.pl.Count > 0 && IsGenericVoiceLabel(normalizedVoice))\n                {\n                    var qualitys = ParsePlayerjsQualityMap(FindPlayerjsEpisodeFile(embed.pl[0].folder, episode));\n                    if (qualitys.Count > 0)\n                        return (qualitys, null);\n                }\n\n",
     "                string normalizedVoice = NormalizeObrutNodeText(voice);\n\n                foreach (var pl in embed.pl)\n                {\n                    string plVoice = NormalizeObrutNodeText(pl.title);\n                    bool voiceMatch = !string.IsNullOrWhiteSpace(normalizedVoice) && plVoice == normalizedVoice;\n                    if (!voiceMatch || pl.folder == null)\n                        continue;\n\n                    foreach (var ep in pl.folder)\n                    {\n                        string epNum = Regex.Match(ep.comment ?? string.Empty, \"^([0-9]+)\").Groups[1].Value;\n                        if (epNum != episode.ToString())\n                            continue;\n\n                        var qualitys = ParsePlayerjsQualityMap(ep.file);\n                        if (qualitys.Count > 0)\n                        {\n                            Console.WriteLine(\"[ZetflixDiag] stage=playerjs_quality_count count=\" + qualitys.Count);\n                            return (qualitys, null);\n                        }\n                    }\n                }\n\n",
+  ],
+  [
+    String.raw`                            var quality = Regex.Match(url ?? string.Empty, @"/(240|360|480|720|1080|1440|2160)\\.mp4:hls:manifest\\.m3u8(?:\\?|$)", RegexOptions.IgnoreCase);`,
+    String.raw`                            var quality = Regex.Match(url ?? string.Empty, @"/(240|360|480|720|1080|1440|2160)\.mp4:hls:manifest\.m3u8(?:\?|$)", RegexOptions.IgnoreCase);`,
   ],
 ];
 
