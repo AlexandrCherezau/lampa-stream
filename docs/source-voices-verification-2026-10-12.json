@@ -1,0 +1,238 @@
+{
+  "checkedAt": "2026-10-12T20:53:49.277Z",
+  "frontend": "https://lampa-stream-six.vercel.app",
+  "selfCheck": "PASS",
+  "scope": "Three named titles; at most two distinct voices per listed provider and lowest/highest advertised numbered quality. Startup and seek60 decode one video frame each. Not all voices, titles, or browsers.",
+  "bounds": {
+    "voicesPerProvider": 2,
+    "qualitiesPerVoice": 2,
+    "decodeConcurrency": 3,
+    "ffmpegTimeoutMs": 25000,
+    "totalDeadlineMs": 300000
+  },
+  "samples": [
+    {
+      "name": "Fight Club",
+      "checks": [
+        {
+          "provider": "vibix",
+          "voice": "Профессиональный (дублированный)",
+          "qualities": [
+            {
+              "quality": "480p",
+              "playable": true,
+              "qualityResolveMs": 1252,
+              "startupMs": 2769,
+              "seek60Ms": 3697
+            },
+            {
+              "quality": "1080p",
+              "playable": true,
+              "qualityResolveMs": 1426,
+              "startupMs": 2693,
+              "seek60Ms": 5155
+            }
+          ],
+          "resolveMs": 1137,
+          "advertisedQualities": [
+            {
+              "label": "1080p",
+              "height": 1080
+            },
+            {
+              "label": "720p",
+              "height": 720
+            },
+            {
+              "label": "480p",
+              "height": 480
+            }
+          ]
+        },
+        {
+          "provider": "cdnvideohub",
+          "voice": "Неизвестный",
+          "qualities": [
+            {
+              "quality": "auto",
+              "playable": true,
+              "qualityResolveMs": 341,
+              "startupMs": 3658,
+              "seek60Ms": 4353
+            }
+          ],
+          "resolveMs": 567,
+          "advertisedQualities": [
+            {
+              "label": "auto",
+              "height": 0
+            }
+          ]
+        }
+      ],
+      "missingProviders": [
+        "filmix"
+      ],
+      "playable": true,
+      "discoveryMs": 24074,
+      "candidateCount": 86
+    },
+    {
+      "name": "Breaking Bad S1E1",
+      "season": 1,
+      "episode": 1,
+      "checks": [
+        {
+          "provider": "hdvb",
+          "voice": "LostFilm",
+          "qualities": [
+            {
+              "quality": "auto",
+              "playable": false,
+              "qualityResolveMs": 561,
+              "failure": "timeout"
+            }
+          ],
+          "resolveMs": 1129,
+          "advertisedQualities": [
+            {
+              "label": "auto",
+              "height": 0
+            }
+          ]
+        },
+        {
+          "provider": "hdvb",
+          "voice": "Дубляж",
+          "qualities": [
+            {
+              "quality": "auto",
+              "playable": true,
+              "qualityResolveMs": 797,
+              "startupMs": 8335,
+              "seek60Ms": 8582
+            }
+          ],
+          "resolveMs": 1318,
+          "advertisedQualities": [
+            {
+              "label": "auto",
+              "height": 0
+            }
+          ]
+        }
+      ],
+      "missingProviders": [
+        "vibix",
+        "filmix"
+      ],
+      "playable": true,
+      "discoveryMs": 25716,
+      "candidateCount": 24
+    },
+    {
+      "name": "Haikyuu S1E14",
+      "season": 1,
+      "episode": 14,
+      "checks": [
+        {
+          "provider": "animedia",
+          "voice": "Основная",
+          "qualities": [
+            {
+              "quality": "auto",
+              "playable": true,
+              "qualityResolveMs": 436,
+              "startupMs": 3488,
+              "seek60Ms": 5003
+            }
+          ],
+          "resolveMs": 466,
+          "advertisedQualities": [
+            {
+              "label": "auto",
+              "height": 0
+            }
+          ]
+        },
+        {
+          "provider": "kodik",
+          "voice": "AniLibria.TV",
+          "qualities": [
+            {
+              "quality": "360p",
+              "playable": true,
+              "qualityResolveMs": 574,
+              "startupMs": 2085,
+              "seek60Ms": 2752
+            },
+            {
+              "quality": "720p",
+              "playable": true,
+              "qualityResolveMs": 318,
+              "startupMs": 1991,
+              "seek60Ms": 3041
+            }
+          ],
+          "resolveMs": 1372,
+          "advertisedQualities": [
+            {
+              "label": "720p",
+              "height": 720
+            },
+            {
+              "label": "480p",
+              "height": 480
+            },
+            {
+              "label": "360p",
+              "height": 360
+            }
+          ]
+        },
+        {
+          "provider": "kodik",
+          "voice": "AniDUB",
+          "qualities": [
+            {
+              "quality": "360p",
+              "playable": true,
+              "qualityResolveMs": 641,
+              "startupMs": 1961,
+              "seek60Ms": 3222
+            },
+            {
+              "quality": "720p",
+              "playable": true,
+              "qualityResolveMs": 451,
+              "startupMs": 1928,
+              "seek60Ms": 2939
+            }
+          ],
+          "resolveMs": 654,
+          "advertisedQualities": [
+            {
+              "label": "720p",
+              "height": 720
+            },
+            {
+              "label": "480p",
+              "height": 480
+            },
+            {
+              "label": "360p",
+              "height": 360
+            }
+          ]
+        }
+      ],
+      "missingProviders": [],
+      "playable": true,
+      "discoveryMs": 8726,
+      "candidateCount": 22
+    }
+  ],
+  "unattemptedVoices": 0,
+  "status": "GREEN",
+  "cancelledOrDeadline": false
+}
