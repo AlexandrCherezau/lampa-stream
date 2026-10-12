@@ -48,6 +48,9 @@ node --test workers-api/source-host-container.test.mjs
 ```
 
 Проверки нового Worker прошли 8/8; вместе с существующим media Worker — 20/20.
+Wrangler 4.149.0 принял конфигурацию и сгенерировал binding types.
+`wrangler deploy --dry-run --containers-rollout none` успешно собрал Worker
+(4,85 KiB; gzip 1,59 KiB), без загрузки в Cloudflare и без сборки контейнера.
 Они используют заглушку native DurableObject API; не доказывают работоспособность
 Cloudflare VM, Chromium или внешнего CDN. Локальный Docker build пока не выполнен:
 текущий пользователь не имеет доступа к Docker socket.
