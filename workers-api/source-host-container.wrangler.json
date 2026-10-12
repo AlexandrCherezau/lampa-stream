@@ -1,0 +1,21 @@
+{
+  "name": "lampa-source-host",
+  "main": "source-host-container.mjs",
+  "compatibility_date": "2026-10-11",
+  "vars": {
+    "SOURCE_PUBLIC_ORIGIN": "https://lampa-source-host.ocr-gemini-proxy.workers.dev"
+  },
+  "containers": [{
+    "class_name": "SourceHostContainer",
+    "image": "../infrastructure/lampac/Dockerfile.vercel",
+    "image_build_context": "..",
+    "instance_type": "standard-1",
+    "max_instances": 1
+  }],
+  "durable_objects": {
+    "bindings": [{ "name": "SOURCE_HOST", "class_name": "SourceHostContainer" }]
+  },
+  "exports": {
+    "SourceHostContainer": { "type": "durable-object", "storage": "sqlite" }
+  }
+}

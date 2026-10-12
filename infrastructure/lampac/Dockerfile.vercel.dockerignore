@@ -1,0 +1,13 @@
+**
+!source-host/
+!source-host/*.mjs
+!source-host/package.json
+!source-host/providers/
+!source-host/providers/*.mjs
+!infrastructure/
+!infrastructure/lampac/
+!infrastructure/lampac/Dockerfile.vercel
+!infrastructure/lampac/patch-zetflix-diagnostics.mjs
+!infrastructure/lampac/start-vercel.sh
+!infrastructure/lampac/config/
+!infrastructure/lampac/config/vercel.init.conf
