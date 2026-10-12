@@ -132,4 +132,16 @@ READY `dpl_AynGiPyBKstqNd4RDbo4nRK2LDuT` сохраняет реальный URL
 Последний production READY `dpl_4mbxyQpJF7jqsnZdW28NjFvdAbUe` сохраняет это исправление и gzip, дополнительно исправляет двойное экранирование в C# verbatim regex для movie HLS quality URL. Проверка native anchors включает допустимые качества 240–2160 и отклонение похожих неверных путей; Vercel успешно компилирует C# модуль. Локального .NET SDK нет. Устойчивость ZetflixDB остаётся неподтверждённой; отдельная правка Worker extensionless HLS ещё требует восстановления Cloudflare авторизации.
 
 
-Свежий поиск «Начала» на последнем READY завершился HTTP 200 за 61,746 секунды, вернул 29 кандидатов и complete=true. Zetflix получил статус unavailable. Native логи: `http_skipped_no_session` → `http_empty` → `browser_fallback` → `browser_playerjs_missing`; movie quality capture ещё не был достигнут, поэтому исправление regex не доказывает восстановление фильмов. Следующая конкретная ветка — получение movie embed из вложенного документа с проверенным provenance.
+Свежий поиск «Начала» на последнем READY завершился HTTP 200 за 61,746 секунды, вернул 29 кандидатов и complete=true. Zetflix получил статус unavailable. Native логи: `http_skipped_no_session` → `http_empty` → `browser_fallback` → `browser_playerjs_missing`; у movie fallback пока нет отдельных маркеров, поэтому эти логи не позволяют установить, был ли получен movie embed или manifest. Исправление regex не доказывает восстановление фильмов. Следующая конкретная проверка — различить HTTP/iframe/movie capture и ресурсы вложенных frames, сохранив проверенный provenance.
+
+
+Точечный повтор одного записанного неудачного Node ресурса ZetflixDB на последнем READY снова дал media 502 за 4,320 секунды. Соответствующий Vercel runtime log: `Media upstream failed UPSTREAM_HTTP_ERROR 404 crab.z.superdupercdn.com`. Это устанавливает внешний 404 для конкретного сохранённого ресурса, но не объясняет все отказы и не доказывает причину изменения CDN URL. В этом контроле Worker не участвовал; расширять cookies или переключать маршрут без нового доказательства нельзя.
+
+
+READY `dpl_4Kv9aj2ghX2Vw2BBeRp5wom6UoFV` добавляет только фиксированные movie stage labels, counts, capture outcome и exception type; URL, HTML, cookies, headers и exception messages не логируются. Capture поведение сохранено. Native anchors/syntax/checker проходят; C# модуль успешно компилируется на Vercel. `rjson=true` уже сериализует `ContentTpl`, поэтому дополнительный `origsource` не добавлен.
+
+
+Свежий поиск на диагностическом READY завершился HTTP 200 за 61,730 секунды: 42 кандидата, complete=true, включая пять Zetflix movie озвучек с заявленным 1080p. Логи показали movie iframe present, но Fotpro/Obrut и оба browser capture вернули ноль качеств; исходный browser каталог содержал Playerjs и дал кандидатов после пустого fallback. Таким образом фильмовые ссылки найдены, но реальное воспроизведение этих пяти вариантов этим поиском не доказано.
+
+
+Один свежий resolve найденного Zetflix / «Начало» / «Полное дублирование (Мосфильм)» завершился 502 `MEDIA_UNAVAILABLE` за 31,081 секунды. Декодирование фильма через Zetflix не подтверждено. Исправление serial inherited document остаётся отдельно подтверждённым реальным воспроизведением Haikyuu S1E14; переносить этот вывод на фильмы нельзя.

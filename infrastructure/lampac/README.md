@@ -2,7 +2,7 @@
 
 Source host is an independent Node API plus Lampac NextGen `1.81.0` and hidden Chromium. The Vercel deployment runs them together in a custom container; Lampac and Chrome DevTools Protocol listen only on loopback. The container image has already been built remotely with the provider-module cache prewarmed. At runtime that cache and browser profile are copied to ephemeral storage, so restarts can require a fresh browser session.
 
-The production source host is `https://lampa-source-host.vercel.app` (READY deployment `dpl_4mbxyQpJF7jqsnZdW28NjFvdAbUe`); its Cloudflare media Worker is `https://lampa-source-media.ocr-gemini-proxy.workers.dev`. The frontend is READY at `dpl_CjS3ophsjFVRbKVpM4gqGwi1LoMD`. The project also includes a local Docker Compose setup. From the repository root:
+The production source host is `https://lampa-source-host.vercel.app` (READY deployment `dpl_4Kv9aj2ghX2Vw2BBeRp5wom6UoFV`); its Cloudflare media Worker is `https://lampa-source-media.ocr-gemini-proxy.workers.dev`. The frontend is READY at `dpl_CjS3ophsjFVRbKVpM4gqGwi1LoMD`. The project also includes a local Docker Compose setup. From the repository root:
 
 ```sh
 ./infrastructure/lampac/setup.sh

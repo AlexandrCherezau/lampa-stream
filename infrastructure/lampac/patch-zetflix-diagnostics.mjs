@@ -343,6 +343,34 @@ const replacements = [
     String.raw`                            var quality = Regex.Match(url ?? string.Empty, @"/(240|360|480|720|1080|1440|2160)\\.mp4:hls:manifest\\.m3u8(?:\\?|$)", RegexOptions.IgnoreCase);`,
     String.raw`                            var quality = Regex.Match(url ?? string.Empty, @"/(240|360|480|720|1080|1440|2160)\.mp4:hls:manifest\.m3u8(?:\?|$)", RegexOptions.IgnoreCase);`,
   ],
+  [
+    '        async ValueTask<List<LiveMovieSource>> CaptureLiveMovieInternal(string ztfhost, long kinopoisk_id, int season)\n        {\n            if (string.IsNullOrWhiteSpace(ztfhost) || kinopoisk_id == 0)',
+    '        async ValueTask<List<LiveMovieSource>> CaptureLiveMovieInternal(string ztfhost, long kinopoisk_id, int season)\n        {\n            Console.WriteLine("[ZetflixDiag] stage=movie_capture_start");\n            if (string.IsNullOrWhiteSpace(ztfhost) || kinopoisk_id == 0)',
+  ],
+  [
+    '                var fotpro = await TryFotproMovie(playerHtml);\n                var validFotpro = await ValidateMovieManifests(fotpro);',
+    '                var fotpro = await TryFotproMovie(playerHtml);\n                Console.WriteLine("[ZetflixDiag] stage=movie_fotpro_count count=" + (fotpro?.Count ?? 0));\n                var validFotpro = await ValidateMovieManifests(fotpro);\n                Console.WriteLine("[ZetflixDiag] stage=movie_fotpro_validated_count count=" + (validFotpro?.Count ?? 0));',
+  ],
+  [
+    '                string iframeSrc = Regex.Match(playerHtml ?? string.Empty, "<iframe[^>]*?\\\\ssrc=\\\"([^\\\"]+)\\\"", RegexOptions.IgnoreCase).Groups[1].Value;\n                if (!string.IsNullOrWhiteSpace(iframeSrc))',
+    '                string iframeSrc = Regex.Match(playerHtml ?? string.Empty, "<iframe[^>]*?\\\\ssrc=\\\"([^\\\"]+)\\\"", RegexOptions.IgnoreCase).Groups[1].Value;\n                Console.WriteLine(string.IsNullOrWhiteSpace(iframeSrc) ? "[ZetflixDiag] stage=movie_iframe_present value=0" : "[ZetflixDiag] stage=movie_iframe_present value=1");\n                if (!string.IsNullOrWhiteSpace(iframeSrc))',
+  ],
+  [
+    '                        var obrut = await TryObrutMovie(iframeUri, playerUri, ztfhost);\n                        var validObrut = await ValidateMovieManifests(obrut);',
+    '                        var obrut = await TryObrutMovie(iframeUri, playerUri, ztfhost);\n                        Console.WriteLine("[ZetflixDiag] stage=movie_obrut_count count=" + (obrut?.Count ?? 0));\n                        var validObrut = await ValidateMovieManifests(obrut);\n                        Console.WriteLine("[ZetflixDiag] stage=movie_obrut_validated_count count=" + (validObrut?.Count ?? 0));',
+  ],
+  [
+    '                    bool captured = await CaptureMovieWithBrowser(page, playerUri, qualitys, () => headers = FilterStreamHeaders(page));\n                    if (!captured && !string.IsNullOrWhiteSpace(iframeUri))\n                        captured = await CaptureMovieWithBrowser(page, iframeUri, qualitys, () => headers = FilterStreamHeaders(page));',
+    '                    bool captured = await CaptureMovieWithBrowser(page, playerUri, qualitys, () => headers = FilterStreamHeaders(page));\n                    Console.WriteLine("[ZetflixDiag] stage=movie_browser_player captured=" + (captured ? 1 : 0) + " quality_count=" + qualitys.Count);\n                    if (!captured && !string.IsNullOrWhiteSpace(iframeUri))\n                    {\n                        captured = await CaptureMovieWithBrowser(page, iframeUri, qualitys, () => headers = FilterStreamHeaders(page));\n                        Console.WriteLine("[ZetflixDiag] stage=movie_browser_iframe captured=" + (captured ? 1 : 0) + " quality_count=" + qualitys.Count);\n                    }',
+  ],
+  [
+    '                }\n            }\n            catch { }\n\n            try\n            {\n                using (var browser = new PlaywrightBrowser(init.priorityBrowser))',
+    '                }\n            }\n            catch (Exception ex)\n            {\n                Console.WriteLine("[ZetflixDiag] stage=movie_http_exception type=" + ex.GetType().Name);\n            }\n\n            try\n            {\n                using (var browser = new PlaywrightBrowser(init.priorityBrowser))',
+  ],
+  [
+    '            }\n            catch\n            {\n                return default;\n            }\n        }\n\n        [HttpGet]\n        [Route("lite/zetflix/video")]',
+    '            }\n            catch (Exception ex)\n            {\n                Console.WriteLine("[ZetflixDiag] stage=movie_browser_exception type=" + ex.GetType().Name);\n                return default;\n            }\n        }\n\n        [HttpGet]\n        [Route("lite/zetflix/video")]',
+  ],
 ];
 
 export function patchController(source) {

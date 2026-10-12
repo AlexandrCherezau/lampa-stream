@@ -121,6 +121,14 @@ assert.ok(patched.includes('stage=serial_template_cache_lookup hit=" + templateH
 for (const source of ['parent', 'iframe', 'frame']) {
   assert.ok(patched.includes(`Console.WriteLine("[ZetflixDiag] stage=serial_${source}_document_capture");`));
 }
+for (const stage of [
+  'movie_capture_start', 'movie_fotpro_count count=', 'movie_fotpro_validated_count count=',
+  'movie_iframe_present value=', 'movie_obrut_count count=', 'movie_obrut_validated_count count=',
+  'movie_browser_player captured=', 'movie_browser_iframe captured=',
+  'movie_http_exception type=', 'movie_browser_exception type=',
+]) assert.ok(patched.includes(`[ZetflixDiag] stage=${stage}`), `missing safe movie diagnostic stage ${stage}`);
+assert.doesNotMatch(patched, /stage=movie_[^"\n]*(?:url|cookie|header|html|message)/i,
+  'movie diagnostics must not include URLs, headers, cookies, or response content');
 assert.equal((patched.match(/EvaluateAsync<string>\("\(\) => navigator\.userAgent"\)/g) || []).length, 2,
   "browser UA should be read once for each of the two catalog-page paths");
 assert.match(cacheHelper, /Console\.WriteLine\("\[ZetflixDiag\] stage=video_cache_warmed count=" \+ warmed\);/,
