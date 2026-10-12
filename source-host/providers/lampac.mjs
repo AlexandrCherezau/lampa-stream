@@ -339,7 +339,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
     const errors = [];
     const active = voices.filter((voice) => voice.active === true);
     const defaultVoice = active.length === 1 ? active[0] : voices[0];
-    for (const voice of voices) {
+    for (const voice of [defaultVoice, ...voices.filter((voice) => voice !== defaultVoice)]) {
       let episodeJson = json;
       let episodeUrl = providerJsonUrl;
       let episodeSeasonSelected = seasonSelected;

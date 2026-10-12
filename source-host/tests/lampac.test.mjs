@@ -279,6 +279,51 @@ async function testTvCandidatesAreYieldedBeforeLaterVoiceFetchCompletes() {
   assert.equal(first.value.voiceName, "Dub A");
 }
 
+async function testActiveVoicePrecedesEarlierSlowAlternates() {
+  let releaseAlternate;
+  const alternateGate = new Promise((resolve) => { releaseAlternate = resolve; });
+  const events = [];
+  const provider = createLampacProvider({
+    baseUrl,
+    remember: (candidate) => { events.push(`candidate:${candidate.voiceName}`); },
+    fetchJson: async (raw) => {
+      const url = new URL(raw);
+      if (url.pathname === "/lite/events") return [{ balanser: "vibix", url: `${baseUrl}lite/vibix` }];
+      const voice = url.searchParams.get("voice");
+      if (!voice) return response("episode", [{ s: 3, e: 14, url: "https://cdn.example/dub-a.m3u8" }], {
+        voice: [
+          { id: "dub-b", name: "Dub B", url: `${baseUrl}lite/vibix?voice=b` },
+          { id: "dub-a", name: "Dub A", active: true },
+          { id: "dub-c", name: "Dub C", url: `${baseUrl}lite/vibix?voice=c` },
+        ],
+      });
+      events.push(`request:${voice}`);
+      if (voice === "b") await alternateGate;
+      return response("episode", [{ s: 3, e: 14, url: `https://cdn.example/dub-${voice}.m3u8` }]);
+    },
+  });
+  const iterator = provider.discover({ type: "tv", title: "Show", season: 3, episode: 14 });
+  const firstPromise = iterator.next();
+  try {
+    const first = await Promise.race([
+      firstPromise,
+      new Promise((resolve) => setTimeout(() => resolve(null), 100)),
+    ]);
+    assert(first, "an earlier slow alternate must not delay the ready active voice");
+    assert.deepEqual(events.slice(0, 2), ["candidate:Dub A", "request:b"], "the active candidate is ready before alternate prefetch starts");
+    assert.equal(first.value.voiceName, "Dub A");
+    releaseAlternate();
+    const candidates = [first.value, ...await collect(iterator)];
+    assert.deepEqual(candidates.map(({ voiceName, season, episode }) => [voiceName, season, episode]), [
+      ["Dub A", 3, 14], ["Dub B", 3, 14], ["Dub C", 3, 14],
+    ], "all alternate voices retain their original order and exact season/episode");
+  } finally {
+    releaseAlternate();
+    await firstPromise;
+    await iterator.return();
+  }
+}
+
 async function testCallFallbackAndAbort() {
   const fetchJson = async () => {
     throw new Error("call failed");
@@ -751,6 +796,7 @@ await testPlatformFilterKeepsMovieTitleReaction();
 await testSimilarExactMatchAndAmbiguity();
 await testTvSeasonEpisodeAndVoices();
 await testTvCandidatesAreYieldedBeforeLaterVoiceFetchCompletes();
+await testActiveVoicePrecedesEarlierSlowAlternates();
 await testCallFallbackAndAbort();
 await testZetflixDbManifestPrimesCookieAndHonorsAbort();
 await testZetflixDbRefreshPreservesMovieVoiceAndRejectsAmbiguity();
