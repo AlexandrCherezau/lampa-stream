@@ -94,6 +94,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
   if (!engineUrl && !adapter) throw new Error("SOURCE_ENGINE_URL is required");
   if (Buffer.byteLength(secret || "") < 32) throw new Error("SOURCE_HOST_SECRET must contain at least 32 bytes");
   if (mediaRelayUrl && (!apiKey || new URL(mediaRelayUrl).protocol !== "https:" || new URL(mediaRelayUrl).origin === publicOrigin)) throw new Error("Media relay needs a separate HTTPS origin and private API key");
+  const instanceId = crypto.randomUUID();
   const candidateKey = crypto.createHash("sha256").update(secret).update("\0sources").digest();
   transport ||= createTransport({ engineUrl, engineKey, beforeEngineRequest: waitForEngine });
   media ||= createMedia({ transport, secret, publicOrigin });
@@ -150,6 +151,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
   }
 
   const server = http.createServer(async (req, res) => {
+    res.setHeader("x-source-instance", instanceId);
     res.setHeader("access-control-allow-origin", "*");
     res.setHeader("access-control-allow-headers", "content-type, authorization, range");
     res.setHeader("access-control-expose-headers", "content-length, content-range, accept-ranges");

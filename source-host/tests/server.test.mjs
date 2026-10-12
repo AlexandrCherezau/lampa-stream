@@ -280,8 +280,13 @@ test("cold containers serve media immediately while metadata waits for the priva
   };
   const app = await start(adapter, makeMedia(), "", undefined, { engineReadyFile });
   t.after(() => app.close());
-  assert.equal((await (await fetch(app.base + "/healthz")).json()).engineReady, false);
-  assert.equal((await fetch(app.base + "/v1/media?token=test")).status, 204);
+  const health = await fetch(app.base + "/healthz");
+  const instanceId = health.headers.get("x-source-instance");
+  assert.match(instanceId, /^[a-f0-9-]{36}$/);
+  assert.equal((await health.json()).engineReady, false);
+  const immediateMedia = await fetch(app.base + "/v1/media?token=test");
+  assert.equal(immediateMedia.status, 204);
+  assert.equal(immediateMedia.headers.get("x-source-instance"), instanceId);
   await assert.rejects(stat(engineReadyFile + ".start"), { code: "ENOENT" });
   const pending = post(app.base, "/v1/discover", { type: "movie", title: "Movie" });
   await new Promise((resolve) => setTimeout(resolve, 30));
@@ -291,6 +296,7 @@ test("cold containers serve media immediately while metadata waits for the priva
   await writeFile(engineReadyFile, "ready");
   const response = await pending;
   assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-source-instance"), instanceId);
   assert.match(await response.text(), /event: candidate/);
   assert.equal((await (await fetch(app.base + "/healthz")).json()).engineReady, true);
 });
