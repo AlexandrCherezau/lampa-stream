@@ -298,6 +298,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
   async function* walkProvider(provider, input, signal) {
     const entryUrl = withQuery(provider.url, base, input);
     if (!entryUrl) return;
+    if (provider.balanser === "rezka" && !entryUrl.searchParams.has("href")) entryUrl.searchParams.set("similar", "true");
     let providerJsonUrl = entryUrl;
     let json = await requestJson(entryUrl, signal);
 
@@ -336,20 +337,31 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
     for (const voice of voices) {
       let episodeJson = json;
       let episodeUrl = providerJsonUrl;
+      let episodeSeasonSelected = seasonSelected;
       if (voice !== defaultVoice && voice.url) {
         const voiceUrl = withQuery(voice.url_p || voice.url, base, input);
         if (!voiceUrl) continue;
         try {
           episodeUrl = voiceUrl;
           episodeJson = await requestJson(voiceUrl, signal);
+          if (kindOf(episodeJson) === "season") {
+            const seasons = dataItems(episodeJson).filter((item, index) => seasonNumber(item, index + 1) === Number(input.season));
+            if (seasons.length !== 1) continue;
+            const seasonUrl = withQuery(seasons[0].url_p || seasons[0].url, base, input);
+            if (!seasonUrl) continue;
+            episodeUrl = seasonUrl;
+            episodeJson = await requestJson(seasonUrl, signal);
+            episodeSeasonSelected = true;
+          }
         } catch (error) {
           if (error?.name === "AbortError" || signal?.aborted) throw error;
           errors.push(`${voice.name || voice.id || "voice"}: ${String(error?.message || error)}`);
           continue;
         }
       }
+      if (kindOf(episodeJson) !== "episode") continue;
       const episodes = dataItems(episodeJson);
-      const selected = requestedEpisode(episodes, input.episode, input.season, seasonSelected);
+      const selected = requestedEpisode(episodes, input.episode, input.season, episodeSeasonSelected);
       if (!selected) continue;
       const values = buildCandidates(provider, [selected], input, Number(input.season), Number(input.episode), episodeUrl, voice);
       for (const candidate of values) yield candidate;

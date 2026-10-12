@@ -237,3 +237,14 @@ READY `dpl_3PmPdQ76UKFnwVDA97g9tYVvSmm9` содержит nonce. У fresh Zetfli
 Проверены https://wals09.github.io/, основной репозиторий и отдельный wals09/msx: последний содержит MSX JSON-меню и ссылки запуска внешних TV-приложений/порталов, включая VK, Rutube и Lampa. Это каталог запусков, без адаптеров поиска/получения видеопотоков и без корневой LICENSE. Код не копировался; для интеграции использованы существующие native модули Lampac.
 
 Финальные production deployments READY: frontend `dpl_5TG1ozfDatENS1cApzjiMUfnvuj3` (публичный alias lampa-stream-six.vercel.app подтверждён), backend `dpl_CzYU3XiD7fjh6bnzvfB9jSAR31GA`. После выкладки один fresh discovery «Бойцовского клуба» вернул HTTP 200 / 34 кандидата: одна VK-загрузка с названием фильма на 15-й секунде, T2X2 watchalong отсутствует. Повторный resolve/media для этой проверки не выполнялся; скорость холодного поиска остаётся зависимой от источника.
+
+
+### Rezka: штатный модуль и точные озвучки сериалов
+
+В pinned Lampac 1.81.0 Rezka уже есть в OnlinePaid, но ModInit задаёт enable=false. Теперь Rezka явно включена в локальном и Vercel config, premium=false, host=https://rezka.ag, scheme=https. Логины, cookies и платные функции не добавлены. Поиск запросом similar=true отдаёт каталог для существующего exact-title/year matching адаптера; native fallback с совпавшим названием, но другим годом не принимается.
+
+Исправлен общий обход альтернативных озвучек: если ссылка голоса возвращает меню сезонов, адаптер снова выбирает единственный запрошенный сезон и точную серию. До исправления тест native-like Rezka S3E14 возвращал только Дубляж, после — Дубляж и Кубик в Кубе. Resolve второй озвучки сохраняет translator t=2, s=3, e=14; приватные ссылки не попадают в сериализованный candidate. Потоки разрешаются через штатный /lite/rezka/movie, сохраняющий translator/episode, без повторного поиска фильма. Штатный cache TTL здесь 20 секунд, обновление не означает обход лимитов провайдера.
+
+Проверены 31/31 серверных тестов, syntax check адаптера, Lampac client self-check и diff whitespace. UI и его зависимости не менялись.
+
+Исследованы webOS RezkaTV 1.1.40 (скачан публичный IPK, SHA256 совпал с предоставленным manifest, код не исполнялся) и MIT-клиент [ndenissov/HDRezka](https://github.com/ndenissov/HDRezka) / [LICENSE](https://github.com/ndenissov/HDRezka/blob/main/LICENSE). У standalone webOS клиента есть собственные парсеры, translator_id и recovery выбранного потока; прямое копирование не выполнялось. Для сайта использован существующий Lampac вместо добавления Python runtime/зависимостей. GPL-3.0 hdrezka-lampa также найден, но его работоспособность не подтверждена; HdRezkaApi использован только как список поведения, лицензия копирования не установлена.

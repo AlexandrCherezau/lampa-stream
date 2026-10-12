@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { createLampacProvider } from "../providers/lampac.mjs";
 
 const baseUrl = "https://lampac.test/";
@@ -676,6 +677,62 @@ async function testEpisodeSeasonAndBlockedEntries() {
   await assert.rejects(filmix.resolve({ providerId: "filmix", voiceName: "Заблокировано правообладателем!", ref }), /blocked placeholder/);
 }
 
+
+async function testRezkaConfigAndTranslatorSeasonNavigation() {
+  for (const file of ["init.conf", "vercel.init.conf"]) {
+    const config = JSON.parse(await readFile(new URL(`../../infrastructure/lampac/config/${file}`, import.meta.url), "utf8"));
+    assert.equal(config.Rezka?.enable, true, "Rezka must be explicitly enabled instead of the native disabled default");
+    assert.equal(config.Rezka.premium, false, "only free translators are offered");
+    assert.equal(config.Rezka.scheme, "https");
+    assert(!config.Rezka.login && !config.Rezka.passwd && !config.Rezka.cookie);
+  }
+  const calls = [];
+  const provider = createLampacProvider({ baseUrl, fetchJson: async (raw) => {
+    const url = new URL(raw); calls.push(url);
+    if (url.pathname === "/lite/events") return [{ name: "Rezka", balanser: "rezka", url: `${baseUrl}lite/rezka` }];
+    if (!url.searchParams.has("href")) {
+      assert.equal(url.searchParams.get("similar"), "true", "exact title/year must be chosen locally before accepting a native fallback");
+      return response("similar", [
+        { title: "Fight Club", year: "2000", url: `${baseUrl}lite/rezka?href=wrong` },
+        { title: "Fight Club", year: "1999", url: `${baseUrl}lite/rezka?href=right` },
+      ]);
+    }
+    assert.equal(url.searchParams.get("href"), "right");
+    const t = url.searchParams.get("t") || "1";
+    if (url.pathname === "/lite/rezka/movie") return {
+      method: "play", url: `https://cdn.example/rezka/${t}.m3u8`,
+      quality: { "720p": `https://cdn.example/rezka/${t}.m3u8` },
+    };
+    if (url.searchParams.get("serial") === "0") return response("movie", [
+      { method: "call", translate: "Дубляж", url: `${baseUrl}lite/rezka/movie?href=right&id=100&t=1` },
+      { method: "call", translate: "Кубик в Кубе", url: `${baseUrl}lite/rezka/movie?href=right&id=100&t=2` },
+    ]);
+    if (!url.searchParams.has("s")) return response("season", [
+      { name: "1 сезон", s: 1, url: `${baseUrl}lite/rezka/serial?href=right&id=100&t=${t}&s=1` },
+      { name: "3 сезон", s: 3, url: `${baseUrl}lite/rezka/serial?href=right&id=100&t=${t}&s=3` },
+    ]);
+    assert.equal(url.searchParams.get("s"), "3");
+    return response("episode", [
+      { name: "14 серия", s: 3, e: 14, method: "call", url: `${baseUrl}lite/rezka/movie?href=right&id=100&t=${t}&s=3&e=14` },
+    ], { voice: [
+      { name: "Дубляж", active: t === "1", url: `${baseUrl}lite/rezka/serial?href=right&id=100&t=1` },
+      { name: "Кубик в Кубе", active: t === "2", url: `${baseUrl}lite/rezka/serial?href=right&id=100&t=2` },
+    ] });
+  } });
+  const movies = await collect(provider.discover(movieTitle));
+  assert.deepEqual(movies.map(v => v.voiceName), ["Дубляж", "Кубик в Кубе"]);
+  const voices = await collect(provider.discover({ ...movieTitle, type: "tv", season: 3, episode: 14 }));
+  assert.deepEqual(voices.map(v => v.voiceName), ["Дубляж", "Кубик в Кубе"], "alternate translator season menus must retain the requested season and episode");
+  const resolved = await provider.resolve(voices[1]);
+  assert.equal(resolved.qualities[0].url, "https://cdn.example/rezka/2.m3u8");
+  const last = calls.at(-1);
+  assert.equal(last.searchParams.get("t"), "2");
+  assert.equal(last.searchParams.get("s"), "3");
+  assert.equal(last.searchParams.get("e"), "14");
+  assert.equal(JSON.stringify(voices[1]).includes("href=right"), false);
+}
+
+await testRezkaConfigAndTranslatorSeasonNavigation();
 await testMovieProvidersAndResolve();
 await testUnavailableZetflixProvidersAreNotDiscovered();
 await testPlatformFilterKeepsMovieTitleReaction();
