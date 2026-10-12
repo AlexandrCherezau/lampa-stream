@@ -263,9 +263,9 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
           }
           record(candidate.providerId, { providerName: candidate.providerName, status: "verified", verifiedAt: new Date().toISOString() });
           // Keep the verified redirect target; dynamic engine manifests need a browser again.
-          // shortcut: keep CDNVideoHub on Node until the Worker rewrites extensionless HLS.
+          // shortcut: keep these failing Worker paths on Node until relay playback is verified.
           const variants = qualities.map((quality) => ({ label: quality.label, height: quality.height,
-            url: media.url({ ...(quality === selected && probe.url ? { ...quality, url: String(probe.url), headers: probe.headers || quality.headers, headerOrigin: probe.headerOrigin } : quality), nodeOnly: ["zetflixdb", "cdnvideohub"].includes(candidate.providerId) }),
+            url: media.url({ ...(quality === selected && probe.url ? { ...quality, url: String(probe.url), headers: probe.headers || quality.headers, headerOrigin: probe.headerOrigin } : quality), nodeOnly: ["zetflixdb", "cdnvideohub"].includes(candidate.providerId) || (candidate.providerId === "zetflix" && candidate.season == null && candidate.episode == null) }),
           }));
           const subtitles = (resolved.subtitles || []).map((subtitle) => ({ label: subtitle.label, language: subtitle.language, url: media.url(subtitle) }));
           json(res, 200, {

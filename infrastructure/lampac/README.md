@@ -2,7 +2,7 @@
 
 Source host is an independent Node API plus Lampac NextGen `1.81.0` and hidden Chromium. The Vercel deployment runs them together in a custom container; Lampac and Chrome DevTools Protocol listen only on loopback. The container image has already been built remotely with the provider-module cache prewarmed. At runtime that cache and browser profile are copied to ephemeral storage, so restarts can require a fresh browser session.
 
-The production source host is `https://lampa-source-host.vercel.app` (READY deployment `dpl_4Kv9aj2ghX2Vw2BBeRp5wom6UoFV`); its Cloudflare media Worker is `https://lampa-source-media.ocr-gemini-proxy.workers.dev`. The frontend is READY at `dpl_CjS3ophsjFVRbKVpM4gqGwi1LoMD`. The project also includes a local Docker Compose setup. From the repository root:
+The production source host is `https://lampa-source-host.vercel.app` (READY deployment `dpl_72pqzpyC4FP2pA6t4DsSqAwnHVRh`); its Cloudflare media Worker is `https://lampa-source-media.ocr-gemini-proxy.workers.dev`. The frontend is READY at `dpl_CjS3ophsjFVRbKVpM4gqGwi1LoMD`. The project also includes a local Docker Compose setup. From the repository root:
 
 ```sh
 ./infrastructure/lampac/setup.sh
@@ -101,3 +101,9 @@ Cold metadata startup waits for Zetflix's local no-lookup `checksearch` sentinel
 
 
 Текущий native patch заполняет существующий кеш видео Zetflix из успешного serial-каталога. Для same-origin `about:blank`/`about:srcdoc` используется проверенный наследуемый HTTP документ; sandbox, непрозрачный origin, изменённый base и data-документы исключены. Скрытый браузерный тест проверяет семь случаев. На облачном Haikyuu S1E14 / AniLibria.TV получены 101 запись кеша, три качества и свежий resolve 200 / 720p за 23,845 секунды. Настоящий плеер декодировал 15 кадров при старте и 116 после seek на минуту, плейлисты и сегменты ответили 200. В браузерной проверке использованы настоящий сохранённый кандидат и свежий ответ resolve; TMDB — fixtures, видео реальное. Это подтверждает выбранную серию и дорожку, а не весь каталог. Последний READY также исправляет экранирование native movie quality regex; устойчивость ZetflixDB пока не подтверждена. Подробности в `docs/source-host-plan.md`.
+
+
+Movie browser capture теперь собирает каждую озвучку и quality URL из её собственного frame; headers сохраняют verified document и media-scoped cookies. Недействующий legacy каталог не возвращается после пустого fallback. goHost принимает точные dated зеркала всех месяцев, а не только apr. Native C# build прошёл на текущем READY; `node scripts/check-lampac-zetflix-movie-frames.mjs` подтверждает вложенный ресурс и его document URI в скрытом Chromium. Фильм «Начало» на фактической legacy странице содержит только недоступные hdvideobox ссылки; это ограничение внешнего каталога остаётся, и frame regression не доказывает воспроизведение этого фильма.
+
+
+На последнем READY фильмы Zetflix автоматически получают sealed nodeOnly для всех вариантов качества; серии сохраняют Worker route. Fresh «Начало» / DUB Мосфильм / 720p прошло реальное декодирование (15 → 73 кадра) и seek на минуту с неизменённым API token и без Worker redirect. Media trace содержит отдельные 502, но video error не возник; стабильность всего фильма и остальных озвучек не доказана. Source-host tests 31/31; отдельная регрессия проверяет sealed movie/TV policy и невозможность подмены request координатами.

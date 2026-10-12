@@ -148,3 +148,36 @@ READY `dpl_4Kv9aj2ghX2Vw2BBeRp5wom6UoFV` добавляет только фик�
 
 
 Runtime logs этого resolve уточнили причину: четыре media probe завершились `DNS_ERROR 502 prosto.hdvideobox.me ENOTFOUND`. Найденные movie качества указывают на старый недоступный hostname; пустой live fallback оставил их в каталоге. Следующий необходимый шаг — получение актуальных ресурсов вложенного movie frame с фактическим provenance вместо старых ссылок.
+
+
+### Movie frames, scoped headers и устаревшие ссылки
+
+Browser movie capture теперь проверяет HTML и performance resources каждого frame отдельно. Для каталога используется существующая пара `FindObrutMovieVoices` / `ParseObrutQualityMap`, поэтому сохраняются названия озвучек; ресурсный fallback без каталога остаётся «По умолчанию». Один source хранится на точный документ + озвучку и заменяется последним полным snapshot. HTTP(S) документ проверяется существующим script; Origin/Referer соответствуют этому документу, UA фактический, cookies запрашиваются по каждому URL качества. Общая headers list допускается только для одинаковых scheme/authority и cookie scope. Проверяется результат первого target до перехода к iframe; manifest validation обязательна перед возвратом. Movie cache v5 включает host.
+
+Known legacy movie каталог после неудачного live fallback возвращает unavailable вместо старых hdvideobox ссылок. Это исключает повторные бесполезные resolve для уже известного старого каталога, но не восстанавливает отсутствующие ресурсы. goHost больше не принимает только апрельские зеркала: browser URL проверяется по HTTP(S), числу 1–31, явному списку месяцев и точному суффиксу zet-flix.online; cache v5 исключает прежние записи. В лог выводится только выбранное hostname, без URL/path/cookies.
+
+`node scripts/check-lampac-zetflix-movie-frames.mjs` в скрытом Chromium показывает, что manifest вложенного документа отсутствует в performance resources родителя, но доступен в собственном frame с точным document URI. Проверки native anchors/quality patterns/host patterns и inherited-frame regression проходят. В публикационной копии нет установленного Playwright, поэтому browser tests выполнялись из рабочей копии с совпадающими скриптами и patch; новых зависимостей не добавлено.
+
+Локальная фактическая проверка сайта: go homepage перенаправил main page на 12oct.zet-flix.online. Exact movie player.php вернул 404; videodb.php для KP 447301 — 200 с 40 ссылками качества, все на prosto.hdvideobox.me. Его iframe не загрузился из-за DNS. Поэтому найденный пробел frame capture исправляется, но эта страница не даёт доказательства восстановленного фильма. Public search по «Начало» вернул только неоднозначные substring результаты; чужие фильмы не открывались.
+
+
+Production READY `dpl_81ocnv4C4sxtMchiNuvsH5fScQP4` успешно компилирует изменённый C# module (patch SHA1 2cfd1eefad01b4c4fdc3e6a59ec16300cd5ed17c). Reviewer не нашёл дополнительных blockers в headers/cookies, frame contexts или compile/API anchors. По той же наблюдаемой public search form английское Inception также не дало exact 2010 match; детальная страница фильма не была найдена.
+
+
+Первый облачный контроль после movie frame patch нашёл новый catalogue: `movie_browser_player captured=1 quality_count=35`, семь озвучек с отдельными headers. Fresh discovery ответил 200 за 62,325 секунды и выдал всего 45 кандидатов; complete=false/TIMEOUT означает незавершённый общий поиск, поэтому полнота каталога не подтверждена. Zetflix entries — DUB Мосфильм, DVO Кубик/BBC, VO Сербин/Гаврилов, EN и PT. Эта разница с локальной проверкой показывает, почему её нельзя переносить на облачный browser capture.
+
+Один fresh resolve Zetflix / «Начало» / DUB Мосфильм получил 200 / HLS / 720p за 1,185 секунды. Это доказывает обновление нужной озвучки и media probe, но само по себе не декодирование. Отдельный fresh resolve Haikyuu S1E14 / MVO AniLibria.TV получил 200 / 720p за 10,770 секунды; serial frame cache содержит 101 запись и три качества. Оба используют выбранный host 12oct.zet-flix.online. Это результаты конкретных попыток, без общего обещания холодной скорости или всех качеств.
+
+
+Первый настоящий app decode с fresh Zetflix movie resolve не стартовал: normal route Node 302 → Worker 502, readyState=0, ноль кадров. Точечная пара для того же media resource (те же CDN URL/headers, временно запечатан только собственный nodeOnly routing flag) получила Node 200 / HLS / 1 311 982 байта за 1,327 секунды. Это доказывает различие доставки для конкретного плейлиста, а не пока устойчивое прямое воспроизведение. Default movie policy до подтверждения decode не менялась.
+
+
+Скрытый app replay временного nodeOnly resource прошёл: «Начало» / DUB Мосфильм / 720p, 15 кадров при старте на 0,512 секунды, 58 после seek на 60,504 секунды, duration 8887,979, readyState=4, без media error. Плейлист и video сегменты ответили 200; trace также содержит отдельные media 502, поэтому непрерывность всего фильма не доказана. Видео реальное; только metadata/TMDB и replay сохранённого fresh resolve подменены в harness. Это доказательство прямой доставки конкретного ресурса, не прежнего Worker route.
+
+После этого добавлена Node-only policy только для Zetflix movie candidates с запечатанными null season/episode; resolve request не может включить её своими координатами. Все качества получают этот flag; существующая media регрессия проверяет его наследование HLS children. Zetflix TV остаётся на обычном маршруте, ZetflixDB/CDNVideoHub policy сохранена. Новая server регрессия была красной до однострочной правки и зелёной после; source-host suite проходит 31/31 в рабочей и публикационной копиях. Это временный обход доказанно неработающей Worker доставки; ретест нужен после relay fixes.
+
+
+Последний production READY `dpl_72pqzpyC4FP2pA6t4DsSqAwnHVRh` сохраняет native frame patch и включает стандартную movie-only Node policy (server SHA1 aeb8356808e31795931bcebe4d2eff4f219b776e). Облако готово; новая проверка использует настоящий fresh API resolve без ручной модификации resource token.
+
+
+Финальный fresh API resolve на READY 72 получил Zetflix / DUB Мосфильм / 720p за 20,438 секунды. Все пять quality tokens (240/360/480/720/1080) имеют запечатанный nodeOnly flag; manual override не применялся. Скрытый production app с точным сохранённым fresh response и неизменённым token декодировал 15 кадров при старте на 0,521 секунды, 73 после seek на 60,506 секунды, duration 8887,979, readyState=4, без media error. HLS/TS ответили 200, 302 на Worker отсутствовали. В trace остаются отдельные text/plain media 502; успешные кадры и seek не доказывают весь 148-минутный фильм или все семь дорожек/пять качеств. Только TMDB metadata fixtures; реальное video delivery не подменялось. ZetflixDB по-прежнему требует отдельного исправления.

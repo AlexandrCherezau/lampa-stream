@@ -382,6 +382,47 @@ test("ZetflixDB and CDNVideoHub quality media tokens are sealed for direct Node 
   }
 });
 
+test("only sealed Zetflix movie candidates use Node media routing", async (t) => {
+  for (const scenario of [
+    { name: "movie", candidateFields: { season: undefined, episode: undefined }, discoverType: "movie", expected: true,
+      spoof: { type: "tv", season: 1, episode: 14 } },
+    { name: "series", candidateFields: { season: 1, episode: 14 }, discoverType: "tv", expected: false,
+      spoof: { type: "movie", season: null, episode: null } },
+  ]) {
+    const signed = [];
+    const adapter = {
+      async *discover() {
+        yield candidate({ providerId: "zetflix", providerName: "Zetflix", ...scenario.candidateFields });
+      },
+      async resolve() {
+        return { qualities: [
+          { label: "1080p", height: 1080, url: "https://cdn.test/master.m3u8" },
+          { label: "720p", height: 720, url: "https://cdn.test/lower.m3u8" },
+        ] };
+      },
+    };
+    const media = makeMedia();
+    media.url = (resource) => {
+      signed.push(resource);
+      return `https://media.test/v1/media?token=${resource.label}`;
+    };
+    const app = await start(adapter, media);
+    t.after(() => app.close());
+    const discovery = await post(app.base, "/v1/discover", {
+      type: scenario.discoverType,
+      title: "Movie or show",
+      ...(scenario.discoverType === "tv" ? { season: 1, episode: 14 } : {}),
+    });
+    const reader = sseReader(discovery.body);
+    const { data: { id } } = await reader.until("candidate");
+    await reader.drain();
+    const result = await (await post(app.base, "/v1/resolve", { id, ...scenario.spoof })).json();
+    assert.equal(result.qualities.length, 2, `${scenario.name} should retain every quality`);
+    assert.deepEqual(signed.map((resource) => resource.nodeOnly), [scenario.expected, scenario.expected],
+      `routing must use sealed ${scenario.name} metadata, not resolve request fields`);
+  }
+});
+
 test("automatic movie quality skips a short VOD without rejecting the full-length alternative", async (t) => {
   const adapter = {
     async *discover() { yield candidate(); },

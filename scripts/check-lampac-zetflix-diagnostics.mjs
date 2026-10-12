@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { patchController, SERIAL_FRAME_DOCUMENT_SCRIPT } from "../infrastructure/lampac/patch-zetflix-diagnostics.mjs";
+import { MOVIE_FRAME_RESOURCES_SCRIPT, patchController, SERIAL_FRAME_DOCUMENT_SCRIPT } from "../infrastructure/lampac/patch-zetflix-diagnostics.mjs";
 
 const dockerfile = readFileSync(new URL("../infrastructure/lampac/Dockerfile.vercel", import.meta.url), "utf8");
 const launcher = readFileSync(new URL("../infrastructure/lampac/start-vercel.sh", import.meta.url), "utf8");
@@ -52,6 +52,61 @@ assert.ok(launcher.indexOf(readinessProbe) < launcher.indexOf('touch "$SOURCE_EN
 
 const source = zetflix;
 const patched = patchController(source);
+assert.equal(MOVIE_FRAME_RESOURCES_SCRIPT, '() => performance.getEntriesByType("resource").map(r => r.name)');
+assert.match(patched, /zetflix:live_movie:v5:\{ztfhost\?\.TrimEnd\('\/'\)\}:\{kinopoisk_id\}:\{season\}/,
+  "movie cache must be invalidated and host-scoped for per-frame sources");
+assert.ok(!patched.includes('zetflix:live_movie:v4:'));
+assert.ok(patched.includes('zeflix:gohost:v5:{host}'));
+assert.ok(!patched.includes('zeflix:gohost:v4:'));
+const hostPattern = patched.match(/Regex\.IsMatch\(uri\.Host, @"([^"\n]+)"/);
+assert.ok(hostPattern, 'Zetflix redirect hosts must use the constrained date-host pattern');
+const zetflixHostRegex = new RegExp(hostPattern[1], 'i');
+for (const host of ['1jan.zet-flix.online', '7apr.zet-flix.online', '12oct.zet-flix.online', '31dec.zet-flix.online'])
+  assert.equal(zetflixHostRegex.test(host), true, `valid dated Zetflix host should match: ${host}`);
+for (const host of ['0jan.zet-flix.online', '32oct.zet-flix.online', '12foo.zet-flix.online', '12oct.evil.example', '12-oct.zet-flix.online', 'x12oct.zet-flix.online'])
+  assert.equal(zetflixHostRegex.test(host), false, `invalid or unrelated host should not match: ${host}`);
+assert.ok(patched.includes('(uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)'));
+assert.ok(patched.includes('string selectedHost = Uri.TryCreate(ztfhost, UriKind.Absolute, out var selectedHostUri) ? selectedHostUri.DnsSafeHost : string.Empty;'));
+assert.ok(patched.includes('stage=host_selected host=" + selectedHost'));
+const movieFallbackStart = patched.indexOf('if (serial != 1 && ((content?.movie == true && NeedLiveMovieFallback(content)) || content?.pl == null))');
+const movieFallbackEnd = patched.indexOf('if (content?.pl == null)', movieFallbackStart);
+assert.ok(movieFallbackStart >= 0 && movieFallbackEnd > movieFallbackStart);
+const movieFallback = patched.slice(movieFallbackStart, movieFallbackEnd);
+assert.match(movieFallback, /if \(!liveMovie\.IsEmpty\)[\s\S]*?return ContentTpl\(liveMovie\);[\s\S]*?return OnError\(\);/,
+  'failed required live-movie fallback must not fall through to stale provider content');
+assert.ok(patched.includes(`frame.EvaluateAsync<string[]>(${JSON.stringify(MOVIE_FRAME_RESOURCES_SCRIPT)})`));
+assert.ok(patched.includes(`frame.EvaluateAsync<string>(${JSON.stringify(SERIAL_FRAME_DOCUMENT_SCRIPT)})`));
+assert.ok(patched.includes('async ValueTask<List<LiveMovieSource>> CaptureMovieWithBrowser(IPage page, string targetUri)'));
+assert.ok(!patched.includes('CaptureMovieWithBrowser(page, playerUri, qualitys'));
+assert.ok(!patched.includes('FilterStreamHeaders(page)'));
+assert.ok(!patched.includes('List<HeadersModel> FilterStreamHeaders(IPage page)'));
+const movieCaptureFlowStart = patched.indexOf('async ValueTask<List<LiveMovieSource>> CaptureLiveMovieInternal(');
+const movieCaptureFlowEnd = patched.indexOf('[HttpGet]', movieCaptureFlowStart);
+assert.ok(movieCaptureFlowStart >= 0 && movieCaptureFlowEnd > movieCaptureFlowStart);
+const movieCaptureFlow = patched.slice(movieCaptureFlowStart, movieCaptureFlowEnd);
+assert.doesNotMatch(movieCaptureFlow, /bool captured\s*=|var qualitys\s*=\s*new Dictionary<int, string>\(\)|if \(!captured \|\| qualitys\.Count == 0\)|FilterStreamHeaders\(page\)/,
+  'the old single-map browser collector must be removed in full');
+assert.ok(movieCaptureFlow.indexOf('ValidateMovieManifests(browserSources)') < movieCaptureFlow.indexOf('CaptureMovieWithBrowser(page, iframeUri)'));
+assert.ok(movieCaptureFlow.includes('(validBrowserSources == null || validBrowserSources.Count == 0) && !string.IsNullOrWhiteSpace(iframeUri)'),
+  'the iframe fallback must run after an invalid player-document manifest result');
+assert.ok(patched.includes('TryParseObrutPlayerRoot(frameHtml, out JsonObject movieRoot)'));
+assert.ok(patched.includes('FindObrutMovieVoices(movieRoot)'));
+assert.ok(patched.includes('ParseObrutQualityMap(voice.file)'));
+assert.ok(patched.includes('foreach (var frame in page.Frames.ToArray())'));
+assert.ok(patched.includes('if (!hasVoiceCatalog)'));
+assert.ok(patched.includes('string sourceKey = documentUri + "|" + voiceTitle'));
+assert.ok(patched.includes('string sourceKey = documentUri + "|По умолчанию"'));
+assert.ok(patched.includes('sources[sourceKey] = new LiveMovieSource { title = voiceTitle'));
+assert.ok(patched.includes('sources[sourceKey] = new LiveMovieSource { title = "По умолчанию"'));
+assert.ok(!patched.includes('combinedQualitys') && !patched.includes('existingSource.qualitys'));
+assert.ok(patched.includes('string fingerprint = documentUri + "|" + voiceTitle'));
+assert.ok(patched.includes('string fingerprint = documentUri + "|По умолчанию|"'));
+assert.ok(patched.includes('await BuildMovieSourceHeaders('));
+assert.ok(patched.includes('page.Context.CookiesAsync(new[] { mediaUri.AbsoluteUri })'));
+assert.ok(patched.includes('mediaUri.GetLeftPart(UriPartial.Authority)'));
+assert.ok(patched.includes('string.Equals(cookieHeader, scopedCookie, StringComparison.Ordinal)'));
+assert.ok(patched.includes('navigator.userAgent'));
+assert.ok(patched.includes('ValidateMovieManifests(browserSources)'));
 const movieQualityPattern = patched.match(/var quality = Regex\.Match\(url \?\? string\.Empty, @"([^"\n]+)"/);
 assert.ok(movieQualityPattern, "patched movie browser capture must retain its quality matcher");
 const movieQualityRegex = new RegExp(movieQualityPattern[1], "i");
@@ -129,8 +184,8 @@ for (const stage of [
 ]) assert.ok(patched.includes(`[ZetflixDiag] stage=${stage}`), `missing safe movie diagnostic stage ${stage}`);
 assert.doesNotMatch(patched, /stage=movie_[^"\n]*(?:url|cookie|header|html|message)/i,
   'movie diagnostics must not include URLs, headers, cookies, or response content');
-assert.equal((patched.match(/EvaluateAsync<string>\("\(\) => navigator\.userAgent"\)/g) || []).length, 2,
-  "browser UA should be read once for each of the two catalog-page paths");
+assert.equal((patched.match(/EvaluateAsync<string>\("\(\) => navigator\.userAgent"\)/g) || []).length, 3,
+  "browser UA should be captured once per serial-parent, serial-frame, and movie-browser path");
 assert.match(cacheHelper, /Console\.WriteLine\("\[ZetflixDiag\] stage=video_cache_warmed count=" \+ warmed\);/,
   "cache warming reports only the numeric number of tuple entries created");
 assert.doesNotMatch(cacheHelper, /PHPSESSID|Console\.Error|Console\.WriteLine\((?!"\[ZetflixDiag\] stage=video_cache_(?:warmed count="|(?:enter|embed_rejected|document_rejected)"\);))/,

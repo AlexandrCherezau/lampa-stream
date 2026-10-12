@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 
 const MARKER = "[ZetflixDiag]";
 export const SERIAL_FRAME_DOCUMENT_SCRIPT = "() => { const href = location.href; if (/^https?:/.test(href)) return href; if (href !== 'about:blank' && href !== 'about:srcdoc') return null; try { const parentUrl = parent.document.URL; const parentOrigin = new URL(parentUrl).origin; return /^https?:/.test(parentUrl) && document.baseURI === parentUrl && globalThis.origin === parentOrigin ? parentUrl : null; } catch { return null; } }";
+export const MOVIE_FRAME_RESOURCES_SCRIPT = '() => performance.getEntriesByType("resource").map(r => r.name)';
 const replacements = [
   [
     '                string html = hybridCache.TryGetValue($"zetfix:view:{kinopoisk_id}:{season}:{proxyManager?.CurrentProxyIp}", out string cachedHtml) ? cachedHtml : null;',
@@ -12,6 +13,26 @@ const replacements = [
   [
     '            string html = await InvokeCache($"zetfix:view:{kinopoisk_id}:{rs}:{proxyManager?.CurrentProxyIp}", 20, async () =>',
     '            string html = await InvokeCache($"zetfix:view:v2:{ztfhost?.TrimEnd(\'/\')}:{kinopoisk_id}:{rs}:{proxyManager?.CurrentProxyIp}", 20, async () =>',
+  ],
+  [
+    '            string memkey = $"zeflix:gohost:v4:{host}";',
+    '            string memkey = $"zeflix:gohost:v5:{host}";',
+  ],
+  [
+    String.raw`                    if (!string.IsNullOrWhiteSpace(ztfhost) && Uri.TryCreate(ztfhost, UriKind.Absolute, out var uri) && Regex.IsMatch(uri.Host, @"^\d+apr\.zet-flix\.online$", RegexOptions.IgnoreCase))`,
+    String.raw`                    if (!string.IsNullOrWhiteSpace(ztfhost) && Uri.TryCreate(ztfhost, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps) && Regex.IsMatch(uri.Host, @"^(?:[1-9]|[12]\d|3[01])(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\.zet-flix\.online$", RegexOptions.IgnoreCase))`,
+  ],
+  [
+    '            string ztfhost = await goHost(init.host);\n            string log = $"{HttpContext.Request.Path.Value}\\n\\nstart init\\n";',
+    '            string ztfhost = await goHost(init.host);\n            string selectedHost = Uri.TryCreate(ztfhost, UriKind.Absolute, out var selectedHostUri) ? selectedHostUri.DnsSafeHost : string.Empty;\n            Console.WriteLine("[ZetflixDiag] stage=host_selected host=" + selectedHost);\n            string log = $"{HttpContext.Request.Path.Value}\\n\\nstart init\\n";',
+  ],
+  [
+    '            if (serial != 1 && ((content?.movie == true && NeedLiveMovieFallback(content)) || content?.pl == null))\n            {\n                var liveMovie = await CaptureLiveMovie(ztfhost, kinopoisk_id, rs, title, original_title);\n                if (!liveMovie.IsEmpty)\n                {\n                    if (origsource)\n                        return Content(liveMovie.ToJson(), "application/json; charset=utf-8");\n\n                    return ContentTpl(liveMovie);\n                }\n            }',
+    '            if (serial != 1 && ((content?.movie == true && NeedLiveMovieFallback(content)) || content?.pl == null))\n            {\n                var liveMovie = await CaptureLiveMovie(ztfhost, kinopoisk_id, rs, title, original_title);\n                if (!liveMovie.IsEmpty)\n                {\n                    if (origsource)\n                        return Content(liveMovie.ToJson(), "application/json; charset=utf-8");\n\n                    return ContentTpl(liveMovie);\n                }\n\n                return OnError();\n            }',
+  ],
+  [
+    '            string memKey = $"zetflix:live_movie:v4:{kinopoisk_id}:{season}:{proxyManager?.CurrentProxyIp}";',
+    '            string memKey = $"zetflix:live_movie:v5:{ztfhost?.TrimEnd(\'/\')}:{kinopoisk_id}:{season}:{proxyManager?.CurrentProxyIp}";',
   ],
   [
     '                string result = string.IsNullOrEmpty(PHPSESSID) ? null : await Http.Get(uri, proxy: proxy, cookie: $"PHPSESSID={PHPSESSID}", headers: headers);\n                if (result != null && !result.StartsWith("<script>(function"))\n                {\n                    if (!result.Contains("new Playerjs"))\n                        return null;\n\n                    proxyManager?.Success();\n                    return result;\n                }',
@@ -360,8 +381,8 @@ const replacements = [
     '                        var obrut = await TryObrutMovie(iframeUri, playerUri, ztfhost);\n                        Console.WriteLine("[ZetflixDiag] stage=movie_obrut_count count=" + (obrut?.Count ?? 0));\n                        var validObrut = await ValidateMovieManifests(obrut);\n                        Console.WriteLine("[ZetflixDiag] stage=movie_obrut_validated_count count=" + (validObrut?.Count ?? 0));',
   ],
   [
-    '                    bool captured = await CaptureMovieWithBrowser(page, playerUri, qualitys, () => headers = FilterStreamHeaders(page));\n                    if (!captured && !string.IsNullOrWhiteSpace(iframeUri))\n                        captured = await CaptureMovieWithBrowser(page, iframeUri, qualitys, () => headers = FilterStreamHeaders(page));',
-    '                    bool captured = await CaptureMovieWithBrowser(page, playerUri, qualitys, () => headers = FilterStreamHeaders(page));\n                    Console.WriteLine("[ZetflixDiag] stage=movie_browser_player captured=" + (captured ? 1 : 0) + " quality_count=" + qualitys.Count);\n                    if (!captured && !string.IsNullOrWhiteSpace(iframeUri))\n                    {\n                        captured = await CaptureMovieWithBrowser(page, iframeUri, qualitys, () => headers = FilterStreamHeaders(page));\n                        Console.WriteLine("[ZetflixDiag] stage=movie_browser_iframe captured=" + (captured ? 1 : 0) + " quality_count=" + qualitys.Count);\n                    }',
+    '                    var qualitys = new Dictionary<int, string>();\n                    List<HeadersModel> headers = null;\n\n                    bool captured = await CaptureMovieWithBrowser(page, playerUri, qualitys, () => headers = FilterStreamHeaders(page));\n                    if (!captured && !string.IsNullOrWhiteSpace(iframeUri))\n                        captured = await CaptureMovieWithBrowser(page, iframeUri, qualitys, () => headers = FilterStreamHeaders(page));\n\n                    if (!captured || qualitys.Count == 0)\n                    {\n                        proxyManager?.Refresh();\n                        return default;\n                    }\n\n                    proxyManager?.Success();\n                    return new List<LiveMovieSource>()\n                    {\n                        new LiveMovieSource() { title = "По умолчанию", qualitys = qualitys, headers = headers }\n                    };',
+    '                    var browserSources = await CaptureMovieWithBrowser(page, playerUri).ConfigureAwait(false);\n                    Console.WriteLine("[ZetflixDiag] stage=movie_browser_player captured=" + (browserSources.Count > 0 ? 1 : 0) + " quality_count=" + browserSources.Sum(source => source.qualitys?.Count ?? 0));\n                    var validBrowserSources = await ValidateMovieManifests(browserSources);\n                    if ((validBrowserSources == null || validBrowserSources.Count == 0) && !string.IsNullOrWhiteSpace(iframeUri))\n                    {\n                        browserSources = await CaptureMovieWithBrowser(page, iframeUri).ConfigureAwait(false);\n                        Console.WriteLine("[ZetflixDiag] stage=movie_browser_iframe captured=" + (browserSources.Count > 0 ? 1 : 0) + " quality_count=" + browserSources.Sum(source => source.qualitys?.Count ?? 0));\n                        validBrowserSources = await ValidateMovieManifests(browserSources);\n                    }\n                    if (validBrowserSources?.Count > 0)\n                    {\n                        proxyManager?.Success();\n                        return validBrowserSources;\n                    }\n\n                    proxyManager?.Refresh();\n                    return default;',
   ],
   [
     '                }\n            }\n            catch { }\n\n            try\n            {\n                using (var browser = new PlaywrightBrowser(init.priorityBrowser))',
@@ -383,6 +404,197 @@ export function patchController(source) {
     }
     output = output.slice(0, first) + replacement + output.slice(first + anchor.length);
   }
+  const captureStart = output.indexOf("        async ValueTask<bool> CaptureMovieWithBrowser(");
+  const captureEnd = output.indexOf("        List<HeadersModel> FilterStreamHeaders(IPage page)", captureStart);
+  if (captureStart < 0 || captureEnd < 0 || output.indexOf("        async ValueTask<bool> CaptureMovieWithBrowser(", captureStart + 1) >= 0) {
+    throw new Error("Lampac 1.81.0 movie browser capture anchor mismatch");
+  }
+  output = output.slice(0, captureStart) + String.raw`        async ValueTask<List<LiveMovieSource>> CaptureMovieWithBrowser(IPage page, string targetUri)
+        {
+            var sources = new Dictionary<string, LiveMovieSource>(StringComparer.Ordinal);
+            if (string.IsNullOrWhiteSpace(targetUri))
+                return sources.Values.ToList();
+
+            string browserUserAgent = null;
+            try
+            {
+                await page.GotoAsync(targetUri, new PageGotoOptions()
+                {
+                    Timeout = 8_000,
+                    WaitUntil = WaitUntilState.DOMContentLoaded
+                }).ConfigureAwait(false);
+            }
+            catch { }
+
+            try
+            {
+                browserUserAgent = await page.EvaluateAsync<string>("() => navigator.userAgent").ConfigureAwait(false);
+            }
+            catch { }
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            DateTime lastHit = default;
+            for (int i = 0; i < 60; i++)
+            {
+                foreach (var frame in page.Frames.ToArray())
+                {
+                    try
+                    {
+                        string documentUri = await frame.EvaluateAsync<string>(${JSON.stringify(SERIAL_FRAME_DOCUMENT_SCRIPT)}).ConfigureAwait(false);
+                        if (!Uri.TryCreate(documentUri, UriKind.Absolute, out var document) ||
+                            (document.Scheme != Uri.UriSchemeHttp && document.Scheme != Uri.UriSchemeHttps))
+                            continue;
+
+                        string frameHtml = await frame.ContentAsync().ConfigureAwait(false);
+                        bool hasVoiceCatalog = false;
+                        if (TryParseObrutPlayerRoot(frameHtml, out JsonObject movieRoot))
+                        {
+                            var voices = FindObrutMovieVoices(movieRoot);
+                            hasVoiceCatalog = voices?.Count > 0;
+                            if (hasVoiceCatalog)
+                            {
+                                foreach (var voice in voices)
+                                {
+                                    var voiceQualitys = ParseObrutQualityMap(voice.file);
+                                    if (voiceQualitys.Count == 0)
+                                        continue;
+                                    var voiceHeaders = await BuildMovieSourceHeaders(documentUri, voiceQualitys, browserUserAgent, page).ConfigureAwait(false);
+                                    if (voiceHeaders == null)
+                                        continue;
+                                    string voiceTitle = string.IsNullOrWhiteSpace(voice.title) ? "По умолчанию" : voice.title;
+                                    string fingerprint = documentUri + "|" + voiceTitle + "|" + string.Join("|", voiceQualitys.OrderBy(item => item.Key).Select(item => item.Key + ":" + item.Value));
+                                    if (seen.Add(fingerprint))
+                                    {
+                                        string sourceKey = documentUri + "|" + voiceTitle;
+                                        sources[sourceKey] = new LiveMovieSource { title = voiceTitle, qualitys = voiceQualitys, headers = voiceHeaders };
+                                        lastHit = DateTime.UtcNow;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!hasVoiceCatalog)
+                        {
+                            var resourceQualitys = new Dictionary<int, string>();
+                            var resources = await frame.EvaluateAsync<string[]>(${JSON.stringify(MOVIE_FRAME_RESOURCES_SCRIPT)}).ConfigureAwait(false);
+                            foreach (string url in resources ?? Array.Empty<string>())
+                            {
+                                var quality = Regex.Match(url ?? string.Empty, @"/(240|360|480|720|1080|1440|2160)\.mp4:hls:manifest\.m3u8(?:\?|$)", RegexOptions.IgnoreCase);
+                                if (quality.Success && int.TryParse(quality.Groups[1].Value, out int height))
+                                    resourceQualitys[height] = url;
+                            }
+                            if (resourceQualitys.Count > 0)
+                            {
+                                var resourceHeaders = await BuildMovieSourceHeaders(documentUri, resourceQualitys, browserUserAgent, page).ConfigureAwait(false);
+                                if (resourceHeaders != null)
+                                {
+                                    string fingerprint = documentUri + "|По умолчанию|" + string.Join("|", resourceQualitys.OrderBy(item => item.Key).Select(item => item.Key + ":" + item.Value));
+                                    if (seen.Add(fingerprint))
+                                    {
+                                        string sourceKey = documentUri + "|По умолчанию";
+                                        sources[sourceKey] = new LiveMovieSource { title = "По умолчанию", qualitys = resourceQualitys, headers = resourceHeaders };
+                                        lastHit = DateTime.UtcNow;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // A detached frame must not stop collection from other documents.
+                    }
+                }
+
+                if (sources.Count > 0 && (DateTime.UtcNow - lastHit).TotalMilliseconds > 700)
+                    return sources.Values.ToList();
+
+                if (i % 8 == 0)
+                {
+                    try { await page.Mouse.ClickAsync(640, 360); } catch { }
+                    foreach (var frame in page.Frames.ToArray())
+                    {
+                        try
+                        {
+                            await frame.EvaluateAsync(@"() => {
+                                const button = document.querySelector('button, .play, .vjs-big-play-button, .jw-icon-display, .jw-display-icon-container');
+                                if (button) button.click();
+                                const video = document.querySelector('video');
+                                if (video) {
+                                    video.muted = true;
+                                    video.play().catch(() => {});
+                                }
+                            }").ConfigureAwait(false);
+                        }
+                        catch { }
+                    }
+                }
+
+                await Task.Delay(100);
+            }
+
+            return sources.Values.ToList();
+        }
+
+        async ValueTask<List<HeadersModel>> BuildMovieSourceHeaders(string documentUri, Dictionary<int, string> qualitys, string browserUserAgent, IPage page)
+        {
+            if (!Uri.TryCreate(documentUri, UriKind.Absolute, out var document) ||
+                (document.Scheme != Uri.UriSchemeHttp && document.Scheme != Uri.UriSchemeHttps) ||
+                string.IsNullOrWhiteSpace(browserUserAgent) || qualitys == null || qualitys.Count == 0)
+                return null;
+
+            string cookieHeader = null;
+            string authority = null;
+            string scheme = null;
+            foreach (string rawUrl in qualitys.Values.Distinct(StringComparer.Ordinal))
+            {
+                if (!Uri.TryCreate(rawUrl?.Replace("#.m3u8", string.Empty), UriKind.Absolute, out var mediaUri) ||
+                    (mediaUri.Scheme != Uri.UriSchemeHttp && mediaUri.Scheme != Uri.UriSchemeHttps))
+                    return null;
+                string currentAuthority = mediaUri.GetLeftPart(UriPartial.Authority);
+                if (authority == null)
+                {
+                    authority = currentAuthority;
+                    scheme = mediaUri.Scheme;
+                }
+                else if (!string.Equals(authority, currentAuthority, StringComparison.OrdinalIgnoreCase) ||
+                         !string.Equals(scheme, mediaUri.Scheme, StringComparison.OrdinalIgnoreCase))
+                    return null;
+
+                var cookies = await page.Context.CookiesAsync(new[] { mediaUri.AbsoluteUri }).ConfigureAwait(false);
+                string scopedCookie = string.Join("; ", cookies
+                    .OrderBy(cookie => cookie.Name, StringComparer.Ordinal)
+                    .ThenBy(cookie => cookie.Value, StringComparer.Ordinal)
+                    .Select(cookie => cookie.Name + "=" + cookie.Value));
+                if (cookieHeader == null)
+                    cookieHeader = scopedCookie;
+                else if (!string.Equals(cookieHeader, scopedCookie, StringComparison.Ordinal))
+                    return null;
+            }
+
+            string origin = document.GetLeftPart(UriPartial.Authority);
+            var headers = HeadersModel.Init(("accept", "*/*"), ("origin", origin), ("referer", documentUri));
+            headers.Add(new HeadersModel("user-agent", browserUserAgent));
+            if (!string.IsNullOrWhiteSpace(cookieHeader))
+                headers.Add(new HeadersModel("cookie", cookieHeader));
+            return headers;
+        }
+
+` + output.slice(captureEnd);
+  const unusedPageHeaders = `        List<HeadersModel> FilterStreamHeaders(IPage page)
+        {
+            return HeadersModel.Init(
+                ("accept", "*/*"),
+                ("origin", page.Url is string current && current.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? Regex.Match(current, "^(https?://[^/]+)", RegexOptions.IgnoreCase).Groups[1].Value : string.Empty),
+                ("referer", page.Url)
+            ).Where(h => !string.IsNullOrWhiteSpace(h.val)).ToList();
+        }
+
+`;
+  const unusedHeadersAt = output.indexOf(unusedPageHeaders);
+  if (unusedHeadersAt < 0 || output.indexOf(unusedPageHeaders, unusedHeadersAt + unusedPageHeaders.length) >= 0) {
+    throw new Error("Lampac 1.81.0 obsolete page-header helper anchor mismatch");
+  }
+  output = output.slice(0, unusedHeadersAt) + output.slice(unusedHeadersAt + unusedPageHeaders.length);
   if (output.includes('log += $"{result}')) throw new Error("Unsafe full HTML logging remains");
   if (output.includes("log += $\"\\nex: {ex}")) throw new Error("Unsafe exception logging remains");
   return output;
