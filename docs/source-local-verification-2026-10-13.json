@@ -1,0 +1,48 @@
+{
+  "checkedAt": "2026-10-12T21:04:42.752Z",
+  "origin": "http://127.0.0.1:19120",
+  "sample": "Haikyuu S1E14",
+  "discoveryMs": 4951,
+  "candidateCount": 22,
+  "providers": [
+    "cdnvideohub",
+    "filmix",
+    "animedia",
+    "kodik",
+    "veoveo",
+    "phantom",
+    "vibix",
+    "aladin",
+    "collaps",
+    "anidub"
+  ],
+  "attempts": [
+    {
+      "provider": "animedia",
+      "voice": "Основная",
+      "playable": false,
+      "failure": "contract-or-decode-assertion"
+    },
+    {
+      "provider": "kodik",
+      "voice": "AniLibria.TV",
+      "playable": true,
+      "startupMs": 1472,
+      "quality": "720p",
+      "initial": {
+        "duration": 1470.143,
+        "time": 1.006636,
+        "frames": 27
+      },
+      "afterSeek": {
+        "time": 60.007126,
+        "frames": 42,
+        "readyState": 4
+      },
+      "mediaHosts": [
+        "127.0.0.1:19120"
+      ]
+    }
+  ],
+  "scope": "One local title, real media, Chromium startup + seek60; no production/cloud proxy calls."
+}
