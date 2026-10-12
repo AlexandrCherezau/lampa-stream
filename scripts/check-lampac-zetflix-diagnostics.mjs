@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { MOVIE_FRAME_RESOURCES_SCRIPT, patchController, SERIAL_FRAME_DOCUMENT_SCRIPT } from "../infrastructure/lampac/patch-zetflix-diagnostics.mjs";
+import { MOVIE_FRAME_RESOURCES_SCRIPT, patchController, patchVideoDbService, SERIAL_FRAME_DOCUMENT_SCRIPT } from "../infrastructure/lampac/patch-zetflix-diagnostics.mjs";
 
 const dockerfile = readFileSync(new URL("../infrastructure/lampac/Dockerfile.vercel", import.meta.url), "utf8");
 const launcher = readFileSync(new URL("../infrastructure/lampac/start-vercel.sh", import.meta.url), "utf8");
@@ -271,10 +271,18 @@ curl() {
   });
   assert.ok(existsSync(readinessFile));
   assert.equal(readFileSync(attemptsFile, "utf8"), "3");
-  const target = join(tempDir, "Controller.cs");
+  mkdirSync(join(tempDir, "Zetflix"));
+  mkdirSync(join(tempDir, "VideoDB"));
+  const target = join(tempDir, "Zetflix", "Controller.cs");
+  const videoDbTarget = join(tempDir, "VideoDB", "Service.cs");
+  const videoDbSource = readFileSync("/tmp/lampac-native-1.81.0/module/OnlineRUS/VideoDB/Service.cs", "utf8");
   writeFileSync(target, source);
+  assert.throws(() => execFileSync(process.execPath, [fileURLToPath(new URL("../infrastructure/lampac/patch-zetflix-diagnostics.mjs", import.meta.url)), target], { stdio: "ignore" }));
+  assert.equal(readFileSync(target, "utf8"), source);
+  writeFileSync(videoDbTarget, videoDbSource);
   execFileSync(process.execPath, [fileURLToPath(new URL("../infrastructure/lampac/patch-zetflix-diagnostics.mjs", import.meta.url)), target]);
   assert.equal(readFileSync(target, "utf8"), patched);
+  assert.equal(readFileSync(videoDbTarget, "utf8"), patchVideoDbService(videoDbSource));
   assert.throws(() => execFileSync(process.execPath, [fileURLToPath(new URL("../infrastructure/lampac/patch-zetflix-diagnostics.mjs", import.meta.url)), target], { stdio: "ignore" }));
 } finally {
   rmSync(tempDir, { recursive: true, force: true });

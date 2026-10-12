@@ -181,3 +181,12 @@ Production READY `dpl_81ocnv4C4sxtMchiNuvsH5fScQP4` успешно компил�
 
 
 Финальный fresh API resolve на READY 72 получил Zetflix / DUB Мосфильм / 720p за 20,438 секунды. Все пять quality tokens (240/360/480/720/1080) имеют запечатанный nodeOnly flag; manual override не применялся. Скрытый production app с точным сохранённым fresh response и неизменённым token декодировал 15 кадров при старте на 0,521 секунды, 73 после seek на 60,506 секунды, duration 8887,979, readyState=4, без media error. HLS/TS ответили 200, 302 на Worker отсутствовали. В trace остаются отдельные text/plain media 502; успешные кадры и seek не доказывают весь 148-минутный фильм или все семь дорожек/пять качеств. Только TMDB metadata fixtures; реальное video delivery не подменялось. ZetflixDB по-прежнему требует отдельного исправления.
+
+
+### ZetflixDB: отдельный quality fix и текущая граница проверки
+
+На READY 72 свежий ZetflixDB / «Начало» / Мосфильм запустился (15 кадров, 0,512 с, duration 8887,979), но seek на 60 с сорвался: upstream CDN вернул 404 для seg-11 на crab/storm. Повтор того же ресурса и контроль с документными Origin/Referer рабочего Zetflix также не помогли; потеря заголовков и истечение provider token не доказаны. Собственный sealed token остаётся действующим.
+
+Исправлен независимый native bug VideoDB movie template: каждый parsed URL теперь сохраняет свою метку качества (Авто → auto), нормальный play response возвращает полный существующий StreamQualityTpl вместо одного неправильно подписанного URL. Rhub call и серии сохранены. CLI проверяет оба native файла перед записью и падает при отсутствии VideoDB; fixture проверяет атомарный отказ до записи. Новый checker проверяет 1080/720/auto и контракт pinned templates. Этот quality fix сам по себе не исправляет внешний CDN 404.
+
+Production READY `dpl_BH41NrEktRZMQLicj2RSUmqx2sNX` содержит VideoDB patch (SHA1 7fa5d99b857d49ba545cfff26d8f7b4dc2e6cc2f). Fresh API resolve прежнего настоящего movie candidate прошёл 200 за 15,583 с и вернул 1080/720/480/360/auto, selected 720; до правки был один вариант с меткой 1080. Это подтверждает загрузку native patch и доступность нескольких quality endpoints, но само по себе не подтверждает seek или full movie. Source-host tests 31/31, оба native checkers зелёные.

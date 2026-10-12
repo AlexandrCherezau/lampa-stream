@@ -1,8 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const MARKER = "[ZetflixDiag]";
+const VIDEODB_QUALITY_MARKER = "[VideoDBQualities]";
 export const SERIAL_FRAME_DOCUMENT_SCRIPT = "() => { const href = location.href; if (/^https?:/.test(href)) return href; if (href !== 'about:blank' && href !== 'about:srcdoc') return null; try { const parentUrl = parent.document.URL; const parentOrigin = new URL(parentUrl).origin; return /^https?:/.test(parentUrl) && document.baseURI === parentUrl && globalThis.origin === parentOrigin ? parentUrl : null; } catch { return null; } }";
 export const MOVIE_FRAME_RESOURCES_SCRIPT = '() => performance.getEntriesByType("resource").map(r => r.name)';
 const replacements = [
@@ -600,9 +601,40 @@ export function patchController(source) {
   return output;
 }
 
+export function patchVideoDbService(source) {
+  if (source.includes(VIDEODB_QUALITY_MARKER)) throw new Error("VideoDB movie qualities patch already applied");
+
+  const replacements = [
+    [
+      `                            file.Contains("2160p") ? "2160" : file.Contains("1080p") ? "1080" : file.Contains("720p") ? "720" : "480"`,
+      `                            m.Groups[1].Value == "Авто" ? "auto" : m.Groups[1].Value`,
+    ],
+    [
+      `                    mtpl.Append(\n                        pl.title,\n                        pl.streams[0].link + args,\n                        quality: pl.streams[0].quality\n                    );`,
+      `                    // ${VIDEODB_QUALITY_MARKER}: retain each concrete file URL as its own selectable quality.\n                    var streamquality = new StreamQualityTpl(pl.streams, link => link + args);\n                    if (streamquality.IsEmpty)\n                        continue;\n\n                    var selected = streamquality.Firts();\n                    mtpl.Append(\n                        pl.title,\n                        selected.link,\n                        streamquality: streamquality,\n                        quality: selected.quality\n                    );`,
+    ],
+  ];
+
+  let output = source;
+  for (const [index, [anchor, replacement]] of replacements.entries()) {
+    const first = output.indexOf(anchor);
+    if (first < 0 || output.indexOf(anchor, first + anchor.length) >= 0) {
+      throw new Error(`Lampac 1.81.0 VideoDB Service source anchor mismatch at ${index}`);
+    }
+    output = output.slice(0, first) + replacement + output.slice(first + anchor.length);
+  }
+  if (output.includes('file.Contains("2160p") ? "2160"'))
+    throw new Error("VideoDB global movie quality label remains");
+  return output;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const target = process.argv[2];
   if (!target) throw new Error("Usage: node patch-zetflix-diagnostics.mjs /lampac/module/OnlineRUS/Zetflix/Controller.cs");
   const original = readFileSync(target, "utf8");
-  writeFileSync(target, patchController(original));
+  const videoDbService = resolve(dirname(target), "../VideoDB/Service.cs");
+  const patchedVideoDb = patchVideoDbService(readFileSync(videoDbService, "utf8"));
+  const patchedController = patchController(original);
+  writeFileSync(videoDbService, patchedVideoDb);
+  writeFileSync(target, patchedController);
 }

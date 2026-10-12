@@ -107,3 +107,6 @@ Movie browser capture теперь собирает каждую озвучку 
 
 
 На последнем READY фильмы Zetflix автоматически получают sealed nodeOnly для всех вариантов качества; серии сохраняют Worker route. Fresh «Начало» / DUB Мосфильм / 720p прошло реальное декодирование (15 → 73 кадра) и seek на минуту с неизменённым API token и без Worker redirect. Media trace содержит отдельные 502, но video error не возник; стабильность всего фильма и остальных озвучек не доказана. Source-host tests 31/31; отдельная регрессия проверяет sealed movie/TV policy и невозможность подмены request координатами.
+
+
+VideoDB movie template сохраняет все concrete quality links через существующий StreamQualityTpl, с меткой каждого regex match; Авто нормализуется в auto. `node scripts/check-lampac-videodb-qualities.mjs` проверяет pinned Service.cs и template contract. CLI patch требует и Zetflix Controller.cs, и соседний VideoDB Service.cs; перед записью проверяет оба. Серии и rhub call не меняются. У ZetflixDB запуск видео подтверждён отдельно, но seek пока ломается на внешнем CDN 404.
