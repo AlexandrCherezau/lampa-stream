@@ -71,6 +71,7 @@ function withQuery(raw, base, input) {
     original_language: input.language,
     anime: input.anime ? "1" : undefined,
     rjson: "true",
+    runtimeMinutes: input.type === "movie" ? input.runtimeMinutes : undefined,
   };
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
@@ -290,9 +291,9 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
   if (base.protocol !== "http:" && base.protocol !== "https:") throw new TypeError("baseUrl must use HTTP(S)");
   base.pathname = `${base.pathname.replace(/\/+$/, "")}/`;
 
-  async function requestJson(url, signal) {
+  async function requestJson(url, signal, timeout = 45_000) {
     if (signal?.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
-    return asObject(await fetchJson(url.toString(), { signal }));
+    return asObject(await fetchJson(url.toString(), { signal, timeout }));
   }
 
   async function* walkProvider(provider, input, signal) {
@@ -300,7 +301,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
     if (!entryUrl) return;
     if (provider.balanser === "rezka" && !entryUrl.searchParams.has("href")) entryUrl.searchParams.set("similar", "true");
     let providerJsonUrl = entryUrl;
-    let json = await requestJson(entryUrl, signal);
+    let json = await requestJson(entryUrl, signal, 12_000);
 
     if (kindOf(json) === "similar") {
       const exact = exactSimilar(json, input);
@@ -308,7 +309,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
       const url = withQuery(exact.url_p || exact.url, base, input);
       if (!url) return;
       providerJsonUrl = url;
-      json = await requestJson(url, signal);
+      json = await requestJson(url, signal, 12_000);
     }
 
     if (input.type === "movie") {
@@ -325,7 +326,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
       const seasonUrl = withQuery(selected[0].item.url_p || selected[0].item.url, base, input);
       if (!seasonUrl) return;
       providerJsonUrl = seasonUrl;
-      json = await requestJson(seasonUrl, signal);
+      json = await requestJson(seasonUrl, signal, 12_000);
       seasonSelected = true;
     }
     if (kindOf(json) !== "episode") return;
@@ -344,14 +345,14 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
         if (!voiceUrl) continue;
         try {
           episodeUrl = voiceUrl;
-          episodeJson = await requestJson(voiceUrl, signal);
+          episodeJson = await requestJson(voiceUrl, signal, 12_000);
           if (kindOf(episodeJson) === "season") {
             const seasons = dataItems(episodeJson).filter((item, index) => seasonNumber(item, index + 1) === Number(input.season));
             if (seasons.length !== 1) continue;
             const seasonUrl = withQuery(seasons[0].url_p || seasons[0].url, base, input);
             if (!seasonUrl) continue;
             episodeUrl = seasonUrl;
-            episodeJson = await requestJson(seasonUrl, signal);
+            episodeJson = await requestJson(seasonUrl, signal, 12_000);
             episodeSeasonSelected = true;
           }
         } catch (error) {

@@ -269,3 +269,24 @@ Live replay исходных Dub IDs вновь не запустился: Fight
 Финальная конфигурация без Rezka в production: Vercel READY `dpl_J9TUNAWyVsBHYNHEMQTNjsJRB9dY`.
 
 Свежий production discovery после отключения: «Бойцовский клуб» HTTP 200, 34 кандидата прочих источников, 0 Rezka; первый кандидат через 14,70 с. Среди результатов VK Видео, VeoVeo, Filmix, Phantom, Aladin, VideoHUB, Collaps, Vibix. Этот контроль проверяет поиск и отсутствие Rezka; воспроизведение остальных кандидатов повторно не проверялось.
+
+
+### VK / Rutube: полнота поиска и ограничение ожидания
+
+План ограничен adapter discovery, pinned native VKMovie/RutubeMovie controllers, Docker build patch и регрессиями. Existing resolve/media routing остаются прежними; без новых зависимостей/платных сервисов.
+
+Provider metadata запросы поиска теперь имеют timeout 12 с вместо прежних 45 с, освобождая очередь для остальных источников. `/lite/events` и выбранный stream resolve сохраняют 45 с; readiness ожидание engine не сокращается. Runtime фильма из проверенного server input передаётся native provider URL. Тест до изменения падал, после подтверждает budgets, runtime и сохранение двух платформ при ошибке третьего провайдера.
+
+Build patch pinned Lampac 1.81.0: VK/Rutube пробуют русское название+год, при отсутствии подходящего результата original title+год, затем русское название без года. Совпадение требует название с границей слова; явный несовпавший год в суффиксе отвергается, числа в самом названии (1917/2049) не принимаются за release year. При известном runtime длительность должна отличаться не более чем на max(120 с, 10%); без года или без входного year требуется известный runtime. При неизвестном runtime сохранён порог 50 минут. Фильтры trailer/review/series и Rutube paid/locked/hidden/deleted/live сохраняются. VK больше не требует наличия MP4 720p+: поддерживает доступные MP4 144–480p и HLS, если MP4 отсутствует. Названия загрузок сохраняются; неизвестная озвучка не выдумывается.
+
+Cache keys теперь учитывают original title/runtime. Патч проверяет уникальные anchors, идемпотентен и прерывает build при drift. Regression test использует стабильные fixtures; separate self-check совпал с настоящими pinned native sources. 33/33 server tests, source-host client self-check и diff whitespace прошли. C# SDK локально отсутствует; compile проверяется Docker native prewarm.
+
+Baseline production перед изменением: Fight Club runtime139 — headers12,30 с, firstcandidate/VK14,87 с, Rutube unavailable, done60,21 с/34candidate. Ivan Vasilievich runtime88 — headers0,28 с, firstcandidate/Rutube0,85 с, VK1,63 с, done8,50 с/14candidate. Разница показывает cold-start; не сравнивать cold и warm как эффект исправления.
+
+Проверены новые ссылки пользователя: [movies-hosting](https://github.com/topics/movies-hosting) содержит в основном UI/списки сайтов/self-hosted stacks; пригодного VK/Rutube extractor не найдено. [movie-web original README](https://github.com/M1noa/movie-web-archive/blob/main/ORIGINAL_README.md) описывает static UI/client scraping через @movie-web/providers и только metadata proxy; архив не подтверждает доступность провайдеров/русских озвучек. Копирования/установки этих проектов нет. Основной технический reference публичных потоков остаётся [yt-dlp VK](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/vk.py) / [Rutube](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/rutube.py); runtime Python не добавлен.
+
+Native compile сначала выявил оставшийся VK trailer filter с несуществующим local `name`; объявление восстановлено, regression assert до исправления падал и после прошёл. Финальный backend deployment `dpl_6qsnCPcLzgXPGL6FJxNE1TQa3RUT` READY: Docker native prewarm скомпилировал оба модуля. Установлены повторно 33/33 серверных тестов и source-host client self-check.
+
+Финальный live-контроль на READY production: Fight Club — headers12,87 с, firstcandidate15,24 с, VK16,55 с; выбранный VK resolve200 за0,91 с, MP4/file720p,5qualities; FFmpeg декодировал94frame на старте и94 послеseek60. Full discovery29,95 с/34candidate (baseline60,21 с/34). Ivan Vasilievich — headers8,86 с, firstcandidate/Rutube10,97 с; resolve200 за10,42 с,HLSauto;100startupframe и100seek60frame. Discovery23,95 с/14candidate (baseline8,50 с/14). Выполнены ровно дваdiscover и дваresolve; playback запрашивался параллельно продолжающемуся поиску. VK/Rutube успешно запускаются в этих двух случаях, но это не подтверждает весь каталог/все голоса/новые lower-quality/HLS-only VK branches.
+
+Сравнение не доказывает одинакового ускорения: первый fullsearch быстрее, второй медленнее; baseline не включал параллельное resolve, x-vercel-cache MISS сам по себе не определяет cold/warm состояние процесса. Header/startup latency зависит от запуска engine и upstream. Fresh browser UI smoke в этом шаге не выполнялся; интерфейс не изменялся, проверка media выполнена FFmpeg.

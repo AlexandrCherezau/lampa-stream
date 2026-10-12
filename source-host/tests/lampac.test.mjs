@@ -763,3 +763,29 @@ await testProviderOrderCompletionAndEarlyClose();
 await testAnimeRetainsRussianMovieProviders();
 await testEpisodeSeasonAndBlockedEntries();
 console.log("Lampac provider adapter tests passed");
+
+async function testDiscoveryRequestBudgetsAndRuntime() {
+  const calls = [];
+  const provider = createLampacProvider({ baseUrl, fetchJson: async (raw, options) => {
+    const url = new URL(raw);
+    calls.push({ url, timeout: options.timeout });
+    if (url.pathname === "/lite/events") return [
+      { name: "Slow", balanser: "hdvb", url: `${baseUrl}lite/hdvb` },
+      { name: "VK", balanser: "vkmovie", url: `${baseUrl}lite/vkmovie` },
+      { name: "Rutube", balanser: "rutubemovie", url: `${baseUrl}lite/rutubemovie` },
+    ];
+    if (url.pathname === "/lite/hdvb") throw Object.assign(new Error("timeout"), { code: "UPSTREAM_TIMEOUT" });
+    if (url.pathname.endsWith("/play")) return { method: "play", url: "https://cdn.example/movie.m3u8" };
+    assert.equal(url.searchParams.get("runtimeMinutes"), "139");
+    return response("movie", [{ method: "call", name: "Дубляж", url: `${url.href.split("?")[0]}/play` }]);
+  } });
+  const values = await collect(provider.discover({ ...movieTitle, runtimeMinutes: 139 }));
+  const candidates = values.filter(v => !v.error);
+  assert.equal(candidates.length, 2, "one timed-out provider must not discard other platforms");
+  assert.equal(values.filter(v => v.error).length, 1);
+  assert.equal(calls[0].timeout, 45_000, "engine readiness has its original budget");
+  assert(calls.slice(1).every(v => v.timeout === 12_000), "discovery calls must release slow queue slots earlier");
+  await provider.resolve(candidates[1]);
+  assert.equal(calls.at(-1).timeout, 45_000, "selected stream resolution retains its budget");
+}
+await testDiscoveryRequestBudgetsAndRuntime();
