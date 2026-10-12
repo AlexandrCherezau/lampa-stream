@@ -30,7 +30,7 @@ export default function useSourceHost({ enabled, apiKey, item, details, type, se
     (async () => {
       const [external, kp] = await Promise.all([
         !imdbId && apiKey && item?.id ? tmdbFetch(`/${type}/${item.id}/external_ids`, apiKey, { signal: controller.signal }).catch(() => null) : null,
-        existingKinopoiskId ? null : collapsFindKp({ query: title, year, type }, { signal: controller.signal }).catch(() => null),
+        existingKinopoiskId ? null : collapsFindKp({ query: title, originalTitle, year, type }, { signal: controller.signal }).catch(() => null),
       ]);
       if (!alive) return;
       const params = { type, title, originalTitle, language, anime, tmdbId: item?.id,

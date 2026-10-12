@@ -1856,6 +1856,9 @@ export default function OnlinePlayer({
   const activeBalanser = isLampac ? balansers.find((b) => b.id === lampac.balanser) : null;
   const activeVoice = isLampac ? voices.find((v) => v.id === lampac.voice) : null;
   const activeSrcQuality = isLampac ? srcQualities.find((q) => q.id === lampac.quality) : null;
+  const voicePickerTitle = ["vkmovie", "rutubemovie"].includes(lampac.balanser)
+    ? "Версия / озвучка"
+    : "Озвучка";
 
   return (
     <div
@@ -1979,7 +1982,7 @@ export default function OnlinePlayer({
             <button
               className={"torrplayer-btn" + (showVoice ? " torrplayer-btn--active" : "")}
               onClick={() => { setShowVoice((v) => !v); setShowBalanser(false); setShowTracks(false); setShowQuality(false); setShowSpeed(false); setShowSubs(false); }}
-              title="Озвучка"
+              title={voicePickerTitle}
             >
               <VoiceI /><span className="torrplayer-audio-label">{activeVoice?.name || "Озвучка"}</span>
             </button>
@@ -1990,6 +1993,7 @@ export default function OnlinePlayer({
                     key={vo.id}
                     className={"torrplayer-audio-item" + (vo.id === lampac.voice ? " active" : "")}
                     onClick={() => selectVoice(vo.id)}
+                    title={`${vo.name}${vo.meta?.raw ? ` · ${vo.meta.raw}` : ""}`}
                   >
                     {vo.name}{vo.meta?.raw ? ` · ${vo.meta.raw}` : ""}
                   </button>

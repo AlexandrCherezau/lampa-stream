@@ -222,6 +222,8 @@ if (!window.electron) {
     }
   }
 
+  const kinopoiskIds = new Map();
+
   window.electron = {
     // ── TMDB token: a per-visitor token (localStorage) wins; otherwise fall
     // back to the Express server's shared token via /api/config. null → the
@@ -251,6 +253,11 @@ if (!window.electron) {
     collapsResolve: async (args, options) => collapsResolveWeb(args, options),
     collapsFindKp: async (args, { signal } = {}) => {
       // kinopoisk-id-by-title: not IP-bound, can go direct from the browser.
+      const normalize = (value) => String(value || "").normalize("NFKC").toLowerCase().replace(/ё/g, "е").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+      const titles = new Set([args.query, args.originalTitle].map(normalize).filter(Boolean));
+      const cacheKey = JSON.stringify([normalize(args.query), normalize(args.originalTitle), String(args.year || ""), args.type || ""]);
+      if (signal?.aborted) return { ok: false, error: "Поиск отменён" };
+      if (kinopoiskIds.has(cacheKey)) return kinopoiskIds.get(cacheKey);
       const qs = new URLSearchParams({ ...args }).toString();
       try {
         const r = await fetch(
@@ -260,11 +267,17 @@ if (!window.electron) {
         );
         const json = await r.json();
         const films = json.films || [];
-        let best = null;
-        if (args.year) best = films.find((f) => String(f.year) === String(args.year));
-        if (!best && films.length) best = films[0];
-        if (!best) return { ok: false, error: "Кинопоиск ID не найден" };
-        return { ok: true, kinopoiskId: best.filmId, title: best.nameRu || best.nameEn, year: best.year };
+        const matches = films.filter((film) =>
+          [film.nameRu, film.nameEn, film.nameOriginal].some((name) => titles.has(normalize(name))) &&
+          (!args.year || String(film.year).slice(0, 4) === String(args.year)) &&
+          Number.isSafeInteger(Number(film.filmId)) && Number(film.filmId) > 0);
+        const unique = [...new Map(matches.map((film) => [Number(film.filmId), film])).values()];
+        if (unique.length !== 1) return { ok: false, error: "Точное совпадение Кинопоиск ID не найдено" };
+        const best = unique[0];
+        const result = { ok: true, kinopoiskId: Number(best.filmId), title: best.nameRu || best.nameEn, year: best.year };
+        if (kinopoiskIds.size >= 256) kinopoiskIds.delete(kinopoiskIds.keys().next().value);
+        kinopoiskIds.set(cacheKey, result);
+        return result;
       } catch (e) {
         return { ok: false, error: e.message };
       }

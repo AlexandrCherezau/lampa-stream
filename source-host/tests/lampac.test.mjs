@@ -33,7 +33,8 @@ async function testMovieProvidersAndResolve() {
         { name: "ZetflixDB", balanser: "zetflixdb", url: `${baseUrl}lite/zetflixdb` },
         { name: "Phantom", balanser: "phantom", url: `${baseUrl}lite/phantom` },
         { name: "VeoVeo", balanser: "veoveo", url: `${baseUrl}lite/veoveo` },
-        { name: "VK Movie", balanser: "vkmovie", url: `${baseUrl}lite/vkmovie` },
+        { name: "VK Видео", balanser: "vkmovie", url: `${baseUrl}lite/vkmovie` },
+        { name: "Rutube", balanser: "rutubemovie", url: `${baseUrl}lite/rutubemovie` },
         { name: "Kodik", balanser: "kodik", url: `${baseUrl}lite/kodik` },
         { name: "KinoUkr", balanser: "kinoukr", url: `${baseUrl}lite/kinoukr` },
         { name: "Torrent", balanser: "pidtor", url: `${baseUrl}lite/pidtor` },
@@ -59,6 +60,32 @@ async function testMovieProvidersAndResolve() {
     if (url.pathname === "/lite/zetflixdb") {
       return response("movie", [{ method: "play", url: "https://cdn.example/videodb/manifest.m3u8?token=x", maxquality: "1080" }]);
     }
+    if (url.pathname === "/lite/vkmovie") return response("movie", [
+      {
+        method: "play", translate: "Fight Club (1999) — upload A",
+        url: "https://cdn.example/vk/a.mp4",
+        quality: { "1080p": "https://cdn.example/vk/a1080.mp4", "720p": "https://cdn.example/vk/a720.mp4" },
+      },
+      {
+        method: "play", translate: "Fight Club (1999) — upload B",
+        url: "https://cdn.example/vk/b.mp4",
+        quality: { "720p": "https://cdn.example/vk/b720.mp4" },
+      },
+      {
+        method: "play", translate: 'T2X2 смотрит фильм "Бойцовский клуб" 1999',
+        url: "https://cdn.example/vk/watchalong.mp4",
+        quality: { "1080p": "https://cdn.example/vk/watchalong1080.mp4" },
+      },
+    ]);
+    if (url.pathname === "/lite/rutubemovie") return response("movie", [
+      { method: "call", translate: "Fight Club (1999) — Rutube A", url: `${baseUrl}lite/rutubemovie/play?id=a` },
+      { method: "call", translate: "Fight Club (1999) — Rutube B", url: `${baseUrl}lite/rutubemovie/play?id=b` },
+    ]);
+    if (url.pathname === "/lite/rutubemovie/play") {
+      const id = url.searchParams.get("id");
+      assert(id === "a" || id === "b");
+      return { method: "play", url: `https://cdn.example/rutube/${id}/master.m3u8` };
+    }
     if (url.pathname === "/lite/phantom") return response("movie", [{
       method: "play",
       url: "https://cdn.example/phantom/master.m3u8",
@@ -73,13 +100,32 @@ async function testMovieProvidersAndResolve() {
   };
   const provider = createLampacProvider({ baseUrl, fetchJson });
   const candidates = await collect(provider.discover(movieTitle));
-  assert.deepEqual(candidates.map((candidate) => candidate.providerId), ["phantom", "veoveo"]);
-  assert.equal(calls.some((url) => url.pathname === "/lite/vkmovie"), false, "unvetted reaction catalog is excluded");
+  assert.deepEqual(new Set(candidates.map((candidate) => candidate.providerId)), new Set([
+    "phantom", "veoveo", "vkmovie", "rutubemovie",
+  ]));
+  const vkCandidates = candidates.filter((candidate) => candidate.providerId === "vkmovie");
+  assert.deepEqual(vkCandidates.map((candidate) => candidate.voiceName), [
+    "Fight Club (1999) — upload A", "Fight Club (1999) — upload B",
+  ], "VK upload titles remain distinct candidate labels instead of invented dub names");
+  assert.equal(new Set(vkCandidates.map((candidate) => candidate.voiceId)).size, 2, "distinct VK uploads remain selectable");
+  const vkResolved = await provider.resolve(vkCandidates[0]);
+  assert.deepEqual(vkResolved.qualities.map(({ label, height }) => [label, height]), [["1080p", 1080], ["720p", 720]]);
+  assert.equal(JSON.stringify(vkCandidates[0]).includes("cdn.example"), false, "VK media URLs stay private");
+
+  const rutubeCandidates = candidates.filter((candidate) => candidate.providerId === "rutubemovie");
+  assert.deepEqual(rutubeCandidates.map((candidate) => candidate.voiceName), [
+    "Fight Club (1999) — Rutube A", "Fight Club (1999) — Rutube B",
+  ], "multiple Rutube movie entries remain distinct");
+  const rutubeResolved = await provider.resolve(rutubeCandidates[0]);
+  assert.equal(rutubeResolved.qualities[0].url, "https://cdn.example/rutube/a/master.m3u8");
+  assert.equal(calls.some((url) => url.pathname === "/lite/rutubemovie/play" && url.searchParams.get("id") === "a"), true,
+    "Rutube call item is followed through its native play resolver");
   assert.equal(calls.some((url) => ["/lite/zetflix", "/lite/zetflixdb"].includes(url.pathname)), false,
     "unavailable Zetflix catalogs are excluded before provider requests");
-  assert.equal(Object.keys(candidates[0]).includes("ref"), false, "private refs are non-enumerable");
-  assert.equal(JSON.stringify(candidates[0]).includes("cdn.example"), false, "candidate JSON must not expose media URLs");
-  const resolved = await provider.resolve(candidates[0]);
+  const phantomCandidate = candidates.find((candidate) => candidate.providerId === "phantom");
+  assert.equal(Object.keys(phantomCandidate).includes("ref"), false, "private refs are non-enumerable");
+  assert.equal(JSON.stringify(phantomCandidate).includes("cdn.example"), false, "candidate JSON must not expose media URLs");
+  const resolved = await provider.resolve(phantomCandidate);
   assert.deepEqual(resolved.qualities.map((quality) => [quality.label, quality.height]), [["1080p", 1080], ["720p", 720]]);
   assert.equal(resolved.qualities[0].headers.Referer, "https://source.example/");
   assert.deepEqual(resolved.subtitles, [{ label: "Русские", url: "https://cdn.example/ru.vtt", language: "ru" }]);
@@ -101,6 +147,22 @@ async function testUnavailableZetflixProvidersAreNotDiscovered() {
   assert.equal(requested.includes("/lite/zetflix"), false);
   assert.equal(requested.includes("/lite/zetflixdb"), false);
   assert(candidates.every((candidate) => candidate.voiceName === "Дубляж"), "remaining providers keep their voices");
+}
+
+async function testPlatformFilterKeepsMovieTitleReaction() {
+  const provider = createLampacProvider({ baseUrl, fetchJson: async (raw) => {
+    const url = new URL(raw);
+    if (url.pathname === "/lite/events") return [
+      { name: "VK Видео", balanser: "vkmovie", url: `${baseUrl}lite/vkmovie` },
+    ];
+    return response("movie", [{
+      method: "play", translate: "Reaction (1999)",
+      url: "https://cdn.example/reaction.mp4",
+    }]);
+  } });
+  const candidates = await collect(provider.discover({ ...movieTitle, title: "Reaction", originalTitle: "Reaction" }));
+  assert.equal(candidates.length, 1, "a movie titled Reaction is not treated as a reaction-upload caption");
+  assert.equal(candidates[0].voiceName, "Reaction (1999)");
 }
 
 async function testSimilarExactMatchAndAmbiguity() {
@@ -176,6 +238,44 @@ async function testTvSeasonEpisodeAndVoices() {
   assert.equal(new URL(candidates[1].ref.providerUrl).searchParams.get("voice"), "Dub B");
   assert.deepEqual(results.filter((value) => value.error).map((value) => value.providerId), ["hdvb"]);
   assert.match(results.find((value) => value.error).error, /Broken/);
+}
+
+async function testTvCandidatesAreYieldedBeforeLaterVoiceFetchCompletes() {
+  let signalSecondVoiceStarted;
+  let releaseSecondVoice;
+  const secondVoiceStarted = new Promise((resolve) => { signalSecondVoiceStarted = resolve; });
+  const secondVoiceGate = new Promise((resolve) => { releaseSecondVoice = resolve; });
+  const fetchJson = async (raw) => {
+    const url = new URL(raw);
+    if (url.pathname === "/lite/events") return [{ name: "Vibix", balanser: "vibix", url: `${baseUrl}lite/vibix` }];
+    if (!url.searchParams.has("voice")) return response("episode", [{ s: 1, e: 14, translate: "Dub A", url: "https://cdn.example/dub-a.m3u8" }], {
+      voice: [
+        { id: "dub-a", name: "Dub A", active: true },
+        { id: "dub-b", name: "Dub B", url: `${baseUrl}lite/vibix?voice=dub-b` },
+      ],
+    });
+    signalSecondVoiceStarted();
+    await secondVoiceGate;
+    return response("episode", [{ s: 1, e: 14, translate: "Dub B", url: "https://cdn.example/dub-b.m3u8" }]);
+  };
+  const provider = createLampacProvider({ baseUrl, fetchJson });
+  const iterator = provider.discover({ type: "tv", title: "Show", season: 1, episode: 14 });
+  const firstPromise = iterator.next();
+  await secondVoiceStarted;
+  let first;
+  try {
+    first = await Promise.race([
+      firstPromise,
+      new Promise((resolve) => setTimeout(() => resolve("later-voice-still-pending"), 50)),
+    ]);
+    assert.notEqual(first, "later-voice-still-pending", "the first exact voice should be yielded before a later voice request finishes");
+  } finally {
+    releaseSecondVoice();
+    const pending = await firstPromise;
+    if (!pending.done) await iterator.return();
+  }
+  assert.equal(first.value.providerId, "vibix");
+  assert.equal(first.value.voiceName, "Dub A");
 }
 
 async function testCallFallbackAndAbort() {
@@ -531,7 +631,7 @@ async function testProviderOrderCompletionAndEarlyClose() {
 async function testAnimeRetainsRussianMovieProviders() {
   const fetchJson = async (raw) => {
     const url = new URL(raw);
-    if (url.pathname === "/lite/events") return ["vibix", "phantom", "collaps", "kodik", "kinoukr", "vkmovie"]
+    if (url.pathname === "/lite/events") return ["vibix", "phantom", "collaps", "kodik", "kinoukr", "vkmovie", "rutubemovie"]
       .map((balanser) => ({ name: balanser, balanser, url: `${baseUrl}lite/${balanser}` }));
     assert.equal(url.searchParams.get("anime"), "1");
     return response("episode", [{ method: "play", url: "https://cdn.example/episode14.m3u8", e: 14 }]);
@@ -578,8 +678,10 @@ async function testEpisodeSeasonAndBlockedEntries() {
 
 await testMovieProvidersAndResolve();
 await testUnavailableZetflixProvidersAreNotDiscovered();
+await testPlatformFilterKeepsMovieTitleReaction();
 await testSimilarExactMatchAndAmbiguity();
 await testTvSeasonEpisodeAndVoices();
+await testTvCandidatesAreYieldedBeforeLaterVoiceFetchCompletes();
 await testCallFallbackAndAbort();
 await testZetflixDbManifestPrimesCookieAndHonorsAbort();
 await testZetflixDbRefreshPreservesMovieVoiceAndRejectsAmbiguity();

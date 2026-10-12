@@ -338,7 +338,7 @@ export const tmdbFetch = async (path, apiKey, opts = {}) => {
   try {
     res = await fetch(`${TMDB_BASE}${localizedPath}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
-      signal: opts.signal ?? AbortSignal.timeout(10000),
+      signal: opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
     });
   } catch (e) {
     _releaseSlot();

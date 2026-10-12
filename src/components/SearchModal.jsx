@@ -18,6 +18,7 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
   const [history, setHistory] = useState(loadHistory);
   const inputRef = useRef();
 
@@ -29,15 +30,19 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
   useEffect(() => {
     if (!query.trim()) {
       setResults([]);
+      setLoading(false);
+      setSearchError("");
       return;
     }
     let mounted = true;
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
         const data = await tmdbFetch(
           `/search/multi?query=${encodeURIComponent(query)}&page=1`,
           apiKey,
+          { signal: controller.signal },
         );
         if (mounted) {
           setResults(
@@ -46,12 +51,17 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
             ).slice(0, 12),
           );
         }
-      } catch {}
+      } catch (error) {
+        if (mounted && error?.name !== "AbortError") {
+          setSearchError("Поиск временно недоступен. Попробуйте ещё раз.");
+        }
+      }
       if (mounted) setLoading(false);
     }, 380);
     return () => {
       mounted = false;
       clearTimeout(timer);
+      controller.abort();
     };
   }, [query, apiKey]);
 
@@ -96,10 +106,17 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
     onClose();
   };
 
-  const handleHistoryClick = useCallback((term) => {
-    setQuery(term);
-    inputRef.current?.focus();
+  const updateQuery = useCallback((value) => {
+    setQuery(value);
+    setResults([]);
+    setLoading(!!value.trim());
+    setSearchError("");
   }, []);
+
+  const handleHistoryClick = useCallback((term) => {
+    updateQuery(term);
+    inputRef.current?.focus();
+  }, [updateQuery]);
 
   const handleKey = (e) => {
     if (e.key === "Escape") onClose();
@@ -121,13 +138,13 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
             className="search-input"
             placeholder="Поиск фильмов и сериалов..."
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => updateQuery(e.target.value)}
             onKeyDown={handleKey}
           />
           {query ? (
             <button
               className="btn btn-ghost btn-icon"
-              onClick={() => setQuery("")}
+              onClick={() => updateQuery("")}
             >
               <CloseIcon />
             </button>
@@ -162,7 +179,11 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
             </div>
           )}
 
-          {!loading && query && results.length === 0 && (
+          {!loading && searchError && query && (
+            <div className="search-empty">{searchError}</div>
+          )}
+
+          {!loading && !searchError && query && results.length === 0 && (
             <div className="search-empty">По запросу «{query}» ничего не найдено</div>
           )}
 

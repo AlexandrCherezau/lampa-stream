@@ -1,7 +1,7 @@
 const RUS_MOVIE_PROVIDERS = new Set([
   "aladin", "cdnvideohub", "collaps", "fancdn", "filmix", "flixcdn", "getstv",
   "hdvb", "iremux", "kinobase", "kinogo", "leproduction", "mirage",
-  "phantom", "pizdatoehd", "redheadsound", "rezka", "rutubemovie", "sakhtv",
+  "phantom", "pizdatoehd", "redheadsound", "rezka", "rutubemovie", "sakhtv", "vkmovie",
   "spectre", "veoveo", "vibix", "videodb", "videoseed", "zetflix", "zetflixdb",
 ]);
 
@@ -9,6 +9,7 @@ const RUS_ANIME_PROVIDERS = new Set([
   "anidub", "aniliberty", "anilibria", "animedia", "animebesst", "animego",
   "animelib", "animeon", "animevost", "dreamerscast", "kodik", "mikai",
 ]);
+const MOVIE_ONLY_PROVIDERS = new Set(["rutubemovie", "vkmovie"]);
 
 const EXCLUDED_PROVIDERS = new Set([
   "kinotochka", "pidtor", "kinoukr", "uakino", "uafilm", "geosaitebi", "zetflix", "zetflixdb",
@@ -150,6 +151,7 @@ function voiceItems(json) {
 function providerAllowed(provider, input) {
   const id = String(provider?.balanser || "").toLowerCase();
   if (!id || EXCLUDED_PROVIDERS.has(id)) return false;
+  if (MOVIE_ONLY_PROVIDERS.has(id) && input.type !== "movie") return false;
   return RUS_MOVIE_PROVIDERS.has(id) || (input.anime && RUS_ANIME_PROVIDERS.has(id));
 }
 
@@ -215,6 +217,14 @@ function subtitlesOf(item, base) {
 
 function itemVoiceName(item) {
   return String(item?.translate || item?.voice_name || item?.name || "Основная");
+}
+
+function isPlatformCommentaryUpload(providerId, item) {
+  if (!MOVIE_ONLY_PROVIDERS.has(providerId)) return false;
+  const label = normalizedText(itemVoiceName(item));
+  return /(?:^|\s)смотр\p{L}*\s+(?:этот\s+)?(?:фильм|кино)(?:\s|$)/u.test(label)
+    || /(?:^|\s)(?:watchalong|watch party|watching(?: the)? movie|movie commentary|commentary on|reaction to|reacts to)(?:\s|$)/.test(label)
+    || /(?:^|\s)реакци[яи]\s+на(?:\s|$)/u.test(label);
 }
 
 function refreshedVideoDbItem(candidate, json, providerName = "ZetflixDB") {
@@ -285,41 +295,41 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
     return asObject(await fetchJson(url.toString(), { signal }));
   }
 
-  async function walkProvider(provider, input, signal) {
+  async function* walkProvider(provider, input, signal) {
     const entryUrl = withQuery(provider.url, base, input);
-    if (!entryUrl) return { candidates: [], errors: [] };
+    if (!entryUrl) return;
     let providerJsonUrl = entryUrl;
     let json = await requestJson(entryUrl, signal);
 
     if (kindOf(json) === "similar") {
       const exact = exactSimilar(json, input);
-      if (!exact?.url) return { candidates: [], errors: [] };
+      if (!exact?.url) return;
       const url = withQuery(exact.url_p || exact.url, base, input);
-      if (!url) return { candidates: [], errors: [] };
+      if (!url) return;
       providerJsonUrl = url;
       json = await requestJson(url, signal);
     }
 
     if (input.type === "movie") {
       const items = kindOf(json) === "movie" ? dataItems(json) : (json.method ? [json] : []);
-      return { candidates: buildCandidates(provider, items, input, null, null, providerJsonUrl), errors: [] };
+      for (const candidate of buildCandidates(provider, items, input, null, null, providerJsonUrl)) yield candidate;
+      return;
     }
 
     let seasonSelected = false;
     if (kindOf(json) === "season") {
       const seasons = dataItems(json).map((item, index) => ({ item, number: seasonNumber(item, index + 1) }));
       const selected = seasons.filter((season) => season.number === Number(input.season));
-      if (selected.length !== 1 || !selected[0].item?.url) return { candidates: [], errors: [] };
+      if (selected.length !== 1 || !selected[0].item?.url) return;
       const seasonUrl = withQuery(selected[0].item.url_p || selected[0].item.url, base, input);
-      if (!seasonUrl) return { candidates: [], errors: [] };
+      if (!seasonUrl) return;
       providerJsonUrl = seasonUrl;
       json = await requestJson(seasonUrl, signal);
       seasonSelected = true;
     }
-    if (kindOf(json) !== "episode") return { candidates: [], errors: [] };
+    if (kindOf(json) !== "episode") return;
 
     const voices = voiceItems(json);
-    const candidates = [];
     const errors = [];
     const active = voices.filter((voice) => voice.active === true);
     const defaultVoice = active.length === 1 ? active[0] : voices[0];
@@ -342,15 +352,17 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
       const selected = requestedEpisode(episodes, input.episode, input.season, seasonSelected);
       if (!selected) continue;
       const values = buildCandidates(provider, [selected], input, Number(input.season), Number(input.episode), episodeUrl, voice);
-      candidates.push(...values);
+      for (const candidate of values) yield candidate;
     }
-    return { candidates, errors };
+    for (const error of errors) yield { error };
+    return;
   }
 
   function buildCandidates(provider, items, input, season, episode, entryUrl, voice = null) {
     return items.flatMap((item, index) => {
       if (!item || (!item.url && !item.stream && !item.quality && !item.mp4quality)) return [];
       if (/^заблокировано(?: |$)/.test(normalizedText(itemVoiceName(item)))) return [];
+      if (isPlatformCommentaryUpload(String(provider.balanser).toLowerCase(), item)) return [];
       const method = item.method === "call" ? "call" : "play";
       const sourceUrl = method === "call" ? item.url : item.url || item.stream;
       if (!sourceUrl || !httpUrl(sourceUrl, base)) return [];
@@ -416,33 +428,41 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
         - (priorities.get(String(b.provider.balanser).toLowerCase()) ?? Number.MAX_SAFE_INTEGER) || a.index - b.index)
       .map(({ provider }) => provider);
 
-    const running = new Map();
+    const running = new Set();
     let next = 0;
+    const scheduleNext = (entry) => {
+      entry.pending = entry.iterator.next().then(
+        (result) => ({ entry, result }),
+        (error) => ({ entry, error }),
+      );
+    };
     const startProvider = (provider) => {
-      const token = {};
-      const job = Promise.resolve()
-        .then(() => walkProvider(provider, title, requestSignal))
-        .then(
-          (result) => ({ token, provider, candidates: result.candidates, errors: result.errors, error: null }),
-          (error) => ({ token, provider, candidates: [], error: String(error?.message || error), aborted: error?.name === "AbortError" }),
-        );
-      running.set(token, job);
+      const entry = { provider, iterator: walkProvider(provider, title, requestSignal), pending: null };
+      running.add(entry);
+      scheduleNext(entry);
     };
     while (next < events.length && running.size < MAX_PROVIDER_CONCURRENCY) startProvider(events[next++]);
     while (running.size) {
       if (requestSignal.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
-      const settled = await Promise.race(running.values());
-      running.delete(settled.token);
-      if (next < events.length && !requestSignal.aborted) startProvider(events[next++]);
-      if (settled.aborted || requestSignal.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
+      const settled = await Promise.race([...running.values()].map((entry) => entry.pending));
+      const { entry } = settled;
+      const providerId = String(entry.provider.balanser).toLowerCase();
+      const providerName = String(entry.provider.name || entry.provider.balanser);
       if (settled.error) {
-        yield { providerId: String(settled.provider.balanser).toLowerCase(), providerName: String(settled.provider.name || settled.provider.balanser), error: settled.error };
+        running.delete(entry);
+        if (settled.error?.name === "AbortError" || requestSignal.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
+        if (next < events.length) startProvider(events[next++]);
+        yield { providerId, providerName, error: String(settled.error?.message || settled.error) };
         continue;
       }
-      for (const candidate of settled.candidates) yield candidate;
-      for (const error of settled.errors || []) {
-        yield { providerId: String(settled.provider.balanser).toLowerCase(), providerName: String(settled.provider.name || settled.provider.balanser), error };
+      if (settled.result.done) {
+        running.delete(entry);
+        if (next < events.length) startProvider(events[next++]);
+        continue;
       }
+      scheduleNext(entry);
+      if (settled.result.value?.error) yield { providerId, providerName, error: settled.result.value.error };
+      else yield settled.result.value;
     }
     } finally {
       controller.abort();
