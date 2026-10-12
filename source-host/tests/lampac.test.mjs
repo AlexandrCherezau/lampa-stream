@@ -59,30 +59,48 @@ async function testMovieProvidersAndResolve() {
     if (url.pathname === "/lite/zetflixdb") {
       return response("movie", [{ method: "play", url: "https://cdn.example/videodb/manifest.m3u8?token=x", maxquality: "1080" }]);
     }
-    if (url.pathname === "/lite/phantom") return response("movie", [{ method: "play", url: "https://cdn.example/phantom/master.m3u8" }]);
+    if (url.pathname === "/lite/phantom") return response("movie", [{
+      method: "play",
+      url: "https://cdn.example/phantom/master.m3u8",
+      quality: { "1080p": "https://cdn.example/phantom/1080.m3u8", "720p": "https://cdn.example/phantom/720.m3u8" },
+      translate: "Дубляж",
+      headers: "{'Referer': 'https://source.example/'}",
+      subtitles: [{ name: "Русские", url: "https://cdn.example/ru.vtt", language: "ru" }],
+      segments: { skip: [{ start: 5, end: 10 }], ad: [{ start: 0, end: 5 }] },
+    }]);
     if (url.pathname === "/lite/veoveo") return response("movie", [{ method: "play", url: "https://cdn.example/veoveo/master.m3u8" }]);
     throw new Error(`Unexpected endpoint ${url.pathname}`);
   };
   const provider = createLampacProvider({ baseUrl, fetchJson });
   const candidates = await collect(provider.discover(movieTitle));
-  assert.deepEqual(candidates.map((candidate) => candidate.providerId), ["zetflix", "zetflixdb", "phantom", "veoveo"]);
+  assert.deepEqual(candidates.map((candidate) => candidate.providerId), ["phantom", "veoveo"]);
   assert.equal(calls.some((url) => url.pathname === "/lite/vkmovie"), false, "unvetted reaction catalog is excluded");
-  assert.equal(calls.filter((url) => url.pathname === "/lite/zetflix")[0].searchParams.get("serial"), "0");
+  assert.equal(calls.some((url) => ["/lite/zetflix", "/lite/zetflixdb"].includes(url.pathname)), false,
+    "unavailable Zetflix catalogs are excluded before provider requests");
   assert.equal(Object.keys(candidates[0]).includes("ref"), false, "private refs are non-enumerable");
-
-  const zetflix = candidates[0];
-  assert.equal(JSON.stringify(zetflix).includes("cdn.example"), false);
-  const resolved = await provider.resolve(zetflix);
+  assert.equal(JSON.stringify(candidates[0]).includes("cdn.example"), false, "candidate JSON must not expose media URLs");
+  const resolved = await provider.resolve(candidates[0]);
   assert.deepEqual(resolved.qualities.map((quality) => [quality.label, quality.height]), [["1080p", 1080], ["720p", 720]]);
   assert.equal(resolved.qualities[0].headers.Referer, "https://source.example/");
   assert.deepEqual(resolved.subtitles, [{ label: "Русские", url: "https://cdn.example/ru.vtt", language: "ru" }]);
-  assert.deepEqual(resolved.skip, [{ start: 5, end: 10 }], "source skip markers are retained without ad ranges");
+  assert.deepEqual(resolved.skip, [{ start: 5, end: 10 }], "provider skip markers are retained without ad ranges");
+}
 
-  const zetflixDb = await provider.resolve(candidates[1]);
-  assert.equal(zetflixDb.qualities[0].height, 1080);
-  assert.match(zetflixDb.qualities[0].url, /videodb\/manifest\.m3u8/);
-  assert.equal(calls.filter((url) => url.pathname === "/lite/zetflix").length, 2, "Zetflix refreshes its selected provider item before resolve");
-  assert.equal(calls.filter((url) => url.pathname === "/lite/zetflixdb").length, 2, "ZetflixDB index is re-entered exactly once during resolve");
+async function testUnavailableZetflixProvidersAreNotDiscovered() {
+  const requested = [];
+  const fetchJson = async (raw) => {
+    const url = new URL(raw);
+    if (url.pathname === "/lite/events") return ["zetflix", "zetflixdb", "phantom", "veoveo", "vibix"]
+      .map((balanser) => ({ name: balanser, balanser, url: `${baseUrl}lite/${balanser}` }));
+    requested.push(url.pathname);
+    return response("movie", [{ method: "play", url: `https://cdn.example/${url.pathname.split("/").pop()}.m3u8`, translate: "Дубляж" }]);
+  };
+  const provider = createLampacProvider({ baseUrl, fetchJson });
+  const candidates = await collect(provider.discover(movieTitle));
+  assert.deepEqual(new Set(candidates.map((candidate) => candidate.providerId)), new Set(["phantom", "veoveo", "vibix"]));
+  assert.equal(requested.includes("/lite/zetflix"), false);
+  assert.equal(requested.includes("/lite/zetflixdb"), false);
+  assert(candidates.every((candidate) => candidate.voiceName === "Дубляж"), "remaining providers keep their voices");
 }
 
 async function testSimilarExactMatchAndAmbiguity() {
@@ -456,10 +474,10 @@ async function testExternalCallEndpointAndProviderError() {
     const url = new URL(raw);
     seen.push(url);
     if (url.pathname === "/lite/events") return [
-      { name: "Zetflix", balanser: "zetflix", url: `${baseUrl}lite/zetflix` },
+      { name: "Vibix", balanser: "vibix", url: `${baseUrl}lite/vibix` },
       { name: "HDVB", balanser: "hdvb", url: `${baseUrl}lite/hdvb` },
     ];
-    if (url.pathname === "/lite/zetflix") return response("movie", [{
+    if (url.pathname === "/lite/vibix") return response("movie", [{
       method: "call",
       url: "https://resolver.example/call?id=1",
       stream: "https://cdn.example/stream.m3u8",
@@ -484,14 +502,14 @@ async function testProviderOrderCompletionAndEarlyClose() {
   const fetchJson = async (raw, { signal } = {}) => {
     const url = new URL(raw);
     if (url.pathname === "/lite/events") return [
-      { name: "Zetflix", balanser: "zetflix", url: `${baseUrl}lite/zetflix` },
+      { name: "Phantom", balanser: "phantom", url: `${baseUrl}lite/phantom` },
       { name: "Vibix", balanser: "vibix", url: `${baseUrl}lite/vibix` },
       { name: "HDVB", balanser: "hdvb", url: `${baseUrl}lite/hdvb` },
       { name: "Kinogo", balanser: "kinogo", url: `${baseUrl}lite/kinogo` },
     ];
     const id = url.pathname.split("/").at(-1);
     started.push(id);
-    if (id === "zetflix") {
+    if (id === "phantom") {
       return new Promise((resolve, reject) => {
         signal.addEventListener("abort", () => {
           slowAborted = true;
@@ -501,11 +519,11 @@ async function testProviderOrderCompletionAndEarlyClose() {
     }
     return response("movie", [{ method: "play", url: `https://cdn.example/${id}.m3u8` }]);
   };
-  const provider = createLampacProvider({ baseUrl, fetchJson, providerOrder: ["hdvb", "zetflix"] });
+  const provider = createLampacProvider({ baseUrl, fetchJson, providerOrder: ["hdvb", "phantom"] });
   const iterator = provider.discover(movieTitle);
   const first = await iterator.next();
   assert.equal(first.value.providerId, "hdvb", "preferred quick provider should be started first");
-  assert.deepEqual(started.slice(0, 3), ["hdvb", "zetflix", "vibix"]);
+  assert.deepEqual(started.slice(0, 3), ["hdvb", "phantom", "vibix"]);
   await iterator.return();
   assert.equal(slowAborted, true, "closing discovery should abort outstanding provider calls");
 }
@@ -559,6 +577,7 @@ async function testEpisodeSeasonAndBlockedEntries() {
 }
 
 await testMovieProvidersAndResolve();
+await testUnavailableZetflixProvidersAreNotDiscovered();
 await testSimilarExactMatchAndAmbiguity();
 await testTvSeasonEpisodeAndVoices();
 await testCallFallbackAndAbort();

@@ -11,6 +11,10 @@ export default function useSourceHost({ enabled, apiKey, item, details, type, se
   if (!session.current) session.current = createSourceSession({ publish: setValue });
   const title = details?.title || details?.name || item?.title || item?.name;
   const imdbId = details?.imdb_id || details?.external_ids?.imdb_id || item?.imdb_id;
+  const existingKinopoiskId = [details?.kinopoisk_id, details?.kinopoiskId, item?.kinopoisk_id, item?.kinopoiskId]
+    .filter((value) => typeof value === "number" || typeof value === "string")
+    .map(Number)
+    .find((value) => Number.isSafeInteger(value) && value > 0) ?? null;
   const year = (details?.release_date || details?.first_air_date || item?.release_date || item?.first_air_date || "").slice(0, 4);
   const originalTitle = details?.original_title || details?.original_name || item?.original_title || item?.original_name || title;
   const language = details?.original_language || item?.original_language;
@@ -26,18 +30,20 @@ export default function useSourceHost({ enabled, apiKey, item, details, type, se
     (async () => {
       const [external, kp] = await Promise.all([
         !imdbId && apiKey && item?.id ? tmdbFetch(`/${type}/${item.id}/external_ids`, apiKey, { signal: controller.signal }).catch(() => null) : null,
-        collapsFindKp({ query: title, year, type }, { signal: controller.signal }).catch(() => null),
+        existingKinopoiskId ? null : collapsFindKp({ query: title, year, type }, { signal: controller.signal }).catch(() => null),
       ]);
       if (!alive) return;
       const params = { type, title, originalTitle, language, anime, tmdbId: item?.id,
         ...(year ? { year: Number(year) } : {}), ...(imdbId || external?.imdb_id ? { imdbId: imdbId || external.imdb_id } : {}),
-        ...(kp?.ok && kp.kinopoiskId ? { kinopoiskId: kp.kinopoiskId } : {}),
+        ...(existingKinopoiskId || (kp?.ok && kp.kinopoiskId)
+          ? { kinopoiskId: existingKinopoiskId || kp.kinopoiskId }
+          : {}),
         ...(validRuntimeMinutes != null ? { runtimeMinutes: validRuntimeMinutes } : {}),
         ...(type === "tv" ? { season: Number(season), episode: Number(episode) } : {}),
       };
       session.current.start(params);
     })();
     return () => { alive = false; controller.abort(); session.current.stop(); };
-  }, [enabled, apiKey, item?.id, title, originalTitle, language, anime, year, imdbId, validRuntimeMinutes, type, season, episode]);
+  }, [enabled, apiKey, item?.id, title, originalTitle, language, anime, year, imdbId, existingKinopoiskId, validRuntimeMinutes, type, season, episode]);
   return { ...value, ...session.current };
 }

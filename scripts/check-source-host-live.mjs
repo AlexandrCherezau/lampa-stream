@@ -7,9 +7,9 @@ assert.ok(origin, "Set SOURCE_HOST_URL to the running own host");
 const headers = { "content-type": "application/json", ...(process.env.SOURCE_API_KEY ? { authorization: `Bearer ${process.env.SOURCE_API_KEY}` } : {}) };
 const run = promisify(execFile);
 const samples = [
-  { name: "Fight Club", type: "movie", title: "Бойцовский клуб", originalTitle: "Fight Club", year: 1999, tmdbId: 550, kinopoiskId: 361, imdbId: "tt0137523", language: "en", providers: ["zetflixdb", "hdvb", "vibix", "phantom", "veoveo"] },
-  { name: "Breaking Bad S1E1", type: "tv", title: "Во все тяжкие", originalTitle: "Breaking Bad", year: 2008, tmdbId: 1396, kinopoiskId: 404900, imdbId: "tt0903747", language: "en", season: 1, episode: 1, providers: ["zetflixdb", "hdvb", "vibix", "phantom"] },
-  { name: "Haikyuu S1E14", type: "tv", title: "Волейбол!!", originalTitle: "ハイキュー!!", year: 2014, tmdbId: 60863, kinopoiskId: 840073, imdbId: "tt3398540", language: "ja", anime: true, season: 1, episode: 14, providers: ["zetflixdb", "kodik", "animedia"] },
+  { name: "Fight Club", type: "movie", title: "Бойцовский клуб", originalTitle: "Fight Club", year: 1999, tmdbId: 550, kinopoiskId: 361, imdbId: "tt0137523", language: "en", providers: ["vibix", "aladin", "filmix", "cdnvideohub", "veoveo"] },
+  { name: "Breaking Bad S1E1", type: "tv", title: "Во все тяжкие", originalTitle: "Breaking Bad", year: 2008, tmdbId: 1396, kinopoiskId: 404900, imdbId: "tt0903747", language: "en", season: 1, episode: 1, providers: ["vibix", "hdvb", "filmix", "phantom"] },
+  { name: "Haikyuu S1E14", type: "tv", title: "Волейбол!!", originalTitle: "ハイキュー!!", year: 2014, tmdbId: 60863, kinopoiskId: 840073, imdbId: "tt3398540", language: "ja", anime: true, season: 1, episode: 14, providers: ["kodik", "animedia", "aniliberty"] },
 ];
 let failedSamples = 0;
 for (const { name, providers, ...title } of samples) {
@@ -32,8 +32,11 @@ for (const { name, providers, ...title } of samples) {
       if (!resolved.ok) throw new Error(data.error || `HTTP ${resolved.status}`);
       const url = new URL(data.selected.url, origin).href;
       const input = ["-hide_banner", "-loglevel", "error", "-nostdin", "-rw_timeout", "15000000", ...(data.kind === "hls" ? ["-allowed_extensions", "ALL", "-extension_picky", "0"] : [])];
-      await run("ffmpeg", [...input, "-i", url, "-frames:v", "1", "-an", "-f", "null", "-"], { timeout: 35_000, killSignal: "SIGKILL", maxBuffer: 100_000 });
-      await run("ffmpeg", [...input, "-ss", "60", "-i", url, "-frames:v", "1", "-an", "-f", "null", "-"], { timeout: 35_000, killSignal: "SIGKILL", maxBuffer: 100_000 });
+      const startup = await run("ffmpeg", [...input, "-i", url, "-frames:v", "1", "-an", "-f", "framemd5", "-"], { timeout: 35_000, killSignal: "SIGKILL", maxBuffer: 100_000 });
+      const seek = await run("ffmpeg", [...input, "-ss", "60", "-i", url, "-frames:v", "1", "-an", "-f", "framemd5", "-"], { timeout: 35_000, killSignal: "SIGKILL", maxBuffer: 100_000 });
+      const decodedFrame = /^\d+,\s*-?\d+,\s*-?\d+,\s*\d+,\s*\d+,\s*[a-f0-9]{32}\s*$/m;
+      assert.match(startup.stdout, decodedFrame, "Startup must decode a video frame");
+      assert.match(seek.stdout, decodedFrame, "Seek must decode a video frame");
       decodedProviders++;
       console.log(JSON.stringify({ sample: name, provider, ready: true, decoded: true, seekSeconds: 60, quality: data.selected.label, elapsedMs: Date.now() - start }));
     } catch (error) {

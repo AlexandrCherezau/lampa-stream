@@ -38,7 +38,8 @@ wrangler deploy --config workers-api/source-host-container.wrangler.json
 
 Проверки до смены production gateway: healthz, свежие discover/resolve,
 совпадение `x-source-instance` для resolve/playlist/segments, реальные кадры,
-перемотка Zetflix/ZetflixDB и обычного русского фильма, повтор после сна.
+перемотка русского фильма, сериала и аниме, повтор после сна.
+Zetflix/ZetflixDB исключены из нового поиска по текущей задаче.
 Только после этого заменить backend URL сайта; сохранить Vercel для отката.
 
 Локальные проверки Worker:

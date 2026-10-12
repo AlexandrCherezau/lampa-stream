@@ -11,7 +11,7 @@ const RUS_ANIME_PROVIDERS = new Set([
 ]);
 
 const EXCLUDED_PROVIDERS = new Set([
-  "kinotochka", "pidtor", "kinoukr", "uakino", "uafilm", "geosaitebi",
+  "kinotochka", "pidtor", "kinoukr", "uakino", "uafilm", "geosaitebi", "zetflix", "zetflixdb",
   "kinoflix", "eneyida", "moonanime", "asiage", "kinoteatrkg",
 ]);
 
