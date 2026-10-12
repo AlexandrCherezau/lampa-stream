@@ -330,7 +330,8 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
     }
     if (kindOf(json) !== "episode") return;
 
-    const voices = voiceItems(json);
+    let voices = voiceItems(json);
+    if (provider.balanser === "rezka") voices = [...new Map(voices.map(voice => [JSON.stringify([voice.name, voice.url]), voice])).values()];
     const errors = [];
     const active = voices.filter((voice) => voice.active === true);
     const defaultVoice = active.length === 1 ? active[0] : voices[0];
@@ -371,6 +372,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
   }
 
   function buildCandidates(provider, items, input, season, episode, entryUrl, voice = null) {
+    const seen = new Set();
     return items.flatMap((item, index) => {
       if (!item || (!item.url && !item.stream && !item.quality && !item.mp4quality)) return [];
       if (/^заблокировано(?: |$)/.test(normalizedText(itemVoiceName(item)))) return [];
@@ -378,10 +380,16 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
       const method = item.method === "call" ? "call" : "play";
       const sourceUrl = method === "call" ? item.url : item.url || item.stream;
       if (!sourceUrl || !httpUrl(sourceUrl, base)) return [];
+      const translatorId = provider.balanser === "rezka" ? httpUrl(sourceUrl, base).searchParams.get("t") : null;
+      if (provider.balanser === "rezka") {
+        const key = JSON.stringify([method, sourceUrl, itemVoiceName(item)]);
+        if (seen.has(key)) return [];
+        seen.add(key);
+      }
       const candidate = {
         providerId: String(provider.balanser).toLowerCase(),
         providerName: String(provider.name || provider.balanser),
-        voiceId: String(voice?.id ?? voice?.name ?? item.id ?? index),
+        voiceId: String(voice?.id ?? translatorId ?? voice?.name ?? item.id ?? index),
         voiceName: String(voice?.name || item.translate || item.voice_name || item.name || "Основная"),
         season,
         episode,
@@ -490,6 +498,13 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
     }
     if (/^заблокировано(?: |$)/.test(normalizedText(candidate.voiceName))) throw new Error("Lampac candidate is a blocked placeholder");
     const providerId = String(candidate.providerId || "").toLowerCase();
+    if (providerId === "rezka" && ref.method === "call") {
+      const documentUrl = sameOriginUrl(ref.providerUrl, base);
+      if (!documentUrl?.searchParams.get("href") || !["/lite/rezka", "/lite/rezka/serial"].includes(documentUrl.pathname)) throw new Error("Invalid Rezka document reference");
+      documentUrl.pathname = "/lite/rezka";
+      // Discovery and playback can land on different containers; initialize this engine's document session.
+      await requestJson(documentUrl, signal);
+    }
     const isZetflixDb = providerId === "zetflixdb";
     const refreshProvider = isZetflixDb || providerId === "zetflix";
     const providerName = isZetflixDb ? "ZetflixDB" : "Zetflix";

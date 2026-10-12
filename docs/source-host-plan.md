@@ -248,3 +248,22 @@ READY `dpl_3PmPdQ76UKFnwVDA97g9tYVvSmm9` содержит nonce. У fresh Zetfli
 Проверены 31/31 серверных тестов, syntax check адаптера, Lampac client self-check и diff whitespace. UI и его зависимости не менялись.
 
 Исследованы webOS RezkaTV 1.1.40 (скачан публичный IPK, SHA256 совпал с предоставленным manifest, код не исполнялся) и MIT-клиент [ndenissov/HDRezka](https://github.com/ndenissov/HDRezka) / [LICENSE](https://github.com/ndenissov/HDRezka/blob/main/LICENSE). У standalone webOS клиента есть собственные парсеры, translator_id и recovery выбранного потока; прямое копирование не выполнялось. Для сайта использован существующий Lampac вместо добавления Python runtime/зависимостей. GPL-3.0 hdrezka-lampa также найден, но его работоспособность не подтверждена; HdRezkaApi использован только как список поведения, лицензия копирования не установлена.
+
+
+Первый live-контроль после включения: «Бойцовский клуб» 50 строк Rezka / 25 уникальных названий, BB S1E1 18 / 9. Первые кандидаты Rezka пришли за 16,7 с (холодный поиск с ожиданием engine 12,7 с) и 4,5 с соответственно; полный поиск 60,7 / 50,3 с. Первые resolve обоих получили MEDIA_UNAVAILABLE; production logs показали внутренний engine HTTP 503 при media probe, а не ошибку Worker/CDN. Воспроизведение этим контролем не подтверждено.
+
+После этого добавлена инициализация выбранной страницы /lite/rezka?href=... в текущем engine перед movie AJAX внутри одного Node resolve. По pinned Service.cs Referer хранится в static basereferer и устанавливается только Embed; discover и resolve могут оказаться в разных контейнерах. Для serial ссылки меняется только pathname на /lite/rezka, известный href обходит поиск; приватные параметры t/s/e исходного movie call сохранены. Это проверяемая гипотеза исправления HTTP 503, не подтверждение успеха upstream. Тест сбрасывает состояние session перед resolve и требует preflight; чужой origin отвергается.
+
+Удалены точные дубли native Rezka cards (method, URL, название) и повторные одинаковые voice links; киноозвучки получают стабильный id из native t, вместо позиции карточки. Иные URL/названия сохраняются. Прочие источники не затронуты. Повторные 31/31 тестов и review проходят.
+
+
+Session preflight deployment READY dpl_6FoYCCA6MhrcpuLBkDnygCmHhFZ7. Повтор ровно двух ранее выданных Dub candidate IDs без нового поиска по-прежнему получил MEDIA_UNAVAILABLE: фильм за 15,35 с, серия за 1,46 с. Внутренние media probe logs всё ещё содержат engine HTTP 503. Гипотеза о сессии не подтверждена как достаточное решение; decoded frames отсутствуют. Финальный deployment с дедупликацией READY dpl_8vMJuSNxAfhaLfGJTsr2A3kBhV8U. Бесплатная работоспособность Rezka пока не доказана; источник не считать успешно проверенным по одному лишь списку озвучек.
+
+
+Финальный контроль API fallback: deployment READY `dpl_58Ar4hyvp5L1KGBSaBqxAim3wvph`, native patch скомпилирован production prewarm. Проверяются четыре фиксированных пути на том же host с прежними параметрами, cookies и headers; явное требование авторизации останавливает fallback. Patch проверяет единственный anchor pinned 1.81.0 и идемпотентен, при изменении native source сборка прекращается. 32/32 серверных тестов проходят.
+
+Live replay исходных Dub IDs вновь не запустился: Fight Club 502 MEDIA_UNAVAILABLE за 15,92 с; BB S1E1 502 за 2,03 с. Основной AJAX вернул JSON без потока; остальные пути не вернули подходящий JSON. Логи содержат только endpoint и boolean response/stream/denied, без параметров и токенов. Явное требование авторизации не зафиксировано, причина upstream не установлена. Decode/seek не проверялись, поскольку resolve неуспешен.
+
+Поэтому Rezka в **Vercel production config отключена**: новый неработающий источник не должен засорять список и замедлять поиск. Локальный experimental config и regression tests сохранены для дальнейшей проверки; повторное включение требует настоящего decoded frame. Общий обход альтернативных сезонов остаётся исправленным для работающих провайдеров. Дополнительные платные сервисы, зависимости и аккаунты не подключались.
+
+Финальная конфигурация без Rezka в production: Vercel READY `dpl_J9TUNAWyVsBHYNHEMQTNjsJRB9dY`.

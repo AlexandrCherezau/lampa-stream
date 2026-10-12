@@ -681,12 +681,13 @@ async function testEpisodeSeasonAndBlockedEntries() {
 async function testRezkaConfigAndTranslatorSeasonNavigation() {
   for (const file of ["init.conf", "vercel.init.conf"]) {
     const config = JSON.parse(await readFile(new URL(`../../infrastructure/lampac/config/${file}`, import.meta.url), "utf8"));
-    assert.equal(config.Rezka?.enable, true, "Rezka must be explicitly enabled instead of the native disabled default");
+    assert.equal(config.Rezka?.enable, file === "init.conf", "Rezka remains experimental locally until production media playback is verified");
     assert.equal(config.Rezka.premium, false, "only free translators are offered");
     assert.equal(config.Rezka.scheme, "https");
     assert(!config.Rezka.login && !config.Rezka.passwd && !config.Rezka.cookie);
   }
   const calls = [];
+  let primed = false;
   const provider = createLampacProvider({ baseUrl, fetchJson: async (raw) => {
     const url = new URL(raw); calls.push(url);
     if (url.pathname === "/lite/events") return [{ name: "Rezka", balanser: "rezka", url: `${baseUrl}lite/rezka` }];
@@ -698,14 +699,19 @@ async function testRezkaConfigAndTranslatorSeasonNavigation() {
       ]);
     }
     assert.equal(url.searchParams.get("href"), "right");
+    if (url.pathname === "/lite/rezka") primed = true;
     const t = url.searchParams.get("t") || "1";
-    if (url.pathname === "/lite/rezka/movie") return {
+    if (url.pathname === "/lite/rezka/movie") {
+      assert(primed, "a new resolve instance needs the selected document/session before AJAX");
+      return {
       method: "play", url: `https://cdn.example/rezka/${t}.m3u8`,
       quality: { "720p": `https://cdn.example/rezka/${t}.m3u8` },
-    };
+      };
+    }
     if (url.searchParams.get("serial") === "0") return response("movie", [
       { method: "call", translate: "Дубляж", url: `${baseUrl}lite/rezka/movie?href=right&id=100&t=1` },
       { method: "call", translate: "Кубик в Кубе", url: `${baseUrl}lite/rezka/movie?href=right&id=100&t=2` },
+      { method: "call", translate: "Дубляж", url: `${baseUrl}lite/rezka/movie?href=right&id=100&t=1` },
     ]);
     if (!url.searchParams.has("s")) return response("season", [
       { name: "1 сезон", s: 1, url: `${baseUrl}lite/rezka/serial?href=right&id=100&t=${t}&s=1` },
@@ -717,12 +723,17 @@ async function testRezkaConfigAndTranslatorSeasonNavigation() {
     ], { voice: [
       { name: "Дубляж", active: t === "1", url: `${baseUrl}lite/rezka/serial?href=right&id=100&t=1` },
       { name: "Кубик в Кубе", active: t === "2", url: `${baseUrl}lite/rezka/serial?href=right&id=100&t=2` },
+      { name: "Дубляж", active: t === "1", url: `${baseUrl}lite/rezka/serial?href=right&id=100&t=1` },
     ] });
   } });
   const movies = await collect(provider.discover(movieTitle));
   assert.deepEqual(movies.map(v => v.voiceName), ["Дубляж", "Кубик в Кубе"]);
+  assert.deepEqual(movies.map(v => v.voiceId), ["1", "2"], "native translator ids stay stable when duplicate cards appear");
+  primed = false;
+  assert.equal((await provider.resolve(movies[1])).qualities[0].url, "https://cdn.example/rezka/2.m3u8");
   const voices = await collect(provider.discover({ ...movieTitle, type: "tv", season: 3, episode: 14 }));
   assert.deepEqual(voices.map(v => v.voiceName), ["Дубляж", "Кубик в Кубе"], "alternate translator season menus must retain the requested season and episode");
+  primed = false;
   const resolved = await provider.resolve(voices[1]);
   assert.equal(resolved.qualities[0].url, "https://cdn.example/rezka/2.m3u8");
   const last = calls.at(-1);
@@ -730,6 +741,7 @@ async function testRezkaConfigAndTranslatorSeasonNavigation() {
   assert.equal(last.searchParams.get("s"), "3");
   assert.equal(last.searchParams.get("e"), "14");
   assert.equal(JSON.stringify(voices[1]).includes("href=right"), false);
+  await assert.rejects(provider.resolve({ ...movies[0], ref: { ...movies[0].ref, providerUrl: "https://outside.example/lite/rezka?href=right" } }), /Invalid Rezka document reference/);
 }
 
 await testRezkaConfigAndTranslatorSeasonNavigation();
