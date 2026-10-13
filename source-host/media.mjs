@@ -15,6 +15,9 @@ const HEADER_ALLOWLIST = new Set(["referer", "origin", "user-agent", "accept", "
 const ORIGIN_BOUND_HEADERS = new Set(["cookie", "authorizations", "accepts-controls"]);
 const RESPONSE_HEADERS = ["accept-ranges", "cache-control", "content-length", "content-range", "content-type", "etag", "last-modified", "content-encoding"];
 const gzipAsync = promisify(gzip);
+const SAFE_MEDIA_ERROR_CODES = new Set(["UPSTREAM_HTTP_ERROR", "UPSTREAM_TIMEOUT", "DNS_ERROR", "UPSTREAM_CONNECT_ERROR",
+  "UPSTREAM_READ_ERROR", "UPSTREAM_TRUNCATED", "SSRF_BLOCKED", "BAD_URL", "TOO_MANY_REDIRECTS", "UNSAFE_REDIRECT",
+  "ABORT_ERR", "ENOTFOUND", "EAI_AGAIN", "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EPIPE"]);
 
 function mediaError(message, status = 502) {
   return Object.assign(new Error(message), { status });
@@ -127,9 +130,10 @@ function rangeHeader(range) {
   return range.suffix ? `bytes=-${range.suffix}` : `bytes=${range.start}-${range.end}`;
 }
 
-function responseError(res, status, message) {
+function responseError(res, status, message, headers = {}) {
   if (res.headersSent) { res.destroy(); return; }
-  res.writeHead(status, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", ...(status === 416 ? { "content-range": "bytes */*" } : {}) });
+  res.writeHead(status, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", ...headers,
+    ...(status === 416 ? { "content-range": "bytes */*" } : {}) });
   res.end(message);
 }
 
@@ -547,7 +551,16 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
     } catch (error) {
       if (abort.signal.aborted) return;
       console.error("Media upstream failed", error.code || error.name, error.status || 502, error.targetHost || new URL(resource.url).host, error.dnsCode || "");
-      responseError(res, error.status === 504 ? 504 : 502, error.status === 416 ? "Invalid range" : "Media source unavailable");
+      const diagnosticHeaders = {};
+      if (!res.headersSent) {
+        const code = typeof error.code === "string" && SAFE_MEDIA_ERROR_CODES.has(error.code) ? error.code
+          : SAFE_MEDIA_ERROR_CODES.has(error.name) ? error.name : "MEDIA_UNAVAILABLE";
+        diagnosticHeaders["x-source-media-code"] = code;
+        if (error.code === "UPSTREAM_HTTP_ERROR" && Number.isInteger(error.status) && error.status >= 400 && error.status <= 599) {
+          diagnosticHeaders["x-source-upstream-status"] = String(error.status);
+        }
+      }
+      responseError(res, error.status === 504 ? 504 : 502, error.status === 416 ? "Invalid range" : "Media source unavailable", diagnosticHeaders);
     } finally {
       req.removeListener("aborted", onClose);
       res.removeListener("close", onClose);

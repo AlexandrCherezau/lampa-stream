@@ -109,6 +109,8 @@ async function startServer() {
       res.writeHead(200, { "content-type": "application/octet-stream" }).end('{"error":"provider login required"}');
     } else if (url.pathname === "/proxy/denied") {
       res.writeHead(403).end("forbidden");
+    } else if (url.pathname === "/proxy/not-found") {
+      res.writeHead(404).end("missing");
     } else if (url.pathname === "/proxy/empty") {
       res.writeHead(200, { "content-type": "video/mp2t" }).end();
     } else if (url.pathname === "/proxy/slow-media") {
@@ -818,10 +820,14 @@ test("media rejects fake video errors, empty bodies, tampered and expired tokens
   const transport = createTransport({ engineUrl: `${fixture.base}/` });
   const media = createMedia({ transport, secret: SECRET, publicOrigin: fixture.base });
   fixture.attachMedia(media.handle);
-  for (const path of ["html", "json.bin", "empty", "denied"]) {
+  for (const path of ["html", "json.bin", "empty", "denied", "not-found"]) {
     const target = media.url({ url: `${fixture.base}/proxy/${path}` });
-    const { response } = await httpGet(target);
+    const { response, body } = await httpGet(target);
     assert.equal(response.status, 502);
+    assert.equal(body.toString(), "Media source unavailable");
+    const upstreamStatus = path === "denied" ? 403 : path === "not-found" ? 404 : null;
+    assert.equal(response.headers.get("x-source-media-code"), upstreamStatus ? "UPSTREAM_HTTP_ERROR" : "MEDIA_UNAVAILABLE");
+    assert.equal(response.headers.get("x-source-upstream-status"), upstreamStatus == null ? null : String(upstreamStatus));
   }
   const tampered = new URL(media.url({ url: `${fixture.base}/proxy/range.bin` }));
   const token = tampered.searchParams.get("token");
@@ -832,7 +838,9 @@ test("media rejects fake video errors, empty bodies, tampered and expired tokens
   tampered.searchParams.set("token", `${token}.extra`);
   assert.equal((await httpGet(tampered.toString())).response.status, 404, "tokens with extra components are rejected");
   const expired = sealedToken({ url: `${fixture.base}/proxy/range.bin`, headers: {}, exp: Date.now() - 1 });
-  assert.equal((await httpGet(`${fixture.base}/v1/media?token=${expired}`)).response.status, 404);
+  const expiredResponse = await httpGet(`${fixture.base}/v1/media?token=${expired}`);
+  assert.equal(expiredResponse.response.status, 404);
+  assert.equal(expiredResponse.response.headers.get("x-source-media-code"), null, "token validation errors do not expose diagnostics");
 
   const slowToken = new URL(media.url({ url: `${fixture.base}/proxy/slow-media` })).searchParams.get("token");
   const client = http.get(`${fixture.base}/v1/media?token=${encodeURIComponent(slowToken)}`);
@@ -840,6 +848,49 @@ test("media rejects fake video errors, empty bodies, tampered and expired tokens
   client.destroy();
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(fixture.slowClosed(), true);
+});
+
+test("media diagnostic headers use fixed codes and never alter an already-started response", async (t) => {
+  const fixture = await startServer();
+  t.after(() => closeServer(fixture.server));
+  const unexpected = Object.assign(new Error("private message that must not be returned"), { code: "PRIVATE_SENTINEL", status: 404 });
+  const failingTransport = { async request() { throw unexpected; } };
+  const media = createMedia({ transport: failingTransport, secret: SECRET, publicOrigin: fixture.base });
+  fixture.attachMedia(media.handle);
+  const failed = await httpGet(media.url({ url: "https://cdn.example.test/private-path" }));
+  assert.equal(failed.response.status, 502);
+  assert.equal(failed.response.headers.get("x-source-media-code"), "MEDIA_UNAVAILABLE");
+  assert.equal(failed.response.headers.get("x-source-upstream-status"), null, "an arbitrary error status is not reported as an upstream HTTP status");
+  assert.equal(failed.body.toString(), "Media source unavailable");
+  assert(!failed.body.toString().includes("private message"));
+  assert(![...failed.response.headers].some(([, value]) => value.includes("PRIVATE_SENTINEL")));
+
+  const lateTransport = { async request(raw) {
+    const response = Readable.from((async function* () {
+      yield Buffer.from("first media bytes");
+      throw Object.assign(new Error("late stream failure"), { code: "UPSTREAM_READ_ERROR" });
+    })());
+    response.statusCode = 200;
+    response.headers = { "content-type": "video/mp4" };
+    const url = new URL(raw);
+    return { response, url, headers: {}, headerOrigin: url.origin };
+  } };
+  const lateMedia = createMedia({ transport: lateTransport, secret: SECRET, publicOrigin: fixture.base });
+  fixture.attachMedia(lateMedia.handle);
+  const lateUrl = lateMedia.url({ url: "https://cdn.example.test/late.mp4" });
+  const outcome = await new Promise((resolve, reject) => {
+    http.get(lateUrl, (response) => {
+      const headers = response.headers;
+      response.once("aborted", () => resolve({ status: response.statusCode, headers, aborted: true }));
+      response.once("end", () => resolve({ status: response.statusCode, headers, aborted: false }));
+      response.once("error", () => resolve({ status: response.statusCode, headers, aborted: true }));
+      response.resume();
+    }).once("error", reject);
+  });
+  assert.equal(outcome.status, 200);
+  assert.equal(outcome.aborted, true, "a late upstream error closes the started stream");
+  assert.equal(outcome.headers["x-source-media-code"], undefined, "diagnostic headers are not added after response headers were sent");
+  assert.equal(outcome.headers["x-source-upstream-status"], undefined);
 });
 
 test("validated VOD playlists are reused briefly without sharing grant, origin or public-only privileges", async (t) => {
