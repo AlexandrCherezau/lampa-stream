@@ -132,6 +132,8 @@ test("CUB rows keep feed pages separate, retry failures, dedupe typed IDs and na
   await page.goto("/");
   const now = page.getByRole("region", { name: "CUB: Сейчас смотрят", exact: true });
   const latest = page.getByRole("region", { name: "CUB: Новинки", exact: true });
+  await expect(now.locator(".section-title")).toHaveText("Сейчас смотрят");
+  await expect(latest.locator(".section-title")).toHaveText("Новинки");
   await expect(now.locator(".card")).toHaveCount(2);
   await expect(page.getByRole("region", { name: /^CUB:/ })).toHaveCount(4);
   await expect(latest.getByRole("alert")).toBeVisible();

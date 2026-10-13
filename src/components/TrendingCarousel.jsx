@@ -221,7 +221,6 @@ export default function TrendingCarousel({
   items,
   onSelect,
   title,
-  titleHighlight,
   ratingsMap = {},
 }) {
   const count = items.length;
@@ -437,14 +436,7 @@ export default function TrendingCarousel({
   return (
     <div className="carousel-section" ref={sectionRef}>
       <div className="section-title">
-        {titleHighlight ? (
-          <>
-            {title}&nbsp;
-            <span style={{ color: "var(--red)" }}>{titleHighlight}</span>
-          </>
-        ) : (
-          title
-        )}
+        {title}
       </div>
 
       <div

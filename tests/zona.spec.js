@@ -31,7 +31,8 @@ test("Zona uses exact IMDb mapping and retains its KP provenance through saving,
   });
   const queries = [];
   await page.route("**/api/source-host?op=discover", (route) => {
-    queries.push(route.request().postDataJSON());
+    const payload = route.request().postDataJSON();
+    if (!payload.prepareOnly) queries.push(payload);
     return route.fulfill({ contentType: "text/event-stream", body: 'event: done\ndata: {"candidates":0,"complete":true}\n\n' });
   });
   await page.goto("/");
@@ -72,6 +73,7 @@ test("Zona pagination retries the same failed page and deduplicates TMDB cards",
   });
   await page.goto("/");
   const row = page.getByRole("region", { name: "Zona: Популярное", exact: true });
+  await expect(row.locator(".section-title")).toHaveText("Популярное");
   await expect(row.locator(".card")).toHaveCount(1);
   await row.getByRole("button", { name: "Показать ещё", exact: true }).click();
   await expect(row.locator(".card")).toHaveCount(1);

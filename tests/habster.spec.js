@@ -32,7 +32,8 @@ for (const type of ["movie", "tv"]) for (const catalogSource of [null, "vi3000",
     });
     const queries = [];
     await page.route("**/api/source-host?op=discover", (route) => {
-      queries.push(route.request().postDataJSON());
+      const payload = route.request().postDataJSON();
+      if (!payload.prepareOnly) queries.push(payload);
       return route.fulfill({ contentType: "text/event-stream", body: 'event: done\ndata: {"candidates":0,"complete":true}\n\n' });
     });
     await page.goto(`/${type}/${item.id}${catalogSource ? `?catalogSource=${catalogSource}` : ""}`);
@@ -81,11 +82,14 @@ for (const type of ["movie", "tv"]) test(`Habster exact IMDb mapping keeps ${typ
   });
   const queries = [];
   await page.route("**/api/source-host?op=discover", (route) => {
-    queries.push(route.request().postDataJSON());
+    const payload = route.request().postDataJSON();
+    if (!payload.prepareOnly) queries.push(payload);
     return route.fulfill({ contentType: "text/event-stream", body: 'event: done\ndata: {"candidates":0,"complete":true}\n\n' });
   });
   await page.goto("/");
-  await page.getByRole("region", { name: "Habster: Популярное", exact: true }).locator(".card").click();
+  const row = page.getByRole("region", { name: "Habster: Популярное", exact: true });
+  await expect(row.locator(".section-title")).toHaveText("Популярное");
+  await row.locator(".card").click();
   expect(finds).toEqual(["imdb_id"]);
   await expect(page).toHaveURL(new RegExp(`/${type}/${item.id}\\?catalogSource=habster$`));
   await page.getByRole("button", { name: "В избранное", exact: true }).click();

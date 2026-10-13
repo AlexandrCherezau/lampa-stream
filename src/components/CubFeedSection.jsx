@@ -69,7 +69,7 @@ export default function CubFeedSection({ feed, title, offline, viewMode, onSelec
     <section className="section" aria-label={`${sourceLabel}: ${title}`}>
       {viewMode === "list" || visibleItems.length === 0 ? (
         <>
-          <div className="section-title">{title} <span style={{ color: "var(--red)" }}>{sourceLabel}</span></div>
+          <div className="section-title">{title}</div>
           <ProgressiveGrid items={visibleItems}>
             {(visible) => visible.map((item) => {
               const rating = enrichedRatings[`${item.media_type}_${item.id}`];
@@ -80,7 +80,7 @@ export default function CubFeedSection({ feed, title, offline, viewMode, onSelec
           </ProgressiveGrid>
         </>
       ) : (
-        <TrendingCarousel items={visibleItems} title={title} titleHighlight={sourceLabel} onSelect={onSelect} ratingsMap={enrichedRatings} />
+        <TrendingCarousel items={visibleItems} title={title} onSelect={onSelect} ratingsMap={enrichedRatings} />
       )}
       <div style={{ marginTop: 16 }} aria-live="polite">
         {error && <p role="alert" style={{ color: "var(--text2)" }}>Не удалось загрузить подборку. Уже загруженные фильмы доступны.</p>}
