@@ -710,6 +710,28 @@ test("only sealed Zetflix movie candidates use Node media routing", async (t) =>
   }
 });
 
+test("VK progressive files retain Node byte-range routing without changing HLS routing", async (t) => {
+  for (const kind of ["file", "hls"]) {
+    const signed = [];
+    const adapter = {
+      async *discover() { yield candidate({ providerId: "vkmovie" }); },
+      async resolve() { return { qualities: [{ label: "2160p", height: 2160, url: "https://cdn.test/video" }] }; },
+    };
+    const media = makeMedia({ kinds: { "2160p": kind } });
+    media.url = (resource) => { signed.push(resource); return "https://media.test/v1/media?token=fixture"; };
+    const app = await start(adapter, media);
+    try {
+      const discovery = await post(app.base, "/v1/discover", { type: "movie", title: "Movie" });
+      const stream = sseReader(discovery.body);
+      const { data: { id } } = await stream.until("candidate");
+      await stream.drain();
+      const response = await post(app.base, "/v1/resolve", { id, nodeOnly: false, providerId: "other" });
+      assert.equal(response.status, 200);
+      assert.equal(signed[0].nodeOnly, kind === "file", "routing uses the sealed provider and verified media kind");
+    } finally { await app.close(); }
+  }
+});
+
 test("canonical resolution picks preserve native labels and match only explicit adapter heights", async (t) => {
   let includeExact = true;
   const adapter = {

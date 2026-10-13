@@ -304,6 +304,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
           // shortcut: vi3000 Filmix files return Worker 429, restore relay routing after verified playback.
           const nodeOnly = ["zetflixdb", "cdnvideohub"].includes(providerId)
             || (providerId === "zetflix" && candidate.season == null && candidate.episode == null)
+            || (providerId === "vkmovie" && probe.kind === "file")
             || (candidate.catalogSource === "vi3000" && providerId === "filmix" && probe.kind === "file")
             || (candidate.catalogSource === "habster" && candidate.providerId === "habster:collaps");
           const variants = qualities.map((quality) => ({ label: quality.label, height: quality.height,
