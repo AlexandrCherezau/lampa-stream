@@ -88,6 +88,7 @@ const { default: introdb } = await import("../api/introdb.js");
 const { default: sourceHost } = await import("../api/source-host.js");
 const { default: collaps } = await import("../api/collaps.js");
 const { default: cub } = await import("../api/cub.js");
+const { default: habster } = await import("../api/habster.js");
 // TMDB: use the canned mock so the local dev server can drive the full flow
 // without a real token. Set MOCK_TMDB=1 to use the offline /tmp/tmdb-mock.mjs stub.
 const tmdbModule = await (process.env.MOCK_TMDB === "1" ? import("/tmp/tmdb-mock.mjs") : import("../api/tmdb.js"));
@@ -135,6 +136,7 @@ app.all("/api/introdb", wrap(introdb));
 app.all("/api/source-host", wrap(sourceHost));
 app.all("/api/collaps", wrap(collaps));
 app.all("/api/cub", wrap(cub));
+app.all("/api/habster", wrap(habster));
 // /api/tmdb, /api/tmdb/3/…, /api/tmdb/img/… — handler re-derives the sub-path.
 app.all(/^\/api\/tmdb(?:\/.*)?$/, wrap(tmdb));
 // /api/room and /api/room?code=…&op=…

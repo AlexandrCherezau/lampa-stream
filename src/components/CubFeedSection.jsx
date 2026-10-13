@@ -7,12 +7,13 @@ import ProgressiveGrid from "../utils/useProgressiveList.jsx";
 import MediaCard from "./MediaCard";
 import TrendingCarousel from "./TrendingCarousel";
 
-export default function CubFeedSection({ feed, title, offline, viewMode, onSelect, watched, onMarkWatched, onMarkUnwatched }) {
+export default function CubFeedSection({ feed, title, offline, viewMode, onSelect, watched, onMarkWatched, onMarkUnwatched, loadFeed = cubFeed, sourceLabel = "CUB" }) {
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [unmapped, setUnmapped] = useState(0);
   const requestRef = useRef(null);
   const nextPageRef = useRef(1);
   const { ratingsMap, ageLimitSetting } = useRatings(items);
@@ -32,7 +33,7 @@ export default function CubFeedSection({ feed, title, offline, viewMode, onSelec
     setLoading(true);
     setError(false);
     try {
-      const data = await cubFeed(feed, requestedPage, { signal: controller.signal });
+      const data = await loadFeed(feed, requestedPage, { signal: controller.signal });
       if (controller.signal.aborted) return;
       setItems((previous) => {
         const seen = new Set();
@@ -45,6 +46,7 @@ export default function CubFeedSection({ feed, title, offline, viewMode, onSelec
       });
       setPage(data.page);
       setTotalPages(data.total_pages);
+      setUnmapped(data.unmapped || 0);
     } catch {
       if (!controller.signal.aborted) setError(true);
     } finally {
@@ -53,7 +55,7 @@ export default function CubFeedSection({ feed, title, offline, viewMode, onSelec
         if (!controller.signal.aborted) setLoading(false);
       }
     }
-  }, [feed, offline]);
+  }, [feed, offline, loadFeed]);
 
   useEffect(() => {
     loadPage(1);
@@ -64,10 +66,10 @@ export default function CubFeedSection({ feed, title, offline, viewMode, onSelec
   }, [loadPage]);
 
   return (
-    <section className="section" aria-label={`CUB: ${title}`}>
+    <section className="section" aria-label={`${sourceLabel}: ${title}`}>
       {viewMode === "list" || visibleItems.length === 0 ? (
         <>
-          <div className="section-title">{title} <span style={{ color: "var(--red)" }}>CUB</span></div>
+          <div className="section-title">{title} <span style={{ color: "var(--red)" }}>{sourceLabel}</span></div>
           <ProgressiveGrid items={visibleItems}>
             {(visible) => visible.map((item) => {
               const rating = enrichedRatings[`${item.media_type}_${item.id}`];
@@ -78,11 +80,12 @@ export default function CubFeedSection({ feed, title, offline, viewMode, onSelec
           </ProgressiveGrid>
         </>
       ) : (
-        <TrendingCarousel items={visibleItems} title={title} titleHighlight="CUB" onSelect={onSelect} ratingsMap={enrichedRatings} />
+        <TrendingCarousel items={visibleItems} title={title} titleHighlight={sourceLabel} onSelect={onSelect} ratingsMap={enrichedRatings} />
       )}
       <div style={{ marginTop: 16 }} aria-live="polite">
         {error && <p role="alert" style={{ color: "var(--text2)" }}>Не удалось загрузить подборку. Уже загруженные фильмы доступны.</p>}
         {!loading && !error && page > 0 && items.length === 0 && <p style={{ color: "var(--text2)" }}>В подборке пока нет фильмов.</p>}
+        {!loading && !error && unmapped > 0 && <p style={{ color: "var(--text2)" }}>Некоторые фильмы пока недоступны в каталоге: {unmapped}.</p>}
         {(loading || error || page < totalPages) && (
           <button className="btn btn-secondary" disabled={loading || offline}
             onClick={() => loadPage(error ? nextPageRef.current : page + 1)}>

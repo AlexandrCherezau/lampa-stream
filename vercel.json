@@ -7,6 +7,7 @@
   "rewrites": [
     { "source": "/api/source-host", "destination": "/api/source-host" },
     { "source": "/api/cub", "destination": "/api/cub" },
+    { "source": "/api/habster", "destination": "/api/habster" },
     { "source": "/api/introdb", "destination": "/api/introdb" },
     { "source": "/api/tmdb", "destination": "/api/tmdb" },
     { "source": "/api/tmdb/(.*)", "destination": "/api/tmdb" },

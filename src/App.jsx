@@ -39,12 +39,12 @@ const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
 
 const ROUTE_PAGES = new Set(["home", "discover", "history", "settings", "together", "downloads", "movie", "tv"]);
 function catalogMetadata(item) {
-  if (item?.catalogSource !== "vi3000") return {};
+  if (!["vi3000", "habster"].includes(item?.catalogSource)) return {};
   const kinopoiskId = [item.kinopoisk_id, item.kinopoiskId]
     .filter((value) => typeof value === "number" || typeof value === "string")
     .map(Number).find((value) => Number.isSafeInteger(value) && value > 0);
   const imdbId = item.imdb_id || item.external_ids?.imdb_id;
-  return { catalogSource: "vi3000", ...(kinopoiskId ? { kinopoisk_id: kinopoiskId } : {}),
+  return { catalogSource: item.catalogSource, ...(kinopoiskId ? { kinopoisk_id: kinopoiskId } : {}),
     ...(typeof imdbId === "string" && /^tt\d{5,12}$/.test(imdbId) ? { imdb_id: imdbId } : {}) };
 }
 function readRoute(url = new URL(window.location.href)) {
@@ -61,8 +61,9 @@ function readRoute(url = new URL(window.location.href)) {
     const season = seasonValue !== null && /^(0|[1-9]\d*)$/.test(seasonValue) ? Number(seasonValue) : undefined;
     const episode = episodeValue && /^[1-9]\d*$/.test(episodeValue) ? Number(episodeValue) : undefined;
     const remembered = window.history.state?.appRoute;
-    const catalog = url.searchParams.get("catalogSource") === "vi3000"
-      ? { ...catalogMetadata(remembered?.page === page && remembered.selected?.id === id ? remembered.selected : null), catalogSource: "vi3000" }
+    const source = url.searchParams.get("catalogSource");
+    const catalog = ["vi3000", "habster"].includes(source)
+      ? { ...catalogMetadata(remembered?.page === page && remembered.selected?.id === id && remembered.selected?.catalogSource === source ? remembered.selected : null), catalogSource: source }
       : {};
     return { page, selected: { id, media_type: page, ...catalog, ...(Number.isSafeInteger(season) ? { season } : {}), ...(Number.isSafeInteger(episode) ? { episode } : {}) } };
   }
@@ -76,7 +77,7 @@ function routeUrl(page, selected) {
     const query = new URLSearchParams();
     if (page === "tv" && selected.season != null && Number.isSafeInteger(Number(selected.season)) && Number(selected.season) >= 0) query.set("season", selected.season);
     if (page === "tv" && Number(selected.episode) > 0) query.set("episode", selected.episode);
-    if (selected.catalogSource === "vi3000") query.set("catalogSource", "vi3000");
+    if (["vi3000", "habster"].includes(selected.catalogSource)) query.set("catalogSource", selected.catalogSource);
     return url + (query.size ? `?${query}` : "");
   }
   const slug = page === "history" ? "library" : page === "home" ? "" : page;

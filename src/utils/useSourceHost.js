@@ -19,7 +19,7 @@ export default function useSourceHost({ enabled, apiKey, item, details, type, se
   const originalTitle = details?.original_title || details?.original_name || item?.original_title || item?.original_name || title;
   const language = details?.original_language || item?.original_language;
   const anime = isAnimeContent(item, details);
-  const catalogSource = item?.catalogSource === "vi3000" ? "vi3000" : null;
+  const catalogSource = ["vi3000", "habster"].includes(item?.catalogSource) ? item.catalogSource : null;
   const runtimeMinutes = type === "movie" ? Number(details?.runtime ?? item?.runtime) : NaN;
   const validRuntimeMinutes = Number.isSafeInteger(runtimeMinutes) && runtimeMinutes >= 1 && runtimeMinutes <= 1440
     ? runtimeMinutes

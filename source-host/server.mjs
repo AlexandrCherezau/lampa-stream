@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { createLampacProvider } from "./providers/lampac.mjs";
 import { createVi3000Provider } from "./providers/vi3000.mjs";
+import { createHabsterProvider } from "./providers/habster.mjs";
 import { createTransport } from "./transport.mjs";
 import { createMedia } from "./media.mjs";
 
@@ -23,7 +24,7 @@ export function validateTitle(value) {
   if (!["movie", "tv"].includes(value.type)) throw failure("Неверный тип: movie или tv");
   title.type = value.type;
   if (value.catalogSource !== undefined) {
-    if (value.catalogSource !== "vi3000") throw failure("Неверный источник каталога");
+    if (!["vi3000", "habster"].includes(value.catalogSource)) throw failure("Неверный источник каталога");
     title.catalogSource = value.catalogSource;
   }
   for (const key of ["title", "originalTitle", "language"]) {
@@ -96,7 +97,7 @@ const publicCandidate = (candidate) => ({
   catalogSource: candidate.catalogSource,
 });
 
-export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "", secret, apiKey = "", publicOrigin = "", mediaRelayUrl = "", adapter, viAdapter, media, transport } = {}) {
+export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "", secret, apiKey = "", publicOrigin = "", mediaRelayUrl = "", adapter, viAdapter, habsterAdapter, media, transport } = {}) {
   if (!engineUrl && !adapter) throw new Error("SOURCE_ENGINE_URL is required");
   if (Buffer.byteLength(secret || "") < 32) throw new Error("SOURCE_HOST_SECRET must contain at least 32 bytes");
   if (mediaRelayUrl && (!apiKey || new URL(mediaRelayUrl).protocol !== "https:" || new URL(mediaRelayUrl).origin === publicOrigin)) throw new Error("Media relay needs a separate HTTPS origin and private API key");
@@ -106,6 +107,8 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
   media ||= createMedia({ transport, secret, publicOrigin });
   adapter ||= createLampacProvider({ baseUrl: engineUrl, fetchJson: transport.json, providerOrder: PROVIDER_ORDER });
   viAdapter ||= createVi3000Provider({ transport: createTransport() });
+  habsterAdapter ||= createHabsterProvider({ transport: createTransport() });
+  const sourceAdapter = (catalogSource) => catalogSource === "habster" ? habsterAdapter : catalogSource === "vi3000" ? viAdapter : adapter;
   const providers = new Map();
   let discoveries = 0;
   let resolutions = 0;
@@ -200,7 +203,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
       const body = await bodyJson(req);
       if (path.pathname === "/v1/discover") {
         const title = validateTitle(body);
-        if (title.catalogSource !== "vi3000") await waitForEngine(controller.signal);
+        if (!["vi3000", "habster"].includes(title.catalogSource)) await waitForEngine(controller.signal);
         if (discoveries >= 4) throw failure("Сервер занят, повторите запрос", 429, "BUSY");
         discoveries++;
         deadline = setTimeout(() => controller.abort(failure("Истекло время поиска", 504, "TIMEOUT")), DISCOVERY_MS);
@@ -211,7 +214,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         let count = 0;
         try {
           event("start", { type: title.type, season: title.season, episode: title.episode });
-          const selectedAdapter = title.catalogSource === "vi3000" ? viAdapter : adapter;
+          const selectedAdapter = sourceAdapter(title.catalogSource);
           for await (const candidate of selectedAdapter.discover(title, { signal: controller.signal })) {
             if (controller.signal.aborted) break;
             if (candidate.error) {
@@ -236,12 +239,12 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         if (typeof body.id !== "string" || body.id.length > 24 * 1024) throw failure("Неверный источник");
         if (body.quality != null && (typeof body.quality !== "string" || body.quality.length > 40)) throw failure("Неверное качество");
         const candidate = readCandidate(body.id);
-        if (candidate.catalogSource !== "vi3000") await waitForEngine(controller.signal);
+        if (!["vi3000", "habster"].includes(candidate.catalogSource)) await waitForEngine(controller.signal);
         if (resolutions >= 8) throw failure("Сервер занят, повторите запрос", 429, "BUSY");
         resolutions++;
         deadline = setTimeout(() => controller.abort(failure("Истекло время проверки", 504, "TIMEOUT")), RESOLVE_MS);
         try {
-          const selectedAdapter = candidate.catalogSource === "vi3000" ? viAdapter : adapter;
+          const selectedAdapter = sourceAdapter(candidate.catalogSource);
           const resolved = await selectedAdapter.resolve(candidate, { signal: controller.signal });
           const qualities = resolved.qualities || [];
           if (!qualities.length) throw failure("Источник не предоставил видео", 502, "NO_MEDIA");
@@ -280,11 +283,13 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
           // shortcut: vi3000 Filmix files return Worker 429, restore relay routing after verified playback.
           const nodeOnly = ["zetflixdb", "cdnvideohub"].includes(providerId)
             || (providerId === "zetflix" && candidate.season == null && candidate.episode == null)
-            || (candidate.catalogSource === "vi3000" && providerId === "filmix" && probe.kind === "file");
+            || (candidate.catalogSource === "vi3000" && providerId === "filmix" && probe.kind === "file")
+            || (candidate.catalogSource === "habster" && candidate.providerId === "habster:collaps");
           const variants = qualities.map((quality) => ({ label: quality.label, height: quality.height,
             url: media.url({ ...(quality === selected && probe.url ? { ...quality, url: String(probe.url), headers: probe.headers || quality.headers, headerOrigin: probe.headerOrigin } : quality), nodeOnly }),
           }));
-          const subtitles = (resolved.subtitles || []).map((subtitle) => ({ label: subtitle.label, language: subtitle.language, url: media.url(subtitle) }));
+          const subtitles = (resolved.subtitles || []).map((subtitle) => ({ label: subtitle.label, language: subtitle.language,
+            url: media.url(candidate.catalogSource === "habster" ? { ...subtitle, nodeOnly } : subtitle) }));
           json(res, 200, {
             source: publicCandidate(candidate),
             qualities: variants,

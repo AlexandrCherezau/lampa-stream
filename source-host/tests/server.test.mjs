@@ -478,6 +478,55 @@ test("CUB vi titles and sealed sources use the remote plane after restart withou
   await assert.rejects(stat(`${ready}.start`), { code: "ENOENT" });
 });
 
+test("Habster sealed sources survive restart, skip the engine and keep direct public-only delivery", async (t) => {
+  assert.equal(validateTitle({ type: "movie", title: "Movie", catalogSource: "habster" }).catalogSource, "habster");
+  const directory = await mkdtemp(join(tmpdir(), "habster-plane-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const ready = join(directory, "ready");
+  const adapter = {
+    async *discover() { throw new Error("Wrong native adapter"); },
+    async resolve() { throw new Error("Wrong native adapter"); },
+  };
+  const habsterAdapter = {
+    async *discover(title) {
+      assert.equal(title.kinopoiskId, 328);
+      yield candidate({ providerId: "habster:collaps", catalogSource: "habster", season: null, episode: null,
+        ref: { type: "movie", kinopoiskId: 328 } });
+    },
+    async resolve(value) {
+      assert.deepEqual(value.ref, { type: "movie", kinopoiskId: 328 });
+      return { qualities: [{ label: "Auto", url: "https://cdn.test/movie.m3u8", publicOnly: true }],
+        subtitles: [{ label: "RU", url: "https://cdn.test/ru.vtt", publicOnly: true }] };
+    },
+  };
+  const signed = [];
+  const media = makeMedia();
+  media.probe = async (resource) => {
+    assert.equal(resource.publicOnly, true);
+    return { ok: true, kind: "hls", duration: 10_000, publicOnly: false, nodeOnly: false };
+  };
+  media.url = (resource) => { signed.push(resource); return "https://media.test/v1/media?token=sealed"; };
+  let id;
+  const first = await start(adapter, media, "", undefined, { habsterAdapter, engineReadyFile: ready });
+  try {
+    const discovery = await post(first.base, "/v1/discover", { type: "movie", title: "Movie", kinopoiskId: 328, catalogSource: "habster" });
+    const stream = sseReader(discovery.body);
+    const frame = await stream.until("candidate");
+    assert.equal(frame.data.catalogSource, "habster");
+    assert.equal(JSON.stringify(frame.data).includes("kinopoiskId"), false);
+    id = frame.data.id;
+    await stream.drain();
+  } finally { await first.close(); }
+  const second = await start(adapter, media, "", undefined, { habsterAdapter, engineReadyFile: ready });
+  t.after(() => second.close());
+  const resolved = await post(second.base, "/v1/resolve", { id, catalogSource: "vi3000", nodeOnly: false, publicOnly: false });
+  assert.equal(resolved.status, 200);
+  assert.equal((await resolved.json()).source.catalogSource, "habster");
+  assert.deepEqual(signed.map((resource) => resource.publicOnly), [true, true]);
+  assert.deepEqual(signed.map((resource) => resource.nodeOnly), [true, true]);
+  await assert.rejects(stat(`${ready}.start`), { code: "ENOENT" });
+});
+
 test("only sealed Zetflix movie candidates use Node media routing", async (t) => {
   for (const catalogSource of [undefined, "vi3000"]) for (const scenario of [
     { name: "movie", candidateFields: { season: undefined, episode: undefined }, discoverType: "movie", expected: true,
