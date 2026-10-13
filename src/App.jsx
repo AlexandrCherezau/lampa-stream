@@ -39,7 +39,7 @@ const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
 
 const ROUTE_PAGES = new Set(["home", "discover", "history", "settings", "together", "downloads", "movie", "tv"]);
 function catalogMetadata(item) {
-  if (!["vi3000", "habster"].includes(item?.catalogSource)) return {};
+  if (!["vi3000", "habster", "zona"].includes(item?.catalogSource)) return {};
   const kinopoiskId = [item.kinopoisk_id, item.kinopoiskId]
     .filter((value) => typeof value === "number" || typeof value === "string")
     .map(Number).find((value) => Number.isSafeInteger(value) && value > 0);
@@ -62,7 +62,7 @@ function readRoute(url = new URL(window.location.href)) {
     const episode = episodeValue && /^[1-9]\d*$/.test(episodeValue) ? Number(episodeValue) : undefined;
     const remembered = window.history.state?.appRoute;
     const source = url.searchParams.get("catalogSource");
-    const catalog = ["vi3000", "habster"].includes(source)
+    const catalog = ["vi3000", "habster", "zona"].includes(source)
       ? { ...catalogMetadata(remembered?.page === page && remembered.selected?.id === id && remembered.selected?.catalogSource === source ? remembered.selected : null), catalogSource: source }
       : {};
     return { page, selected: { id, media_type: page, ...catalog, ...(Number.isSafeInteger(season) ? { season } : {}), ...(Number.isSafeInteger(episode) ? { episode } : {}) } };
@@ -77,7 +77,7 @@ function routeUrl(page, selected) {
     const query = new URLSearchParams();
     if (page === "tv" && selected.season != null && Number.isSafeInteger(Number(selected.season)) && Number(selected.season) >= 0) query.set("season", selected.season);
     if (page === "tv" && Number(selected.episode) > 0) query.set("episode", selected.episode);
-    if (["vi3000", "habster"].includes(selected.catalogSource)) query.set("catalogSource", selected.catalogSource);
+    if (["vi3000", "habster", "zona"].includes(selected.catalogSource)) query.set("catalogSource", selected.catalogSource);
     return url + (query.size ? `?${query}` : "");
   }
   const slug = page === "history" ? "library" : page === "home" ? "" : page;

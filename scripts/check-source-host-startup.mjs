@@ -22,7 +22,7 @@ async function run(web, item, type = "movie", coordinates = {}) {
   return { started, calls, cleanup };
 }
 const item = { id: 120, title: "Movie", original_title: "Original", release_date: "2001-12-18" };
-for (const catalogSource of [undefined, "vi3000", "habster"]) {
+for (const catalogSource of [undefined, "vi3000", "habster", "zona"]) {
   const app = await run(true, { ...item, catalogSource });
   assert.equal(app.started.length, 1, "web discovery starts even if browser ID lookups would hang");
   assert.deepEqual(app.calls, [], "no browser KP/TMDB lookup blocks web startup");

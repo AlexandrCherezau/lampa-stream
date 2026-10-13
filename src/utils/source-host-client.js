@@ -38,6 +38,13 @@ export async function resolveSource(id, quality, signal) {
   return (await request("resolve", { id, ...(quality ? { quality } : {}) }, signal)).json();
 }
 
+function advertisedHeight(hint) {
+  const text = String(hint || "");
+  const knownHeights = [144, 240, 270, 360, 480, 530, 720, 1080, 1440, 1600, 2160, 4320];
+  return Math.max(/\b4k\b/i.test(text) ? 2160 : 0,
+    ...[...text.matchAll(/\b(\d{3,4})p?\b/gi)].map((match) => Number(match[1])).filter((height) => knownHeights.includes(height)));
+}
+
 export function createSourceSession({ discover = discoverSources, resolve = resolveSource, publish }) {
   let generation = 0;
   let discovery;
@@ -52,7 +59,17 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   let state = { stream: null, switching: false, sourceError: null, meta: "Ищем источники…", qualities: [], subtitles: [], audioNames: [], skip: null };
   const emit = (patch = {}) => {
     state = { ...state, ...patch };
-    const providers = [...new Map(candidates.map((value) => [value.providerId, { id: value.providerId, name: value.providerName }])).values()];
+    const byProvider = new Map();
+    for (const candidate of candidates) {
+      const height = advertisedHeight(candidate.qualityHint);
+      const prior = byProvider.get(candidate.providerId);
+      byProvider.set(candidate.providerId, {
+        id: candidate.providerId, name: candidate.providerName,
+        qualityHint: prior && prior.qualityHeight > height ? prior.qualityHint : candidate.qualityHint || "",
+        qualityHeight: Math.max(height, prior?.qualityHeight || 0),
+      });
+    }
+    const providers = [...byProvider.values()];
     publish({ ...state, balansers: providers, balanser: active?.candidate.providerId,
       voices: candidates.filter((value) => value.providerId === active?.candidate.providerId).map((value) => ({ id: value.id, name: value.voiceName })),
       voice: active?.candidate.id, quality: active?.result.selected?.label,
@@ -89,7 +106,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       active = { candidate, result };
       confirmed = false;
       emit({ stream: result.kind === "hls" ? { hls: result.selected.url } : { mp4: result.selected.url },
-        qualities: result.qualities.map((value) => ({ id: value.label, label: value.label === "auto" ? "Авто" : value.label, height: value.height })),
+        qualities: result.qualities.map((value) => ({ id: value.label, label: value.height >= 2160 ? "4K" : value.label === "auto" ? "Авто" : value.label, height: value.height })),
         subtitles: (result.subtitles || []).map((value) => ({ name: value.label, language: value.language, url: value.url })),
         audioNames: result.audioNames || [],
         meta: `${candidate.providerName} · ${candidate.voiceName}`, sourceError: null, skip: result.skip || null,
@@ -140,7 +157,13 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   }
   return {
     start, stop,
-    selectBalanser: (id) => { const candidate = candidates.find((value) => value.providerId === id); return candidate ? choose(candidate, undefined, true) : undefined; },
+    selectBalanser: (id, quality) => {
+      const providerCandidates = candidates.filter((value) => value.providerId === id);
+      const requestedHeight = advertisedHeight(quality);
+      const candidate = (requestedHeight ? providerCandidates.find((value) => advertisedHeight(value.qualityHint) >= requestedHeight) : null)
+        || providerCandidates[0];
+      return candidate ? choose(candidate, quality, true) : undefined;
+    },
     selectVoice: (id) => { const candidate = candidates.find((value) => value.id === id); return candidate ? choose(candidate, undefined, true) : undefined; },
     selectQuality: (label) => active ? choose(active.candidate, label, true) : undefined,
     clearSwitching: () => emit({ switching: false }),
@@ -152,7 +175,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
         active = previous; previous = null; confirmed = true;
         const result = active.result;
         emit({ stream: result.kind === "hls" ? { hls: result.selected.url } : { mp4: result.selected.url }, switching: false,
-          qualities: result.qualities.map((value) => ({ id: value.label, label: value.label === "auto" ? "Авто" : value.label, height: value.height })),
+          qualities: result.qualities.map((value) => ({ id: value.label, label: value.height >= 2160 ? "4K" : value.label === "auto" ? "Авто" : value.label, height: value.height })),
           subtitles: (result.subtitles || []).map((value) => ({ name: value.label, url: value.url })),
           audioNames: result.audioNames || [],
           meta: `${active.candidate.providerName} · ${active.candidate.voiceName}`,

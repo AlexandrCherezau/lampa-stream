@@ -228,6 +228,83 @@ test("decoded movie playback recovers after HTTP and decode failures from manual
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThanOrEqual(29);
 });
 
+test("late 4K sources stay optional and the quality shortcut preserves playback position", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (String(input).includes("/api/source-host?op=discover")) {
+        return Promise.resolve(new Response(new ReadableStream({
+          start(controller) {
+            const emit = (candidate) => controller.enqueue(new TextEncoder().encode(`event: candidate\ndata: ${JSON.stringify(candidate)}\n\n`));
+            emit({ id: "collaps", providerId: "habster:collaps", providerName: "Habster · Collaps", voiceName: "Мультиаудио", qualityHint: "Auto" });
+            window.offer4K = () => {
+              emit({ id: "vk", providerId: "vkmovie", providerName: "VKMovie", voiceName: "Дубляж", qualityHint: "2160p" });
+              controller.enqueue(new TextEncoder().encode("event: done\ndata: {}\n\n"));
+              controller.close();
+            };
+          },
+        }), { headers: { "content-type": "text/event-stream" } }));
+      }
+      return originalFetch(input, init);
+    };
+  });
+  const tmdb = (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ id: 550, title: "Movie 550", original_title: "Movie 550", imdb_id: "tt0111161", runtime: 100, genres: [], credits: { cast: [] } }),
+  });
+  await page.route("**/api/tmdb/**", tmdb);
+  await page.route("https://api.themoviedb.org/**", tmdb);
+  const resolutions = [];
+  await page.route("**/api/source-host?op=resolve", (route) => {
+    const request = route.request().postDataJSON();
+    resolutions.push(request);
+    const is4K = request.id === "vk";
+    const url = `https://media.example/${is4K ? "high" : "low"}-master.m3u8`;
+    const selected = { label: is4K ? "2160p" : "auto", height: is4K ? 2160 : 0, url };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "hls", selected, qualities: [selected] }) });
+  });
+  await page.route("**/*-master.m3u8", (route) => {
+    const high = route.request().url().includes("high-master");
+    const variants = high
+      ? "#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=3840x1604\nfixture.m3u8\n"
+      : "#EXT-X-STREAM-INF:BANDWIDTH=200000,RESOLUTION=1272x530\nfixture.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=100000,RESOLUTION=640x270\nfixture.m3u8\n";
+    return route.fulfill({ status: 200, contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" }, body: `#EXTM3U\n${variants}` });
+  });
+  await page.route("**/fixture.m3u8", (route) => route.fulfill({
+    status: 200, contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" },
+    body: readFileSync(join(fixtureDir, "fixture.m3u8"), "utf8"),
+  }));
+  await page.route("**/fixture*.ts", (route) => route.fulfill({
+    status: 200, contentType: "video/mp2t", headers: { "access-control-allow-origin": "*" },
+    body: readFileSync(join(fixtureDir, new URL(route.request().url()).pathname.split("/").pop())),
+  }));
+
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  const video = page.locator("video");
+  await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 20_000 }).toBeGreaterThan(0.5);
+  await page.locator('[title="Качество (Q)"]').click();
+  await expect(page.locator(".torrplayer-audio-menu").getByRole("button", { name: "530p", exact: true })).toBeVisible();
+  await expect(page.locator(".torrplayer-audio-menu").getByRole("button", { name: /4K/ })).toHaveCount(0);
+  await page.evaluate(() => window.offer4K());
+  await expect(page.locator(".torrplayer-audio-menu").getByRole("button", { name: "VKMovie · 4K", exact: true })).toBeVisible();
+  expect(resolutions).toHaveLength(1);
+  await expect(page.locator('[title="Источник"]')).toContainText("Habster · Collaps");
+  await page.locator('[title="Источник"]').click();
+  await expect(page.locator(".torrplayer-audio-menu").getByRole("button", { name: "VKMovie · до 4K", exact: true })).toBeVisible();
+  await page.locator('[title="Качество (Q)"]').click();
+  await video.evaluate((v) => { v.currentTime = 45; v.pause(); });
+  await page.locator(".torrplayer-audio-menu").getByRole("button", { name: "VKMovie · 4K", exact: true }).click();
+  await expect.poll(() => resolutions.at(-1)?.quality).toBe("2160p");
+  expect(resolutions.at(-1)?.id).toBe("vk");
+  await expect.poll(() => video.evaluate((v) => v.readyState), { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThanOrEqual(44);
+  await page.locator(".torrplayer").hover();
+  await page.locator('[title="Качество (Q)"]').click();
+  await expect(page.locator(".torrplayer-audio-menu").getByRole("button", { name: "4K ⭐", exact: true })).toHaveCount(2);
+});
+
 test("late HLS network failures fail over once and preserve the playback position", async ({ page }) => {
   test.setTimeout(180_000);
   await page.addInitScript(() => {

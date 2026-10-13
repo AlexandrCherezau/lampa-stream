@@ -24,7 +24,7 @@ export function validateTitle(value) {
   if (!["movie", "tv"].includes(value.type)) throw failure("Неверный тип: movie или tv");
   title.type = value.type;
   if (value.catalogSource !== undefined) {
-    if (!["vi3000", "habster"].includes(value.catalogSource)) throw failure("Неверный источник каталога");
+    if (!["vi3000", "habster", "zona"].includes(value.catalogSource)) throw failure("Неверный источник каталога");
     title.catalogSource = value.catalogSource;
   }
   for (const key of ["title", "originalTitle", "language"]) {
@@ -268,9 +268,11 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
           const qualities = resolved.qualities || [];
           if (!qualities.length) throw failure("Источник не предоставил видео", 502, "NO_MEDIA");
           const wanted = body.quality == null ? null : String(body.quality);
+          const exact = wanted == null ? [] : qualities.filter((quality) => quality.label === wanted);
+          const requestedHeight = wanted != null && /^[1-9]\d{2,3}p$/.test(wanted) ? Number(wanted.slice(0, -1)) : null;
           const order = wanted == null
             ? qualities.slice().sort((a, b) => Math.abs((a.height || 720) - 720) - Math.abs((b.height || 720) - 720))
-            : qualities.filter((quality) => quality.label === wanted);
+            : exact.length ? exact : qualities.filter((quality) => requestedHeight != null && quality.height === requestedHeight);
           if (!order.length) throw failure("Качество недоступно", 404, "QUALITY_NOT_FOUND");
           let selected;
           let probe;

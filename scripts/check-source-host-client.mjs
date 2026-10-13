@@ -62,6 +62,41 @@ async function decoderFailureUsesSibling() {
   assert.equal(state.balanser, "beta");
 }
 
+async function delayedHigherQualityRequiresManualChoice() {
+  const gate = deferred();
+  const ready = deferred();
+  const resolutions = [];
+  let state;
+  const session = createSourceSession({
+    publish: (value) => { state = value; if (value.stream) ready.resolve(); },
+    discover: async (_title, { onEvent }) => {
+      onEvent("candidate", { ...candidate("habster"), qualityHint: "Auto" });
+      await gate.promise;
+      onEvent("candidate", { ...candidate("vk-low", "vk"), qualityHint: "720p" });
+      onEvent("candidate", { ...candidate("vk-high", "vk"), qualityHint: "2160p" });
+      onEvent("candidate", { ...candidate("vk-later", "vk"), qualityHint: "1080p" });
+      onEvent("candidate", { ...candidate("year"), qualityHint: "Фильм 2026" });
+    },
+    resolve: async (id, quality) => { resolutions.push({ id, quality }); return result(`https://media.test/${id}.m3u8`); },
+  });
+  const started = session.start({ title: "Film" });
+  await ready.promise;
+  const playing = state.stream;
+  session.notePlaying();
+  gate.resolve();
+  await started;
+  assert.equal(state.stream, playing, "a late 4K option must keep the confirmed playing stream");
+  assert.deepEqual(resolutions, [{ id: "habster", quality: undefined }]);
+  assert.equal(state.balansers.find((provider) => provider.id === "vk").qualityHeight, 2160,
+    "provider quality reflects its highest voice, even if a lower-quality voice arrives later");
+  assert.equal(state.balansers.find((provider) => provider.id === "year").qualityHeight, 0,
+    "an incidental number must not advertise a resolution");
+  assert.equal(await session.selectBalanser("vk", "2160p"), true);
+  assert.deepEqual(resolutions.at(-1), { id: "vk-high", quality: "2160p" },
+    "an explicit 4K choice resolves the voice advertising that rung and requests its exact quality");
+  session.stop();
+}
+
 async function failedVoiceKeepsOtherVoices() {
   for (const failure of ["resolve", "decode"]) {
     const calls = [];
@@ -230,6 +265,7 @@ async function audioNamesFollowActiveStream() {
 }
 
 await progressiveRecoveryWithState();
+await delayedHigherQualityRequiresManualChoice();
 await decoderFailureUsesSibling();
 await failedVoiceKeepsOtherVoices();
 await fallbackRotatesProvidersAndStops();
@@ -237,4 +273,4 @@ await manualFailureAndStaleRequests();
 await emptyDiscoveryAndSplitSse();
 await skipRangesFollowActiveStream();
 await audioNamesFollowActiveStream();
-console.log("Source-host client checks passed: progressive fallback, per-voice recovery, provider rotation, exhausted candidates, manual/stale requests, empty discovery, split SSE, audio labels.");
+console.log("Source-host client checks passed: progressive fallback, explicit 4K choice, per-voice recovery, provider rotation, exhausted candidates, manual/stale requests, empty discovery, split SSE, audio labels.");

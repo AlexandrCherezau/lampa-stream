@@ -74,6 +74,9 @@ function skipEndFor(segment, timings) {
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const is4KLevel = (level) => level.width >= 3840 || level.height >= 2160;
+const levelLabel = (level) => is4KLevel(level) ? "4K" : `${level.height}p`;
+const providerQualityLabel = (source) => source.qualityHeight >= 2160 ? "4K" : `${source.qualityHeight}p`;
 // Fleet stall watchdog window. A freshly-attached fleet stream that hasn't reached
 // genuine playback (currentTime advancing) within this long — AND has barely
 // buffered — is a throughput stall (segments trickling through the relay), not a
@@ -842,7 +845,8 @@ export default function OnlinePlayer({
               .map((b) => ({
                 id: b.qualityIndex,
                 height: b.height,
-                label: b.height >= 2160 ? "4K" : `${b.height}p`,
+                width: b.width,
+                label: levelLabel(b),
                 _qidx: b.qualityIndex,
               }));
             setLevels(lvls);
@@ -1005,7 +1009,7 @@ export default function OnlinePlayer({
         }
         const lvls = [...seen.values()]
           .sort((a, b) => (b.height || 0) - (a.height || 0))
-          .map((l, i) => ({ id: i, height: l.height, label: l.height >= 2160 ? "4K" : `${l.height}p`, _hlsLevel: l.height }));
+          .map((l, i) => ({ id: i, height: l.height, width: l.width, label: levelLabel(l), _hlsLevel: l.height }));
         setLevels(lvls);
         // ABR (Auto) on ALL form factors. The old desktop path pinned
         // `hls.currentLevel = <1080p index>`, which disables ABR entirely:
@@ -1723,7 +1727,7 @@ export default function OnlinePlayer({
       lampac.clearSwitching?.();
     });
   };
-  const selectBalanser = (id) => { selectManualSource(() => lampac.selectBalanser?.(id)); setShowBalanser(false); };
+  const selectBalanser = (id, quality) => { selectManualSource(() => lampac.selectBalanser?.(id, quality)); setShowBalanser(false); setShowQuality(false); };
   const selectVoice = (id) => { selectManualSource(() => lampac.selectVoice?.(id)); setShowVoice(false); };
   const selectSourceQuality = (id) => { selectManualSource(() => lampac.selectQuality?.(id)); setShowQuality(false); };
 
@@ -1864,7 +1868,7 @@ export default function OnlinePlayer({
             <div className="torrpicker-fallback-row">
               {balansers.map((b) => (
                 <button key={b.id} className="torrpicker-fallback-btn" onClick={() => selectBalanser(b.id)}>
-                  {b.name}{b.torrent ? " ⇄" : ""}
+                  {b.name}{b.qualityHeight > 0 ? ` · до ${providerQualityLabel(b)}` : ""}{b.torrent ? " ⇄" : ""}
                 </button>
               ))}
             </div>
@@ -1881,6 +1885,9 @@ export default function OnlinePlayer({
   const activeBalanser = isLampac ? balansers.find((b) => b.id === lampac.balanser) : null;
   const activeVoice = isLampac ? voices.find((v) => v.id === lampac.voice) : null;
   const activeSrcQuality = isLampac ? srcQualities.find((q) => q.id === lampac.quality) : null;
+  const highestCurrentQuality = Math.max(0, ...srcQualities.map((q) => q.height || 0),
+    ...levels.map((level) => is4KLevel(level) ? 2160 : level.height || 0));
+  const higherQualitySources = balansers.filter((source) => source.id !== lampac.balanser && source.qualityHeight > highestCurrentQuality);
   const voicePickerTitle = ["vkmovie", "rutubemovie"].includes(lampac.balanser)
     ? "Версия / озвучка"
     : "Озвучка";
@@ -1990,7 +1997,7 @@ export default function OnlinePlayer({
                     className={"torrplayer-audio-item" + (b.id === lampac.balanser ? " active" : "")}
                     onClick={() => selectBalanser(b.id)}
                   >
-                    {b.name}{b.torrent ? " · торрент" : ""}
+                    {b.name}{b.qualityHeight > 0 ? ` · до ${providerQualityLabel(b)}` : ""}{b.torrent ? " · торрент" : ""}
                   </button>
                 ))}
               </div>
@@ -2067,7 +2074,7 @@ export default function OnlinePlayer({
             qualities (Lampac only). The fleet qualities are separate files, so
             picking one re-resolves the stream; the engine levels are the ABR
             ladder inside the ONE file currently attached. */}
-        {(levels.length > 0 || (isLampac && srcQualities.length > 0)) && (
+        {(levels.length > 0 || (isLampac && (srcQualities.length > 0 || higherQualitySources.length > 0))) && (
           <div className="torrplayer-audio">
             <button className="torrplayer-btn" onClick={() => { setShowQuality((v) => !v); setShowBalanser(false); setShowVoice(false); setShowTracks(false); setShowSpeed(false); setShowSubs(false); }} title="Качество (Q)"><span className="torrplayer-audio-label">{isLampac && activeSrcQuality ? activeSrcQuality.label : currentQualityLabel}</span></button>
             {showQuality && (
@@ -2090,7 +2097,18 @@ export default function OnlinePlayer({
                   <>
                     {isLampac && srcQualities.length > 0 && <div className="torrplayer-audio-head">Поток (ABR)</div>}
                     <button className={"torrplayer-audio-item" + (currentLevel < 0 ? " active" : "")} onClick={() => selectQuality(-1)}>Авто</button>
-                    {levels.map((l, i) => (<button key={i} className={"torrplayer-audio-item" + (i === currentLevel ? " active" : "")} onClick={() => selectQuality(i)}>{l.label}{l.height >= 2160 ? " ⭐" : ""}</button>))}
+                    {levels.map((l, i) => (<button key={i} className={"torrplayer-audio-item" + (i === currentLevel ? " active" : "")} onClick={() => selectQuality(i)}>{l.label}{is4KLevel(l) ? " ⭐" : ""}</button>))}
+                  </>
+                )}
+                {higherQualitySources.length > 0 && (
+                  <>
+                    <div className="torrplayer-audio-head">Другие источники</div>
+                    {higherQualitySources.map((source) => (
+                      <button key={source.id} className="torrplayer-audio-item"
+                        onClick={() => selectBalanser(source.id, `${source.qualityHeight}p`)}>
+                        {source.name} · {providerQualityLabel(source)}
+                      </button>
+                    ))}
                   </>
                 )}
               </div>

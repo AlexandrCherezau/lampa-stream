@@ -595,6 +595,35 @@ test("Habster failures fall back, missing KP skips Habster, and catalog fallback
   }
 });
 
+test("Zona catalog provenance retains exact IDs and uses Habster first followed by the native fleet", async (t) => {
+  assert.equal(validateTitle({ type: "movie", title: "Movie", catalogSource: "zona" }).catalogSource, "zona");
+  const calls = [];
+  const native = {
+    async *discover(title) {
+      calls.push("native");
+      assert.equal(title.kinopoiskId, 328);
+      assert.equal(title.tmdbId, 120);
+      yield candidate();
+    },
+  };
+  const habsterAdapter = { async *discover(title) {
+    calls.push("habster");
+    assert.equal(title.kinopoiskId, 328);
+    yield candidate({ providerId: "habster:collaps", catalogSource: "habster" });
+  } };
+  const viAdapter = { async *discover() { assert.fail("Zona catalog is not a vi3000 playback source"); } };
+  const app = await start(native, makeMedia(), "", undefined, { habsterAdapter, viAdapter });
+  t.after(() => app.close());
+  const response = await post(app.base, "/v1/discover", { type: "movie", title: "Movie", tmdbId: 120,
+    kinopoiskId: 328, catalogSource: "zona" });
+  assert.equal(response.status, 200);
+  const stream = sseReader(response.body);
+  await stream.drain();
+  assert.deepEqual(calls, ["habster", "native"]);
+  assert.deepEqual(stream.frames.filter((frame) => frame.event === "candidate").map((frame) => frame.data.providerId),
+    ["habster:collaps", "hdvb"]);
+});
+
 test("Habster resolve has an eight-second budget while disconnect aborts background discovery", async (t) => {
   let discoveryAborted = false;
   let resolveAborted = false;
@@ -678,6 +707,39 @@ test("only sealed Zetflix movie candidates use Node media routing", async (t) =>
     assert.deepEqual(signed.map((resource) => resource.nodeOnly), [scenario.expected, scenario.expected],
       `routing must use sealed ${scenario.name} metadata, not resolve request fields`);
     assert.deepEqual(signed.map((resource) => resource.publicOnly), [catalogSource === "vi3000", catalogSource === "vi3000"]);
+  }
+});
+
+test("canonical resolution picks preserve native labels and match only explicit adapter heights", async (t) => {
+  let includeExact = true;
+  const adapter = {
+    async *discover() { yield candidate(); },
+    async resolve() { return { qualities: [
+      { label: "720p", height: 720, url: "https://cdn.test/720.mp4" },
+      { label: "1080", height: 1080, url: "https://cdn.test/1080.mp4" },
+      { label: "4K", height: 2160, url: "https://cdn.test/2160.mp4" },
+      ...(includeExact ? [{ label: "2160p", height: 1440, url: "https://cdn.test/exact.mp4" }] : []),
+    ] }; },
+  };
+  const app = await start(adapter, makeMedia());
+  t.after(() => app.close());
+  const discovery = await post(app.base, "/v1/discover", { type: "movie", title: "Movie" });
+  const stream = sseReader(discovery.body);
+  const { data: { id } } = await stream.until("candidate");
+  await stream.drain();
+  for (const [quality, expected] of [["1080p", "1080"], ["4K", "4K"], ["2160p", "2160p"]]) {
+    const response = await post(app.base, "/v1/resolve", { id, quality });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).selected.label, expected, "exact native labels take precedence over height aliases");
+  }
+  includeExact = false;
+  const alias = await post(app.base, "/v1/resolve", { id, quality: "2160p" });
+  assert.equal(alias.status, 200);
+  assert.equal((await alias.json()).selected.label, "4K");
+  for (const quality of ["4320p", "film-2160p", "2160"]) {
+    const response = await post(app.base, "/v1/resolve", { id, quality });
+    assert.equal(response.status, 404);
+    assert.equal((await response.json()).error, "QUALITY_NOT_FOUND");
   }
 });
 

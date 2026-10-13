@@ -2,22 +2,29 @@ import { tmdbFetch } from "./api";
 
 const cache = new Map();
 const CACHE_TTL = 5 * 60 * 1000;
+const CATALOGS = {
+  habster: { label: "Habster", pages: 1, types: ["movie", "tv"] },
+  zona: { label: "Zona", pages: 10000, types: ["movie"] },
+};
 
-export async function habsterFeed(feed, page = 1, { signal, apiKey } = {}) {
-  if (feed !== "popular" || page !== 1) throw new TypeError("Неверная лента или страница каталога");
+async function mappedCatalogFeed(source, feed, page, { signal, apiKey } = {}) {
+  const catalog = CATALOGS[source];
+  if (feed !== "popular" || !Number.isSafeInteger(page) || page < 1 || page > catalog.pages) throw new TypeError("Неверная лента или страница каталога");
   signal?.throwIfAborted();
   if (!apiKey) throw new Error("Для загрузки каталога нужен ключ TMDB");
-  const hit = cache.get(apiKey);
+  const cacheKey = JSON.stringify([source, page, apiKey]);
+  const hit = cache.get(cacheKey);
   if (hit && Date.now() < hit.expires) return hit.data;
   const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000);
-  const response = await fetch("/api/habster?feed=popular&page=1", { headers: { accept: "application/json" }, signal: requestSignal });
+  const response = await fetch(`/api/${source}?feed=popular&page=${page}`, { headers: { accept: "application/json" }, signal: requestSignal });
   const data = await response.json();
-  if (!response.ok) throw new Error("Каталог Habster временно недоступен");
-  if (data?.page !== 1 || data.total_pages !== 1 || !Array.isArray(data.results) || data.results.length > 20
+  if (!response.ok) throw new Error(`Каталог ${catalog.label} временно недоступен`);
+  if (data?.page !== page || !Number.isSafeInteger(data.total_pages) || data.total_pages < 1 || data.total_pages > catalog.pages
+    || !Array.isArray(data.results) || data.results.length > 20
     || (data.unmapped != null && (!Number.isSafeInteger(data.unmapped) || data.unmapped < 0 || data.unmapped > 20))
     || data.results.some((item) => !Number.isSafeInteger(item?.kinopoisk_id) || item.kinopoisk_id < 1
-      || !["movie", "tv"].includes(item.media_type) || !/^tt\d{5,12}$/.test(item.imdb_id))) {
-    throw new Error("Каталог Habster вернул неверный ответ");
+      || !catalog.types.includes(item.media_type) || !/^tt\d{5,12}$/.test(item.imdb_id))) {
+    throw new Error(`Каталог ${catalog.label} вернул неверный ответ`);
   }
   const results = new Array(data.results.length);
   let next = 0;
@@ -33,7 +40,7 @@ export async function habsterFeed(feed, page = 1, { signal, apiKey } = {}) {
         const matches = item.media_type === "movie" ? found?.movie_results : found?.tv_results;
         if (matches?.length !== 1 || !Number.isSafeInteger(matches[0]?.id) || matches[0].id < 1) continue;
         results[index] = { ...matches[0], media_type: item.media_type, kinopoisk_id: item.kinopoisk_id,
-          imdb_id: item.imdb_id, catalogSource: "habster" };
+          imdb_id: item.imdb_id, catalogSource: source };
       } catch {
         requestSignal.throwIfAborted();
         failed++;
@@ -49,12 +56,20 @@ export async function habsterFeed(feed, page = 1, { signal, apiKey } = {}) {
   });
   requestSignal.throwIfAborted();
   const cards = results.filter(Boolean);
-  if (!cards.length && failed) throw new Error("Не удалось загрузить фильмы Habster");
-  const normalized = { page: 1, total_pages: 1, results: cards, unmapped: (data.unmapped || 0) + data.results.length - cards.length };
+  if (!cards.length && failed) throw new Error(`Не удалось загрузить фильмы ${catalog.label}`);
+  const normalized = { page, total_pages: data.total_pages, results: cards, unmapped: (data.unmapped || 0) + data.results.length - cards.length };
   if (!failed && !data.unmapped) {
-    cache.delete(apiKey);
+    cache.delete(cacheKey);
     if (cache.size >= 4) cache.delete(cache.keys().next().value);
-    cache.set(apiKey, { data: normalized, expires: Date.now() + CACHE_TTL });
+    cache.set(cacheKey, { data: normalized, expires: Date.now() + CACHE_TTL });
   }
   return normalized;
+}
+
+export function habsterFeed(feed, page = 1, options) {
+  return mappedCatalogFeed("habster", feed, page, options);
+}
+
+export function zonaFeed(feed, page = 1, options) {
+  return mappedCatalogFeed("zona", feed, page, options);
 }

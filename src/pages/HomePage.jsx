@@ -3,7 +3,7 @@ import MediaCard from "../components/MediaCard";
 import ProgressiveGrid from "../utils/useProgressiveList.jsx";
 import TrendingCarousel from "../components/TrendingCarousel";
 import CubFeedSection from "../components/CubFeedSection";
-import { habsterFeed } from "../utils/habster-client";
+import { habsterFeed, zonaFeed } from "../utils/habster-client";
 import { PlayIcon, StarIcon } from "../components/Icons";
 import {
   imgUrl,
@@ -57,6 +57,7 @@ export default function HomePage({
   apiKey,
 }) {
   const loadHabster = useCallback((feed, page, options) => habsterFeed(feed, page, { ...options, apiKey }), [apiKey]);
+  const loadZona = useCallback((feed, page, options) => zonaFeed(feed, page, { ...options, apiKey }), [apiKey]);
   // Drop anime from every discovery surface when the "Hide anime" setting is on.
   // The user's own continue-watching (inProgress) is intentionally left alone.
   const trendingMoviesRaw = useMemo(() => filterAnime(trending), [trending]);
@@ -501,6 +502,9 @@ export default function HomePage({
           onSelect={onSelect} watched={watched} onMarkWatched={onMarkWatched} onMarkUnwatched={onMarkUnwatched} />
       ))}
       <CubFeedSection feed="popular" title="Популярное" sourceLabel="Habster" loadFeed={loadHabster}
+        offline={offline} viewMode={viewMode} onSelect={onSelect} watched={watched}
+        onMarkWatched={onMarkWatched} onMarkUnwatched={onMarkUnwatched} />
+      <CubFeedSection feed="popular" title="Популярное" sourceLabel="Zona" loadFeed={loadZona}
         offline={offline} viewMode={viewMode} onSelect={onSelect} watched={watched}
         onMarkWatched={onMarkWatched} onMarkUnwatched={onMarkUnwatched} />
     </div>
