@@ -5,6 +5,10 @@ import vm from "node:vm";
 import handler, { normalizeCubFeed } from "../api/cub.js";
 import { cubFeed } from "../src/utils/cub-client.js";
 
+const { rewrites } = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+assert.deepEqual(rewrites.find((route) => ["/api/cub", "/(.*)"].includes(route.source)),
+  { source: "/api/cub", destination: "/api/cub" }, "CUB must reach its API before the Vercel SPA fallback");
+
 const fixture = {
   page: 1, total_pages: 2, total_results: 40,
   results: [
