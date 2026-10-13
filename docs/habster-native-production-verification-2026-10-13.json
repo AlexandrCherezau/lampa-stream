@@ -1,0 +1,80 @@
+{
+  "checkedAt": "2026-10-13T11:48:37.255Z",
+  "status": "GREEN",
+  "deployments": {
+    "commit": "c11abf8eba388c879dd4500253352b28e8adf686",
+    "backend": "dpl_4sUM5xjXNx4uqPJr2MCxbwsHDtEe",
+    "frontend": "dpl_D1TcLayp7fhuJStJG7WS14EAWoLU",
+    "state": "READY"
+  },
+  "checks": {
+    "serverTests": 62,
+    "failedServerTests": 0,
+    "browserFinalCases": 4,
+    "build": "passed",
+    "clientAndGateway": "passed",
+    "review": "No outstanding confirmed issues"
+  },
+  "production": {
+    "checkedAt": "2026-10-13T11:47:03.680Z",
+    "origin": "https://lampa-stream-six.vercel.app",
+    "commit": "c11abf8eba388c879dd4500253352b28e8adf686",
+    "status": "GREEN",
+    "scope": "Real production discovery/resolve/iframe/native media; matching TMDB Spider969681/IMDbtt22084616 metadata fixtures and existing client-session flag. Login/personal credentials and full movie not tested.",
+    "iframeMs": 1291,
+    "sandbox": "allow-scripts allow-same-origin allow-forms allow-presentation",
+    "providerOrigin": "https://befriend.stravers.live",
+    "qualityOptions": [
+      "2160p4K",
+      "1440p2K",
+      "1080pHD",
+      "720pHD",
+      "480p",
+      "360p"
+    ],
+    "stage": "movie-decode",
+    "master": {
+      "status": 200,
+      "resolutions": [
+        "3832x1600"
+      ]
+    },
+    "movie": [
+      {
+        "width": 3832,
+        "height": 1600,
+        "duration": 8700.65,
+        "time": 0.085333,
+        "frames": 11,
+        "readyState": 4,
+        "paused": false,
+        "error": null
+      }
+    ],
+    "trace": {
+      "queries": [
+        {
+          "type": "movie",
+          "title": "Человек-паук: Новый день",
+          "originalTitle": "Spider-Man: Brand New Day",
+          "language": "en",
+          "anime": false,
+          "tmdbId": 969681,
+          "year": 2026,
+          "imdbId": "tt22084616",
+          "runtimeMinutes": 145
+        }
+      ],
+      "resolves": 1
+    },
+    "sameIframeAfterBackground": true,
+    "parentProgress": {
+      "movie_969681": 1.3
+    }
+  },
+  "limitations": [
+    "The native provider controls quality/audio/fullscreen and may show its own advertisements.",
+    "The cross-origin player does not update the app watch percentage or resume clock; no fake playback/progress is recorded.",
+    "TMDB metadata fixtures and existing client-session flag were used; native player/discovery/resolve/media were live. Login, personal credentials, every title and whole-film viewing were not tested."
+  ]
+}
