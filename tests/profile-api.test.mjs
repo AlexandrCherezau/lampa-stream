@@ -20,6 +20,47 @@ test("Vercel profile entrypoint is CommonJS-callable and lazily imports its ESM 
   assert.equal(ended, true);
 });
 
+test("Redis diagnostics log only whitelisted metadata and keep API storage errors generic", async () => {
+  const urlSecret = "https://redis.invalid/url-secret-sentinel";
+  const tokenSecret = "redis-token-secret-sentinel";
+  const bodySecret = "profile-body-secret-sentinel";
+  const cases = [
+    { name: "missing_config", env: {}, fetchImpl: async () => { throw new Error("must not fetch"); }, reason: "missing_config" },
+    { name: "network", env: { UPSTASH_REDIS_REST_URL: urlSecret, UPSTASH_REDIS_REST_TOKEN: tokenSecret }, fetchImpl: async () => { const cause = Object.assign(new Error(tokenSecret), { code: "ENOTFOUND" }); throw new TypeError(`${urlSecret} ${bodySecret}`, { cause }); }, reason: "network", causeCode: "ENOTFOUND" },
+    { name: "http", env: { UPSTASH_REDIS_REST_URL: urlSecret, UPSTASH_REDIS_REST_TOKEN: tokenSecret }, fetchImpl: async () => ({ ok: false, status: 502 }), reason: "http", upstreamStatus: 502 },
+    { name: "json", env: { UPSTASH_REDIS_REST_URL: urlSecret, UPSTASH_REDIS_REST_TOKEN: tokenSecret }, fetchImpl: async () => ({ ok: true, status: 200, async json() { throw new Error(`${tokenSecret} ${bodySecret}`); } }), reason: "json", upstreamStatus: 200 },
+    { name: "redis", env: { UPSTASH_REDIS_REST_URL: urlSecret, UPSTASH_REDIS_REST_TOKEN: tokenSecret }, fetchImpl: async () => ({ ok: true, status: 200, async json() { return { error: `WRONGTYPE ${tokenSecret} ${bodySecret}` }; } }), reason: "redis", upstreamStatus: 200, redisErrorClass: "WRONGTYPE" },
+  ];
+  for (const entry of cases) {
+    const logs = [];
+    const originalError = console.error;
+    console.error = (...args) => logs.push(args.join(" "));
+    let status;
+    let payload;
+    try {
+      const handler = createProfileHandler({ env: entry.env, fetchImpl: entry.fetchImpl });
+      await handler(
+        { method: "POST", url: "/api/profile", headers: {}, body: { tmdbToken: bodySecret } },
+        { setHeader() {}, status(code) { status = code; return this; }, json(value) { payload = value; return this; }, end() { return this; } },
+      );
+    } finally { console.error = originalError; }
+    assert.equal(status, 503, `${entry.name} keeps API status generic`);
+    assert.deepEqual(payload, { error: "profile_storage_unavailable" });
+    assert.equal(logs.length, 1, `${entry.name} emits one diagnostic`);
+    assert.equal(logs[0].includes(urlSecret), false);
+    assert.equal(logs[0].includes(tokenSecret), false);
+    assert.equal(logs[0].includes(bodySecret), false);
+    const diagnostic = JSON.parse(logs[0].slice("profile_storage_diagnostic ".length));
+    assert.equal(diagnostic.reason, entry.reason);
+    assert.equal(diagnostic.commandName, "EVAL");
+    assert.equal(diagnostic.urlConfigured, Boolean(entry.env.UPSTASH_REDIS_REST_URL));
+    assert.equal(diagnostic.tokenConfigured, Boolean(entry.env.UPSTASH_REDIS_REST_TOKEN));
+    if (entry.causeCode) assert.equal(diagnostic.causeCode, entry.causeCode);
+    if (entry.upstreamStatus) assert.equal(diagnostic.upstreamStatus, entry.upstreamStatus);
+    if (entry.redisErrorClass) assert.equal(diagnostic.redisErrorClass, entry.redisErrorClass);
+  }
+});
+
 function memoryUpstash() {
   const values = new Map();
   const counts = new Map();

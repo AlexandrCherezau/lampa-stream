@@ -375,10 +375,50 @@ function decryptToken(record, env) {
   return Buffer.concat([decipher.update(Buffer.from(record.data, "base64url")), decipher.final()]).toString("utf8");
 }
 
+const REDIS_COMMAND_NAMES = new Set(["GET", "SET", "DEL", "INCR", "EXPIRE", "EXISTS", "EVAL", "EVALSHA"]);
+const SAFE_NETWORK_CODES = new Set(["ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED", "ETIMEDOUT"]);
+
+function redisDiagnostic({ reason, command, env, status, causeCode, redisError }) {
+  const rawName = typeof command?.[0] === "string" ? command[0].toUpperCase() : "UNKNOWN";
+  const commandName = REDIS_COMMAND_NAMES.has(rawName) ? rawName : "UNKNOWN";
+  let redisErrorClass;
+  if (redisError) {
+    const value = String(redisError).toUpperCase();
+    if (value.includes("WRONGTYPE")) redisErrorClass = "WRONGTYPE";
+    else if (value.includes("NOAUTH") || value.includes("NOPERM")) redisErrorClass = "AUTH";
+    else if (value.includes("OOM") || value.includes("BUSY") || value.includes("LOADING")) redisErrorClass = "CAPACITY";
+    else if (value.includes("ERR")) redisErrorClass = "REDIS_ERR";
+    else redisErrorClass = "OTHER";
+  }
+  const safeCauseCode = typeof causeCode === "string" && (
+    SAFE_NETWORK_CODES.has(causeCode) || /^CERT_[A-Z0-9_]{1,32}$/.test(causeCode) || /^UND_ERR_[A-Z0-9_]{1,40}$/.test(causeCode)
+  ) ? causeCode : "UNKNOWN";
+  console.error("profile_storage_diagnostic", JSON.stringify({
+    reason,
+    commandName,
+    urlConfigured: Boolean(env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL),
+    tokenConfigured: Boolean(env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN),
+    ...(Number.isInteger(status) ? { upstreamStatus: status } : {}),
+    ...(reason === "network" ? { causeCode: safeCauseCode } : {}),
+    ...(redisErrorClass ? { redisErrorClass } : {}),
+  }));
+}
+
+function networkCauseCode(error) {
+  let current = error;
+  for (let depth = 0; current && depth < 4; depth += 1, current = current.cause) {
+    if (typeof current.code === "string") return current.code;
+  }
+  return undefined;
+}
+
 async function redisCommand(command, env, fetchImpl = fetch) {
   const url = env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL;
   const token = env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN;
-  if (!url || !token) fail(503, "profile_storage_unavailable");
+  if (!url || !token) {
+    redisDiagnostic({ reason: "missing_config", command, env });
+    fail(503, "profile_storage_unavailable");
+  }
   let response;
   try {
     response = await fetchImpl(url, {
@@ -387,10 +427,23 @@ async function redisCommand(command, env, fetchImpl = fetch) {
       body: JSON.stringify(command),
       signal: AbortSignal.timeout(5000),
     });
-  } catch { fail(503, "profile_storage_unavailable"); }
-  if (!response.ok) fail(503, "profile_storage_unavailable");
+  } catch (error) {
+    redisDiagnostic({ reason: "network", command, env, causeCode: networkCauseCode(error) });
+    fail(503, "profile_storage_unavailable");
+  }
+  if (!response.ok) {
+    redisDiagnostic({ reason: "http", command, env, status: response.status });
+    fail(503, "profile_storage_unavailable");
+  }
   let json;
-  try { json = await response.json(); } catch { fail(503, "profile_storage_unavailable"); }
+  try { json = await response.json(); } catch {
+    redisDiagnostic({ reason: "json", command, env, status: response.status });
+    fail(503, "profile_storage_unavailable");
+  }
+  if (!json || typeof json !== "object") {
+    redisDiagnostic({ reason: "json", command, env, status: response.status });
+    fail(503, "profile_storage_unavailable");
+  }
   if (json.error) {
     const error = String(json.error);
     if (error.includes("PROFILE_MISSING")) fail(404, "profile_not_found");
@@ -406,6 +459,7 @@ async function redisCommand(command, env, fetchImpl = fetch) {
     if (error.includes("PROFILE_TOO_LARGE")) fail(413, "profile_too_large");
     if (error.includes("PAIR_COLLISION")) fail(409, "pairing_code_collision");
     if (error.includes("PROFILE_EXISTS")) fail(409, "profile_exists");
+    redisDiagnostic({ reason: "redis", command, env, status: response.status, redisError: error });
     fail(503, "profile_storage_unavailable");
   }
   return json.result;
