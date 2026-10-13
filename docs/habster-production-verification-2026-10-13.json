@@ -1,0 +1,310 @@
+{
+  "checkedAt": "2026-10-13T10:08:45.016Z",
+  "origin": "https://lampa-stream-six.vercel.app",
+  "backend": "https://lampa-source-host.vercel.app",
+  "deployments": {
+    "backend": "dpl_8Yy4hBejwU7mYHks6g96ksGS3vLm",
+    "frontend": "dpl_BrN4mPWeXaxC5oyJHTQMobgeeZyY",
+    "commit": "f444c1f18f6788c1dde5113c4549cb1a3ace371f"
+  },
+  "scope": "Real public Habster popular catalog, default Habster Collaps discovery/resolve/video, decoded startup, same-source seek60 and displayed audio choices. Exact TMDB IMDb mapping/details/posters use matching fixtures for KP5494049/TMDB969681/IMDbtt22084616; other TMDB mappings return empty. Existing client-session localStorage flag used. Login, real credential mapping, every title/voice/quality and whole-film playback are not verified.",
+  "stage": "complete",
+  "resolves": [
+    {
+      "status": 200,
+      "elapsedMs": 754,
+      "provider": "habster:collaps",
+      "voice": "Мультиаудио",
+      "quality": "Auto",
+      "kind": "hls",
+      "subtitles": 5
+    }
+  ],
+  "media": [
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 205,
+      "contentType": "text/vtt; charset=utf-8"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 237,
+      "contentType": "text/vtt; charset=utf-8"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 238,
+      "contentType": "text/vtt; charset=utf-8"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 282,
+      "contentType": "application/vnd.apple.mpegurl"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 275,
+      "contentType": "text/vtt; charset=utf-8"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 280,
+      "contentType": "text/vtt; charset=utf-8"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 171,
+      "contentType": "application/vnd.apple.mpegurl"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 172,
+      "contentType": "application/vnd.apple.mpegurl"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 91,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 153,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 128,
+      "contentType": "application/vnd.apple.mpegurl"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 130,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 60,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 87,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 55,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 74,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 63,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 78,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 69,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 57,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 80,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 66,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 71,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 60,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 66,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 59,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 62,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 75,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 83,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 56,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 67,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 58,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 66,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 67,
+      "contentType": "video/mp2t"
+    },
+    {
+      "surface": "production-backend",
+      "status": 200,
+      "elapsedMs": 73,
+      "contentType": "video/mp2t"
+    }
+  ],
+  "playable": true,
+  "catalog": {
+    "status": 200,
+    "elapsedMs": 196,
+    "cards": 11,
+    "unmapped": 3,
+    "contentType": "application/json; charset=utf-8"
+  },
+  "item": {
+    "kinopoiskId": 5494049,
+    "imdbId": "tt22084616",
+    "tmdbId": 969681,
+    "title": "Человек-паук: Новый день"
+  },
+  "discovery": {
+    "type": "movie",
+    "tmdbId": 969681,
+    "kinopoiskId": 5494049,
+    "imdbId": "tt22084616",
+    "catalogSource": "habster"
+  },
+  "startupMs": 3905,
+  "decodedSource": {
+    "provider": "habster:collaps",
+    "voice": "Мультиаудио",
+    "quality": "Auto",
+    "kind": "hls"
+  },
+  "initial": {
+    "time": 1.009684,
+    "duration": 8700.628999999988,
+    "frames": 29,
+    "readyState": 4,
+    "mediaErrorCode": null,
+    "width": 1280,
+    "height": 720,
+    "audioBytes": 17138
+  },
+  "afterSeek": {
+    "time": 60.008219,
+    "duration": 8700.628999999988,
+    "frames": 134,
+    "readyState": 4,
+    "mediaErrorCode": null,
+    "width": 1280,
+    "height": 720,
+    "audioBytes": 21186
+  },
+  "sameSourceSeek": true,
+  "audioChoices": [
+    "MovieDalen",
+    "Red Head Sound",
+    "HDrezka Studio (Дубл.)",
+    "HDRezka Studio",
+    "TVShows",
+    "LeDoyen (укр)",
+    "Eng.Original"
+  ],
+  "audioSwitchProof": {
+    "playlist200": true,
+    "segment200": true
+  },
+  "afterAudioSwitch": {
+    "time": 63.0061,
+    "duration": 8700.628999999988,
+    "frames": 207,
+    "readyState": 4,
+    "mediaErrorCode": null,
+    "width": 1280,
+    "height": 720,
+    "audioBytes": 59028
+  },
+  "selectedAudioLabel": "Red Head Sound",
+  "status": "GREEN",
+  "deadlineReached": false
+}
