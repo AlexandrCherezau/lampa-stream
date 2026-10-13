@@ -29,9 +29,10 @@ export default function useSourceHost({ enabled, apiKey, item, details, type, se
     const controller = new AbortController();
     let alive = true;
     (async () => {
+      const needsClientIds = !window.__webShim;
       const [external, kp] = await Promise.all([
-        !imdbId && apiKey && item?.id ? tmdbFetch(`/${type}/${item.id}/external_ids`, apiKey, { signal: controller.signal }).catch(() => null) : null,
-        existingKinopoiskId ? null : collapsFindKp({ query: title, originalTitle, year, type }, { signal: controller.signal }).catch(() => null),
+        needsClientIds && !imdbId && apiKey && item?.id ? tmdbFetch(`/${type}/${item.id}/external_ids`, apiKey, { signal: controller.signal }).catch(() => null) : null,
+        needsClientIds && !existingKinopoiskId ? collapsFindKp({ query: title, originalTitle, year, type }, { signal: controller.signal }).catch(() => null) : null,
       ]);
       if (!alive) return;
       const params = { type, title, originalTitle, language, anime, tmdbId: item?.id,

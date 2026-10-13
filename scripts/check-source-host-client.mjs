@@ -17,6 +17,7 @@ async function progressiveRecoveryWithState() {
   const playbackReady = deferred();
   let discoveryFinished = false;
   let state;
+  const resolved = [];
   const session = createSourceSession({
     publish: (value) => { state = value; if (value.stream) playbackReady.resolve(); },
     discover: async (_title, { onEvent }) => {
@@ -25,16 +26,23 @@ async function progressiveRecoveryWithState() {
       onEvent("candidate", candidate("two", "sibling"));
       discoveryFinished = true;
     },
-    resolve: async (id) => result(`https://media.test/${id}.m3u8`),
+    resolve: async (id) => { resolved.push(id); return result(`https://media.test/${id}.m3u8`); },
   });
   const started = session.start({ title: "Film" });
   await playbackReady.promise;
   assert.equal(discoveryFinished, false, "playback starts before discovery finishes");
   assert.deepEqual(state.stream, { hls: "https://media.test/one.m3u8" });
+  const playingStream = state.stream;
+  session.notePlaying();
   discoveryGate.resolve();
   await started;
   assert.equal(state.balanser, "working");
   assert.equal(state.sourceError, null);
+  assert.equal(state.stream, playingStream, "late alternatives must not reattach the playing video");
+  assert.deepEqual(resolved, ["one"], "background discovery must not resolve or select an alternative automatically");
+  assert.deepEqual(state.balansers.map((value) => value.id), ["working", "sibling"]);
+  await session.selectBalanser("sibling");
+  assert.deepEqual(resolved, ["one", "two"], "late sources remain available for explicit selection");
 }
 
 async function decoderFailureUsesSibling() {

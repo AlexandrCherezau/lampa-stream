@@ -500,6 +500,7 @@ test("Habster sealed sources survive restart, skip the engine and keep direct pu
     },
   };
   const signed = [];
+  const viAdapter = { async *discover(title) { assert.equal(title.catalogSource, "vi3000"); }, async resolve() { throw new Error("Wrong vi adapter"); } };
   const media = makeMedia();
   media.probe = async (resource) => {
     assert.equal(resource.publicOnly, true);
@@ -507,7 +508,7 @@ test("Habster sealed sources survive restart, skip the engine and keep direct pu
   };
   media.url = (resource) => { signed.push(resource); return "https://media.test/v1/media?token=sealed"; };
   let id;
-  const first = await start(adapter, media, "", undefined, { habsterAdapter, engineReadyFile: ready });
+  const first = await start(adapter, media, "", undefined, { habsterAdapter, viAdapter, engineReadyFile: ready });
   try {
     const discovery = await post(first.base, "/v1/discover", { type: "movie", title: "Movie", kinopoiskId: 328, catalogSource: "habster" });
     const stream = sseReader(discovery.body);
@@ -517,7 +518,7 @@ test("Habster sealed sources survive restart, skip the engine and keep direct pu
     id = frame.data.id;
     await stream.drain();
   } finally { await first.close(); }
-  const second = await start(adapter, media, "", undefined, { habsterAdapter, engineReadyFile: ready });
+  const second = await start(adapter, media, "", undefined, { habsterAdapter, viAdapter, engineReadyFile: ready });
   t.after(() => second.close());
   const resolved = await post(second.base, "/v1/resolve", { id, catalogSource: "vi3000", nodeOnly: false, publicOnly: false });
   assert.equal(resolved.status, 200);
@@ -527,6 +528,114 @@ test("Habster sealed sources survive restart, skip the engine and keep direct pu
   assert.deepEqual(signed.map((resource) => resource.publicOnly), [true, true]);
   assert.deepEqual(signed.map((resource) => resource.nodeOnly), [true, true]);
   await assert.rejects(stat(`${ready}.start`), { code: "ENOENT" });
+});
+
+test("Habster emits first before a cold native engine, then streams the original fleet without changing sealed provenance", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "habster-first-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  for (const type of ["movie", "tv"]) {
+    const ready = join(directory, type);
+    const coords = type === "tv" ? { season: 2, episode: 3 } : { season: null, episode: null };
+    let nativeCalls = 0;
+    const habsterAdapter = {
+      async *discover(title) {
+        assert.equal(title.kinopoiskId, 5494049);
+        assert.equal(title.type, type);
+        if (type === "tv") assert.deepEqual([title.season, title.episode], [2, 3]);
+        yield candidate({ providerId: "habster:collaps", catalogSource: "habster", ...coords,
+          ref: { type, kinopoiskId: title.kinopoiskId, ...(type === "tv" ? coords : {}) } });
+      },
+      async resolve(value) {
+        assert.equal(value.catalogSource, "habster");
+        return { qualities: [{ label: "Auto", type: "hls", url: "https://cdn.test/first.m3u8", publicOnly: true }] };
+      },
+    };
+    const adapter = { async *discover(title) {
+      nativeCalls++;
+      assert.equal(title.catalogSource, undefined);
+      yield candidate({ ...coords });
+    } };
+    const app = await start(adapter, makeMedia(), "", undefined, { habsterAdapter, engineReadyFile: ready });
+    try {
+      const response = await fetch(app.base + "/v1/discover", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type, title: "Movie", kinopoiskId: 5494049, ...(type === "tv" ? coords : {}) }), signal: AbortSignal.timeout(1500) });
+      const stream = sseReader(response.body);
+      const first = await stream.until("candidate");
+      assert.equal(first.data.providerId, "habster:collaps");
+      assert.equal(nativeCalls, 0);
+      assert.equal((await post(app.base, "/v1/resolve", { id: first.data.id, catalogSource: "vi3000" })).status, 200);
+      await writeFile(ready, "ready");
+      await stream.drain();
+      assert.deepEqual(stream.frames.filter((frame) => frame.event === "candidate").map((frame) => frame.data.providerId), ["habster:collaps", "hdvb"]);
+      assert.equal(stream.frames.find((frame) => frame.event === "done").data.complete, true);
+    } finally { await app.close(); }
+  }
+});
+
+test("Habster failures fall back, missing KP skips Habster, and catalog fallback keeps the public vi plane", async (t) => {
+  for (const catalogSource of [undefined, "vi3000", "habster"]) for (const kinopoiskId of [undefined, 5494049]) {
+    let habsterCalls = 0;
+    const fleet = { async *discover(title) {
+      assert.equal(title.catalogSource, catalogSource === "habster" ? "vi3000" : catalogSource);
+      yield candidate({ providerId: catalogSource ? "vi3000:cdnvideohub" : "hdvb", catalogSource: catalogSource ? "vi3000" : undefined });
+    } };
+    const app = await start(fleet, makeMedia(), "", undefined, { viAdapter: fleet, habsterAdapter: { async *discover() {
+      habsterCalls++;
+      throw new Error("upstream URL with private details must not leak");
+    } } });
+    try {
+      const response = await post(app.base, "/v1/discover", { type: "movie", title: "Movie", catalogSource, kinopoiskId });
+      const text = await response.text();
+      assert.match(text, /event: candidate/);
+      assert.equal(habsterCalls, kinopoiskId ? 1 : 0);
+      assert.equal(text.includes("private details"), false);
+      assert.equal(text.includes('"providerId":"habster:collaps","providerName":"Habster · Collaps","status":"unavailable"'), Boolean(kinopoiskId));
+      assert.match(text, /"complete":true/);
+    } finally { await app.close(); }
+  }
+});
+
+test("Habster resolve has an eight-second budget while disconnect aborts background discovery", async (t) => {
+  let discoveryAborted = false;
+  let resolveAborted = false;
+  const habsterAdapter = {
+    async *discover() { yield candidate({ providerId: "habster:collaps", catalogSource: "habster", season: null, episode: null }); },
+    async resolve(_candidate, { signal }) {
+      await new Promise((_resolve, reject) => signal.addEventListener("abort", () => { resolveAborted = true; reject(signal.reason); }, { once: true }));
+    },
+  };
+  const app = await start({ async *discover(_title, { signal }) {
+    await new Promise((_resolve, reject) => signal.addEventListener("abort", () => { discoveryAborted = true; reject(signal.reason); }, { once: true }));
+  } }, makeMedia(), "", undefined, { habsterAdapter });
+  t.after(() => app.close());
+  const response = await post(app.base, "/v1/discover", { type: "movie", title: "Movie", kinopoiskId: 5494049 });
+  const stream = sseReader(response.body);
+  const first = await stream.until("candidate");
+  const before = Date.now();
+  const resolved = await post(app.base, "/v1/resolve", { id: first.data.id });
+  assert.equal(resolved.status, 504);
+  assert.equal((await resolved.json()).error, "TIMEOUT");
+  assert(resolveAborted);
+  assert(Date.now() - before < 9500, "Habster failure must not consume the native 45-second resolution budget");
+  await stream.cancel();
+  for (let i = 0; i < 50 && !discoveryAborted; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert(discoveryAborted);
+});
+
+test("a background fleet failure preserves an already emitted and resolvable Habster source", async (t) => {
+  const habsterAdapter = {
+    async *discover() { yield candidate({ providerId: "habster:collaps", catalogSource: "habster", season: null, episode: null }); },
+    async resolve() { return { qualities: [{ label: "Auto", type: "hls", url: "https://cdn.test/first.m3u8", publicOnly: true }] }; },
+  };
+  const app = await start({ async *discover() { throw new Error("native failed"); } }, makeMedia(), "", undefined, { habsterAdapter });
+  t.after(() => app.close());
+  const response = await post(app.base, "/v1/discover", { type: "movie", title: "Movie", kinopoiskId: 5494049 });
+  const stream = sseReader(response.body);
+  const first = await stream.until("candidate");
+  await stream.drain();
+  assert.equal(first.data.providerId, "habster:collaps");
+  assert.equal(stream.frames.find((frame) => frame.event === "done").data.complete, false);
+  assert.equal((await post(app.base, "/v1/resolve", { id: first.data.id })).status, 200);
 });
 
 test("only sealed Zetflix movie candidates use Node media routing", async (t) => {

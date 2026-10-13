@@ -109,6 +109,27 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
   viAdapter ||= createVi3000Provider({ transport: createTransport() });
   habsterAdapter ||= createHabsterProvider({ transport: createTransport() });
   const sourceAdapter = (catalogSource) => catalogSource === "habster" ? habsterAdapter : catalogSource === "vi3000" ? viAdapter : adapter;
+  async function* discoverSources(title, signal) {
+    let fallbackTitle = title;
+    if (title.kinopoiskId || title.year) {
+      try {
+        for await (const candidate of habsterAdapter.discover(title, { signal })) {
+          if (candidate.providerId === "habster:collaps" && Number.isSafeInteger(candidate.ref?.kinopoiskId) && candidate.ref.kinopoiskId > 0) {
+            fallbackTitle = { ...title, kinopoiskId: candidate.ref.kinopoiskId };
+          }
+          yield candidate;
+        }
+      }
+      catch {
+        signal.throwIfAborted();
+        yield { providerId: "habster:collaps", providerName: "Habster · Collaps", error: "Habster unavailable" };
+      }
+    }
+    const remote = ["vi3000", "habster"].includes(title.catalogSource);
+    if (!remote) await waitForEngine(signal);
+    if (title.catalogSource === "habster") fallbackTitle = { ...fallbackTitle, catalogSource: "vi3000" };
+    yield* (remote ? viAdapter : adapter).discover(fallbackTitle, { signal });
+  }
   const providers = new Map();
   let discoveries = 0;
   let resolutions = 0;
@@ -203,7 +224,6 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
       const body = await bodyJson(req);
       if (path.pathname === "/v1/discover") {
         const title = validateTitle(body);
-        if (!["vi3000", "habster"].includes(title.catalogSource)) await waitForEngine(controller.signal);
         if (discoveries >= 4) throw failure("Сервер занят, повторите запрос", 429, "BUSY");
         discoveries++;
         deadline = setTimeout(() => controller.abort(failure("Истекло время поиска", 504, "TIMEOUT")), DISCOVERY_MS);
@@ -214,8 +234,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         let count = 0;
         try {
           event("start", { type: title.type, season: title.season, episode: title.episode });
-          const selectedAdapter = sourceAdapter(title.catalogSource);
-          for await (const candidate of selectedAdapter.discover(title, { signal: controller.signal })) {
+          for await (const candidate of discoverSources(title, controller.signal)) {
             if (controller.signal.aborted) break;
             if (candidate.error) {
               record(candidate.providerId, { providerName: candidate.providerName, status: "unavailable", error: "Источник не предоставил выбранную запись" });
@@ -242,7 +261,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         if (!["vi3000", "habster"].includes(candidate.catalogSource)) await waitForEngine(controller.signal);
         if (resolutions >= 8) throw failure("Сервер занят, повторите запрос", 429, "BUSY");
         resolutions++;
-        deadline = setTimeout(() => controller.abort(failure("Истекло время проверки", 504, "TIMEOUT")), RESOLVE_MS);
+        deadline = setTimeout(() => controller.abort(failure("Истекло время проверки", 504, "TIMEOUT")), candidate.catalogSource === "habster" ? 8_000 : RESOLVE_MS);
         try {
           const selectedAdapter = sourceAdapter(candidate.catalogSource);
           const resolved = await selectedAdapter.resolve(candidate, { signal: controller.signal });

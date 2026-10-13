@@ -21,6 +21,18 @@ The current pages also offer Alloha, Turbo, GetClit, optional Kodik and TurkPlay
 
 ## Production verification
 
+### Default startup and background sources
+
+Browser movie/TV pages now start on the source host even when an old `online` choice is stored. Explicit manual choice remains available on the open page; desktop preferences are unchanged. Web discovery starts with already available IDs and metadata, without waiting for the legacy browser Kinopoisk lookup or another TMDB external-ID request.
+
+Habster is attempted first for ordinary TMDB titles as well as imported catalog cards. A known positive KP ID produces an immediate candidate; resolve performs the actual page/embed/media validation. A missing ID is matched through Habster's fixed search/info endpoints using exact title, year and type, plus IMDb when available, with a three-second combined lookup deadline. Ambiguous or missing matches are skipped. Habster resolution has an eight-second budget before fallback.
+
+The initial SSE response and Habster candidate no longer wait for the native engine. The existing native fleet (ordinary TMDB titles) or public vi3000 fleet (CUB/Habster cards) follows in the same discovery stream. Late candidates update the available sources without resolving another stream or replacing the active video. Manual selection and failed-primary recovery keep the existing session behavior.
+
+The old public route `/movie/969681` with a stored `online` preference did not decode within 25 seconds. Its source discovery response headers arrived after 12.356 seconds; the first HDVB candidate arrived about 15.2 seconds after Watch, and video requests returned relay 502 before another source was tried at about 23.8 seconds. These were real production requests with matching TMDB metadata fixtures, not a measurement of the user's own browser. The before/after trace is recorded in `habster-first-production-verification-2026-10-13.json`.
+
+The startup change passed 56 source-host tests and 21 Habster/player browser tests. A hook self-check proves that web discovery begins while hypothetical legacy ID lookups remain stalled; a client regression proves late sources keep the identical playing stream and do not resolve until selected. Build, player and SSE gateway checks passed. Live exact Habster mapping returned KP 5494049 in 323 ms and source resolution in another 399 ms on the development machine; these are observations, not production speed guarantees.
+
 Both production deployments reached READY at commit `f444c1f18f6788c1dde5113c4549cb1a3ace371f`:
 
 - Frontend `dpl_BrN4mPWeXaxC5oyJHTQMobgeeZyY`: https://lampa-stream-six.vercel.app.

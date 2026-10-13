@@ -429,14 +429,9 @@ export default function TVPage({
   const [m3u8Url, setM3u8Url] = useState(null);
   const [interceptedSubs, setInterceptedSubs] = useState([]);
   const [playerSource, setPlayerSource] = useState(() => {
-    const saved = storage.get("playerSource");
-    // New browser sessions use our source host; keep supported saved choices.
-    if (!!window.__webShim) {
-      if (saved && availableSources().some((s) => s.id === saved)) return saved;
-      if (saved) storage.set("playerSource", "lampac");
-      return "lampac";
-    }
-    return saved || NON_ANIME_DEFAULT_SOURCE;
+    // Start each browser title on the Habster-first host; manual choice still works.
+    if (window.__webShim) return "lampac";
+    return storage.get("playerSource") || NON_ANIME_DEFAULT_SOURCE;
   });
   // On web, webview never loads → never show "Loading Vidking…".
   useEffect(() => {
@@ -705,7 +700,7 @@ export default function TVPage({
   // Fetch AniList metadata + auto-set anime source
   useEffect(() => {
     let mounted = true;
-    // On web, the ONLY source is "online" — never switch away from it.
+    // Browser playback keeps the host default or the user's current manual choice.
     if (!!window.__webShim) return;
     setAnilistData(null);
     setAnilistSeasons(null);

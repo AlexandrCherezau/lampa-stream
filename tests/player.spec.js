@@ -93,6 +93,8 @@ for (const mode of ["manual", "auto"]) test(`decoded movie playback skips confir
     window.electron.collapsResolve = async () => ({ ok: true, hls: "/fixture.m3u8" });
   });
   await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  await page.getByTitle("Сменить источник").click();
+  await page.locator(".source-dropdown__item").filter({ hasText: "Онлайн" }).click();
   const video = page.locator("video");
   await expect(video).toBeVisible({ timeout: 20_000 });
   await expect.poll(() => video.evaluate((v) => v.readyState), { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
