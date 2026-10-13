@@ -1,0 +1,468 @@
+{
+  "checkedAt": "2026-10-13T11:26:33.144Z",
+  "status": "GREEN",
+  "origin": "https://lampa-stream-six.vercel.app",
+  "deployments": {
+    "frontend": {
+      "id": "dpl_ELPYJS1xBMmzjfXkHXrMtuRhwH7N",
+      "commit": "f1132fb6ba7eba363c71adee2760e54ed58dba20",
+      "state": "READY"
+    },
+    "backend": {
+      "id": "dpl_BV4ZsSM8f6QzUzcGYv6nx3x2TjqN",
+      "commit": "47bdc481b9a80eb457569de913b8f9d87cb871c6",
+      "state": "READY"
+    }
+  },
+  "validation": {
+    "sourceHostTests": {
+      "passed": 59,
+      "failed": 0
+    },
+    "browserRegressions": {
+      "passed": 21,
+      "failed": 0,
+      "scope": "CUB/Habster/Zona/4K/manual-seek targeted Chromium regressions; full earlier player run had one name regression, fixed and reverified."
+    },
+    "viteBuild": "passed",
+    "catalogClientGatewayChecks": "passed",
+    "review": "No outstanding confirmed defects"
+  },
+  "ui": {
+    "at": "2026-10-13T11:24:14.691Z",
+    "origin": "https://lampa-stream-six.vercel.app",
+    "commit": "f1132fb6ba7eba363c71adee2760e54ed58dba20",
+    "scope": "Real Zona API, discovery, resolve and media. Matching TMDB fixtures for Astral6 id1291595/IMDbtt32393988; client session flag. Login, personal TMDB credentials and full film not tested.",
+    "status": "GREEN",
+    "catalog": {
+      "status": 200,
+      "count": 18,
+      "unmapped": 2,
+      "page": 1,
+      "totalPages": 10000,
+      "cache": "no-store",
+      "astral": {
+        "kinopoisk_id": 7104903,
+        "imdb_id": "tt32393988",
+        "media_type": "movie",
+        "title": "Астрал 6: Они уже здесь",
+        "catalogSource": "zona"
+      }
+    },
+    "mediaStatuses": [
+      {
+        "range": "bytes=0-",
+        "contentRange": "bytes 0-8388607/1624204480",
+        "length": "8388608",
+        "acceptRanges": "bytes"
+      },
+      {
+        "range": "bytes=19628032-",
+        "contentRange": "bytes 19628032-28016639/1624204480",
+        "length": "8388608",
+        "acceptRanges": "bytes"
+      },
+      {
+        "range": "bytes=28016640-",
+        "contentRange": "bytes 28016640-36405247/1624204480",
+        "length": "8388608",
+        "acceptRanges": "bytes"
+      }
+    ],
+    "startupMs": 8947,
+    "initial": {
+      "width": 1272,
+      "height": 530,
+      "time": 0.113761,
+      "duration": 6352.6859999999915,
+      "frames": 7,
+      "readyState": 4,
+      "error": null
+    },
+    "beforeSwitch": {
+      "width": 1272,
+      "height": 530,
+      "time": 52.854648,
+      "duration": 6352.6859999999915,
+      "frames": 318,
+      "readyState": 4,
+      "error": null
+    },
+    "qualityChoice": "VK Видео · 4K",
+    "afterSwitch": {
+      "width": 3840,
+      "height": 2160,
+      "time": 65.193672,
+      "duration": 6352.768,
+      "frames": 321,
+      "readyState": 4,
+      "error": null
+    },
+    "nativeSeekable": [
+      {
+        "start": 0,
+        "end": 6352.768
+      }
+    ],
+    "trace": {
+      "queries": [
+        {
+          "type": "movie",
+          "title": "Астрал 6: Они уже здесь",
+          "originalTitle": "Insidious: Out of the Further",
+          "language": "en",
+          "anime": false,
+          "tmdbId": 1291595,
+          "catalogSource": "zona",
+          "year": 2026,
+          "imdbId": "tt32393988",
+          "kinopoiskId": 7104903,
+          "runtimeMinutes": 106
+        }
+      ],
+      "resolves": [
+        {
+          "quality": null
+        },
+        {
+          "quality": "2160p"
+        }
+      ],
+      "providers": [
+        {
+          "id": "habster:collaps",
+          "name": "Habster · Collaps",
+          "quality": "Auto"
+        },
+        {
+          "id": "cdnvideohub",
+          "name": "VideoHUB",
+          "quality": ""
+        },
+        {
+          "id": "filmix",
+          "name": "Filmix",
+          "quality": "480p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "2160p"
+        },
+        {
+          "id": "phantom",
+          "name": "Phantom",
+          "quality": "2160p"
+        },
+        {
+          "id": "aladin",
+          "name": "Aladin",
+          "quality": ""
+        },
+        {
+          "id": "cdnvideohub",
+          "name": "VideoHUB",
+          "quality": ""
+        },
+        {
+          "id": "filmix",
+          "name": "Filmix",
+          "quality": "480p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "2160p"
+        },
+        {
+          "id": "phantom",
+          "name": "Phantom",
+          "quality": "2160p"
+        },
+        {
+          "id": "aladin",
+          "name": "Aladin",
+          "quality": "2160p"
+        },
+        {
+          "id": "cdnvideohub",
+          "name": "VideoHUB",
+          "quality": ""
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "2160p"
+        },
+        {
+          "id": "phantom",
+          "name": "Phantom",
+          "quality": "2160p"
+        },
+        {
+          "id": "aladin",
+          "name": "Aladin",
+          "quality": "2160p"
+        },
+        {
+          "id": "cdnvideohub",
+          "name": "VideoHUB",
+          "quality": ""
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "2160p"
+        },
+        {
+          "id": "phantom",
+          "name": "Phantom",
+          "quality": "2160p"
+        },
+        {
+          "id": "aladin",
+          "name": "Aladin",
+          "quality": "2160p"
+        },
+        {
+          "id": "cdnvideohub",
+          "name": "VideoHUB",
+          "quality": ""
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "2160p"
+        },
+        {
+          "id": "phantom",
+          "name": "Phantom",
+          "quality": "2160p"
+        },
+        {
+          "id": "aladin",
+          "name": "Aladin",
+          "quality": "2160p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "2160p"
+        },
+        {
+          "id": "phantom",
+          "name": "Phantom",
+          "quality": "2160p"
+        },
+        {
+          "id": "aladin",
+          "name": "Aladin",
+          "quality": "2160p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "2160p"
+        },
+        {
+          "id": "phantom",
+          "name": "Phantom",
+          "quality": ""
+        },
+        {
+          "id": "aladin",
+          "name": "Aladin",
+          "quality": "2160p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "2160p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "2160p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "2160p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "2160p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "2160p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "2160p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "1080p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "1080p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "1080p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "1080p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "1080p"
+        },
+        {
+          "id": "vkmovie",
+          "name": "VK Видео",
+          "quality": "1080p"
+        },
+        {
+          "id": "collaps",
+          "name": "Collaps",
+          "quality": ""
+        }
+      ],
+      "loadStarts": 2
+    }
+  },
+  "native": {
+    "at": "2026-10-13T11:24:36.906Z",
+    "backendDeployment": "dpl_BV4ZsSM8f6QzUzcGYv6nx3x2TjqN",
+    "provider": "vkmovie",
+    "quality": 2160,
+    "resolveStatus": 200,
+    "media": [
+      {
+        "status": 206,
+        "requestedRange": "bytes=0-",
+        "contentRange": "bytes 0-8388607/1624204480",
+        "contentLength": "8388608",
+        "acceptRanges": "bytes"
+      },
+      {
+        "status": 206,
+        "requestedRange": "bytes=18350080-",
+        "contentRange": "bytes 18350080-26738687/1624204480",
+        "contentLength": "8388608",
+        "acceptRanges": "bytes"
+      }
+    ],
+    "status": "GREEN",
+    "before": {
+      "time": 0,
+      "duration": 6352.768,
+      "width": 3840,
+      "height": 2160,
+      "readyState": 1,
+      "frames": 0,
+      "seeking": false,
+      "paused": false,
+      "seekable": [
+        [
+          0,
+          6352.768
+        ]
+      ],
+      "error": null
+    },
+    "seekMs": 1300,
+    "after": {
+      "time": 45.021462,
+      "duration": 6352.768,
+      "width": 3840,
+      "height": 2160,
+      "readyState": 4,
+      "frames": 27,
+      "seeking": false,
+      "paused": false,
+      "seekable": [
+        [
+          0,
+          6352.768
+        ]
+      ],
+      "error": null
+    },
+    "events": [
+      {
+        "event": "loadedmetadata",
+        "time": 0,
+        "at": 1563.1000000000931
+      },
+      {
+        "event": "seeking",
+        "time": 45,
+        "at": 1588.3999999999069
+      },
+      {
+        "event": "seeked",
+        "time": 45.000566,
+        "at": 2858
+      },
+      {
+        "event": "playing",
+        "time": 45.000645,
+        "at": 2858
+      }
+    ],
+    "elapsedMs": 10718
+  },
+  "habster": {
+    "observedAt": "2026-10-13T10:59:29.797861+00:00",
+    "title": "Астрал 6: Они уже здесь",
+    "kinopoiskId": 7104903,
+    "publicPage": "https://habster.sbs/film/7104903/",
+    "provider": "Alloha",
+    "anonymousBrowser": true,
+    "workflow": "Habster default Alloha iframe → Settings → Quality → 2160p4K",
+    "defaultMaster": {
+      "httpStatus": 200,
+      "resolution": "854x358"
+    },
+    "selected4kMaster": {
+      "httpStatus": 200,
+      "resolution": "3840x1604"
+    },
+    "backendReplay": {
+      "post": 404,
+      "qualityUrlGet": 403,
+      "reason": "Native browser client applies dynamic public-request guard and URL transformation; not replicated or bypassed"
+    },
+    "userReferenceTitle": {
+      "kinopoiskId": 10355286,
+      "title": "Обсессия",
+      "year": 2025
+    },
+    "decoded4k": false
+  },
+  "earlierFailure": {
+    "source": "VK progressive video over relay",
+    "symptom": "4K decoded but native seeking silently reset to zero",
+    "correctiveAction": "Seal Node routing for VK progressive files; keep HLS routing unchanged",
+    "harnessFailure": "First UI probe used English fixture provider name; production label is VK Видео."
+  },
+  "limitations": [
+    "Matching TMDB metadata fixtures and existing client session flag used in UI QA; real catalog/discovery/resolve/media were not mocked.",
+    "Login, personal TMDB credentials, all films, full-duration viewing and desktop torrent playback were not tested.",
+    "Zona public online sample was a 60-second installer ad and is excluded; Zona contributes verified catalog cards, with playback through Habster/native providers.",
+    "Live catalog enrichment, providers and CDN availability can vary."
+  ]
+}
