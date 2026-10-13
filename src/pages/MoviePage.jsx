@@ -77,7 +77,7 @@ import {
   getAgeLimitSetting,
   getRatingCountry,
 } from "../utils/ageRating";
-import { discoverSources } from "../utils/source-host-client";
+import { prepareMovieSource } from "../utils/source-host-client";
 
 export default function MoviePage({
   item,
@@ -745,8 +745,8 @@ export default function MoviePage({
     return new Date(d.release_date) > today;
   }, [d.release_date]);
 
-  // Warm the Habster lookup while the viewer reads the web movie page. This
-  // endpoint only prepares source metadata; playback still starts on click.
+  // Resolve the default Habster stream while the viewer reads the web movie
+  // page. The existing player stays unmounted until the viewer starts playback.
   useEffect(() => {
     if (!webMode || !details || restricted || isUnreleased || !["online", "lampac"].includes(playerSource)) return;
     const title = details.title || details.name || item.title || item.name;
@@ -758,16 +758,23 @@ export default function MoviePage({
     const year = (details.release_date || details.first_air_date || item.release_date || item.first_air_date || "").slice(0, 4);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20_000);
-    void discoverSources({
+    const runtime = Number(details.runtime ?? item.runtime);
+    const titleParams = {
       type: "movie",
       title,
       originalTitle: details.original_title || details.original_name || item.original_title || item.original_name || title,
+      language: details.original_language || item.original_language,
+      anime: isAnimeContent(item, details),
+      tmdbId: item.id,
+      ...(["vi3000", "habster", "zona"].includes(item.catalogSource) ? { catalogSource: item.catalogSource } : {}),
       ...(year ? { year: Number(year) } : {}),
       ...(details.imdb_id || details.external_ids?.imdb_id || item.imdb_id
         ? { imdbId: details.imdb_id || details.external_ids?.imdb_id || item.imdb_id }
         : {}),
       ...(kpId ? { kinopoiskId: kpId } : {}),
-    }, { signal: controller.signal, prepareOnly: true, onEvent: () => {} }).catch(() => {});
+      ...(Number.isSafeInteger(runtime) && runtime >= 1 && runtime <= 1440 ? { runtimeMinutes: runtime } : {}),
+    };
+    void prepareMovieSource(titleParams, { signal: controller.signal });
     return () => {
       clearTimeout(timeout);
       controller.abort();

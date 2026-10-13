@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createSourceSession, discoverSources } from "../src/utils/source-host-client.js";
+import { createSourceSession, discoverSources, prepareMovieSource } from "../src/utils/source-host-client.js";
 import { labelAudioTracks } from "../src/utils/collaps-client.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -238,6 +238,133 @@ async function prepareOnlyDiscoveryPreservesAbortSignal() {
   assert.equal(request.options.signal, controller.signal, "navigation cleanup can abort the preparation request");
 }
 
+async function preparedMovieResolveIsBoundedAndExact() {
+  const title = { type: "movie", title: "Warm Movie", tmdbId: 42, runtimeMinutes: 101 };
+  const habster = { ...candidate("warm-id", "habster:alloha"), voiceId: "voice-1" };
+  const preparedCalls = [];
+  await prepareMovieSource(title, {
+    discover: async (_title, options) => {
+      assert.equal(options.prepareOnly, true);
+      options.onEvent("candidate", habster);
+    },
+    resolve: async (...args) => { preparedCalls.push(args); return result("https://media.test/warm.m3u8"); },
+  });
+  assert.equal(preparedCalls.length, 1, "detail-page preparation resolves the default Alloha voice");
+
+  let state;
+  const playbackCalls = [];
+  const session = createSourceSession({
+    publish: (value) => { state = value; },
+    discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "fresh-signed-id" }),
+    resolve: async (...args) => { playbackCalls.push(args); return result("https://media.test/fresh.m3u8"); },
+  });
+  await session.start(title);
+  assert.equal(state.stream.hls, "https://media.test/warm.m3u8");
+  assert.equal(playbackCalls.length, 0, "first automatic choice reuses the early resolve");
+  await session.selectQuality("2160p");
+  assert.equal(playbackCalls.length, 1, "explicit quality selection always performs a fresh resolve");
+  session.stop();
+
+  const pendingTitle = { ...title, tmdbId: 45 };
+  const pendingResult = deferred();
+  await prepareMovieSource(pendingTitle, {
+    discover: async (_title, options) => options.onEvent("candidate", habster),
+    resolve: () => pendingResult.promise,
+  });
+  let pendingState;
+  const pendingPlaybackReady = deferred();
+  let duplicateResolveCalls = 0;
+  const pendingSession = createSourceSession({
+    publish: (value) => { pendingState = value; if (value.stream) pendingPlaybackReady.resolve(); },
+    discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "pending-playback-id" }),
+    resolve: async () => { duplicateResolveCalls++; return result("https://media.test/duplicate.m3u8"); },
+  });
+  const pendingStart = pendingSession.start(pendingTitle);
+  await tick();
+  assert.equal(duplicateResolveCalls, 0, "click waits for the in-flight early resolve instead of duplicating it");
+  pendingResult.resolve(result("https://media.test/pending-warm.m3u8"));
+  await pendingPlaybackReady.promise;
+  await pendingStart;
+  assert.equal(duplicateResolveCalls, 0);
+  assert.equal(pendingState.stream.hls, "https://media.test/pending-warm.m3u8");
+  pendingSession.stop();
+
+  const mismatchTitle = { ...title, runtimeMinutes: 102 };
+  let mismatchResolves = 0;
+  const mismatchSession = createSourceSession({
+    publish: () => {},
+    discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "other-signed-id" }),
+    resolve: async () => { mismatchResolves++; return result("https://media.test/mismatch.m3u8"); },
+  });
+  await mismatchSession.start(mismatchTitle);
+  assert.equal(mismatchResolves, 1, "a different runtime cannot reuse the prepared sealed candidate");
+  mismatchSession.stop();
+
+  let expiredResolves = 0;
+  const realNow = Date.now;
+  try {
+    Date.now = () => realNow() + 16_000;
+    const expiredSession = createSourceSession({
+      publish: () => {},
+      discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "expired-signed-id" }),
+      resolve: async () => { expiredResolves++; return result("https://media.test/expired.m3u8"); },
+    });
+    await expiredSession.start(title);
+    assert.equal(expiredResolves, 1, "prepared results expire after the short warm window");
+    expiredSession.stop();
+  } finally { Date.now = realNow; }
+
+  const aborted = new AbortController();
+  let abortSignal;
+  await prepareMovieSource({ ...title, tmdbId: 43 }, {
+    signal: aborted.signal,
+    discover: async (_title, options) => options.onEvent("candidate", habster),
+    resolve: async (_id, _quality, signal) => {
+      abortSignal = signal;
+      return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+    },
+  });
+  aborted.abort();
+  assert.equal(abortSignal, aborted.signal, "navigation cancellation reaches the early resolve request");
+  const afterAbort = createSourceSession({
+    publish: () => {},
+    discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "after-abort" }),
+    resolve: async () => { throw new Error("expected ordinary resolve to fail in this fixture"); },
+  });
+  await afterAbort.start({ ...title, tmdbId: 43 });
+  afterAbort.stop();
+
+  const failedTitle = { ...title, tmdbId: 44 };
+  await prepareMovieSource(failedTitle, {
+    discover: async (_title, options) => options.onEvent("candidate", habster),
+    resolve: async () => { throw new Error("prepared resolve failed"); },
+  });
+  let fallbackCalls = 0;
+  const failedWarmSession = createSourceSession({
+    publish: () => {},
+    discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "failed-warm-fallback" }),
+    resolve: async () => { fallbackCalls++; return result("https://media.test/fallback.m3u8"); },
+  });
+  await failedWarmSession.start(failedTitle);
+  assert.equal(fallbackCalls, 1, "a failed prepared resolve falls back to a fresh playback resolve");
+  failedWarmSession.stop();
+
+  const malformedTitle = { ...title, tmdbId: 46 };
+  await prepareMovieSource(malformedTitle, {
+    discover: async (_title, options) => options.onEvent("candidate", habster),
+    resolve: async () => ({ kind: "hls", selected: {} }),
+  });
+  let malformedFallbackCalls = 0;
+  const malformedSession = createSourceSession({
+    publish: () => {},
+    discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "malformed-warm-fallback" }),
+    resolve: async () => { malformedFallbackCalls++; return result("https://media.test/valid-fallback.m3u8"); },
+  });
+  await malformedSession.start(malformedTitle);
+  assert.equal(malformedFallbackCalls, 1, "malformed prepared playback data falls back to a fresh resolve");
+  malformedSession.stop();
+}
+
 async function skipRangesFollowActiveStream() {
   let state;
   const ranges = { a: [{ start: 5, end: 10 }], b: [{ start: 20, end: 30 }] };
@@ -295,6 +422,7 @@ await fallbackRotatesProvidersAndStops();
 await manualFailureAndStaleRequests();
 await emptyDiscoveryAndSplitSse();
 await prepareOnlyDiscoveryPreservesAbortSignal();
+await preparedMovieResolveIsBoundedAndExact();
 await skipRangesFollowActiveStream();
 await audioNamesFollowActiveStream();
 console.log("Source-host client checks passed: progressive fallback, explicit 4K choice, per-voice recovery, provider rotation, exhausted candidates, manual/stale requests, empty and prepare-only discovery, split SSE, audio labels.");

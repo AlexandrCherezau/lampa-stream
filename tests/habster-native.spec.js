@@ -117,3 +117,91 @@ test("Habster HLS uses our player, full quality ladder, voice switching and save
   await page.getByRole("button", { name: "Смотреть", exact: true }).click();
   await expect.poll(() => video.evaluate((value) => value.currentTime)).toBeGreaterThanOrEqual(saved - 1);
 });
+
+test("multilevel Habster HLS decodes its first fragment while the next fragment is stalled", async ({ page }) => {
+  const candidates = [
+    { id: "alloha-dub", providerId: "habster:alloha", providerName: "Habster · Alloha", voiceName: "Red Head Sound", qualityHint: "720p" },
+  ];
+  await page.addInitScript((candidates) => {
+    localStorage.setItem("lampa_stream_tmdb_token", "native-hls-startup-fixture");
+    localStorage.removeItem("streambert_resumeTime");
+    localStorage.removeItem("streambert_progress");
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (String(input).includes("/api/source-host?op=discover")) {
+        return Promise.resolve(new Response(new ReadableStream({ start(controller) {
+          controller.enqueue(new TextEncoder().encode(`event: candidate\ndata: ${JSON.stringify(candidates[0])}\n\n`));
+          controller.close();
+        } }), { headers: { "content-type": "text/event-stream" } }));
+      }
+      return originalFetch(input, init);
+    };
+  }, candidates);
+  await page.route("**/api/tmdb/**", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({
+    id: 969681, title: "Человек-паук: Новый день", original_title: "Spider-Man: Brand New Day", release_date: "2026-07-31",
+    runtime: 145, imdb_id: "tt22084616", kinopoisk_id: 5494049, genres: [], credits: { cast: [] }, results: [], images: {},
+  }) }));
+  await page.route("**/api/source-host?op=resolve", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({
+    kind: "hls", selected: { label: "720p", height: 720, url: "https://startup-media.example/720p/master.m3u8" },
+    qualities: [{ label: "720p", height: 720, url: "https://startup-media.example/720p/master.m3u8" }],
+    subtitles: ["English", "Русский", "Deutsch", "Русский"].map((label, index) => ({ label, language: "en", url: `/api/source-host?op=media&token=subtitle-${index}-${encodeURIComponent(label)}` })), audioNames: [],
+  }) }));
+  const fragmentRequests = [];
+  const subtitleRequests = [];
+  let secondFragmentRequested = false;
+  let releaseSecondFragment;
+  const secondFragmentGate = new Promise((resolve) => { releaseSecondFragment = resolve; });
+  await page.route("https://startup-media.example/**", (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname.endsWith("master.m3u8")) return route.fulfill({
+      contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" },
+      body: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=150000,RESOLUTION=160x90\nlow.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=450000,RESOLUTION=320x180\nmid.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1200000,RESOLUTION=640x360\nhigh.m3u8\n",
+    });
+    if (pathname.endsWith(".m3u8")) return route.fulfill({
+      contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" },
+      body: readFileSync(join(fixtureDir, "fixture.m3u8")),
+    });
+    fragmentRequests.push(pathname);
+    if (pathname.endsWith("fixture001.ts")) {
+      secondFragmentRequested = true;
+      return secondFragmentGate.then(() => route.fulfill({ contentType: "video/mp2t", headers: { "access-control-allow-origin": "*" },
+        body: readFileSync(join(fixtureDir, "fixture001.ts")) }));
+    }
+    return route.fulfill({ contentType: "video/mp2t", headers: { "access-control-allow-origin": "*" },
+      body: readFileSync(join(fixtureDir, pathname.split("/").pop())) });
+  });
+  await page.route(/\/api\/source-host\?op=media&token=subtitle-/, (route) => {
+    const token = new URL(route.request().url()).searchParams.get("token");
+    subtitleRequests.push(token);
+    return route.fulfill({ contentType: "text/vtt", body: "WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nFixture subtitle\n" });
+  });
+
+  await page.goto("/movie/969681");
+  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  const video = page.locator(".torrplayer > video");
+  await expect(video).toBeVisible();
+  try {
+    await expect.poll(() => secondFragmentRequested).toBe(true);
+    await expect.poll(() => video.evaluate((value) => value.getVideoPlaybackQuality().totalVideoFrames), { timeout: 2500 }).toBeGreaterThan(0);
+    expect(fragmentRequests.filter((path) => path.endsWith("fixture000.ts"))).toHaveLength(1);
+    expect(subtitleRequests).toEqual([]);
+
+    await page.locator(".torrplayer").hover();
+    await page.getByTitle("Субтитры (C)").click();
+    await page.locator(".torrplayer-audio-menu").getByRole("button", { name: "Русский", exact: true }).nth(1).click();
+    await expect.poll(() => subtitleRequests).toEqual(["subtitle-3-Русский"]);
+    await expect.poll(() => video.evaluate((value) => {
+      const tracks = Array.from(value.querySelectorAll("track[data-cc]"));
+      return tracks[1].track.mode === "disabled" && tracks[3].track.mode === "showing" && tracks[3].track.cues?.length > 0;
+    })).toBe(true);
+
+    await page.locator(".torrplayer").hover();
+    await page.getByTitle("Субтитры (C)").click();
+    await page.locator(".torrplayer-audio-menu").getByRole("button", { name: "Выключить", exact: true }).click();
+    expect(await video.evaluate((value) => Array.from(value.querySelectorAll("track[data-cc]"))[3].track.mode)).toBe("disabled");
+    await page.waitForTimeout(250);
+    expect(subtitleRequests).toEqual(["subtitle-3-Русский"]);
+  } finally {
+    releaseSecondFragment();
+  }
+});

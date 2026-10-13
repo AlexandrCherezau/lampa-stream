@@ -35,7 +35,7 @@ test.afterAll(() => {
   if (animeFixtureDir) rmSync(animeFixtureDir, { recursive: true, force: true });
 });
 
-test("web movie detail warms Habster metadata before click while player preload stays side-effect free", async ({ page }) => {
+test("web movie detail prepares Habster resolve before click without attaching video or progress", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
     localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
@@ -43,25 +43,38 @@ test("web movie detail warms Habster metadata before click while player preload 
   await page.route("**/api/tmdb/**", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ id: 550, title: "Movie 550", original_title: "Movie 550", release_date: "1994-01-01", genres: [], credits: [] }),
+    body: JSON.stringify({ id: 550, title: "Movie 550", original_title: "Movie 550", runtime: 94, release_date: "1994-01-01", genres: [], credits: [] }),
   }));
   const sourceRequests = [];
+  const resolveRequests = [];
   page.on("request", (request) => {
-    if (request.url().includes("/api/source-host?")) sourceRequests.push({ url: request.url(), body: request.postDataJSON() });
+    if (request.url().includes("/api/source-host?op=discover")) sourceRequests.push({ url: request.url(), body: request.postDataJSON() });
   });
-  await page.route("**/api/source-host?op=discover", (route) => route.fulfill({
-    status: 200,
-    contentType: "text/event-stream",
-    body: "event: done\ndata: {\"candidates\":0,\"complete\":true}\n\n",
-  }));
+  await page.route("**/api/source-host?op=discover", (route) => {
+    const body = route.request().postDataJSON();
+    const candidateEvent = `event: candidate\ndata: ${JSON.stringify({
+      id: body.prepareOnly ? "prepared-id" : "playback-id",
+      providerId: "habster:alloha", providerName: "Habster · Alloha",
+      voiceId: "voice-original", voiceName: "Original", qualityHint: "Auto",
+    })}\n\n`;
+    return route.fulfill({ status: 200, contentType: "text/event-stream", body: `${candidateEvent}event: done\ndata: {"candidates":1,"complete":true}\n\n` });
+  });
+  await page.route("**/api/source-host?op=resolve", (route) => {
+    resolveRequests.push(route.request().postDataJSON());
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      kind: "hls", selected: { url: "https://media.test/film.m3u8", label: "720p" },
+      qualities: [{ label: "720p", height: 720 }], subtitles: [], audioNames: [],
+    }) });
+  });
 
   await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
   const watch = page.getByRole("button", { name: "Смотреть", exact: true });
   await expect(watch).toBeVisible();
   await expect.poll(() => sourceRequests.length).toBe(1);
   expect(new URL(sourceRequests[0].url).searchParams.get("op")).toBe("discover");
-  expect(sourceRequests[0].body).toMatchObject({ prepareOnly: true, type: "movie", title: "Movie 550", year: 1994 });
-  expect(sourceRequests.some(({ url }) => new URL(url).searchParams.get("op") === "resolve")).toBe(false);
+  expect(sourceRequests[0].body).toMatchObject({ prepareOnly: true, type: "movie", title: "Movie 550", year: 1994, runtimeMinutes: 94 });
+  await expect.poll(() => resolveRequests.length).toBe(1);
+  expect(resolveRequests[0]).toEqual({ id: "prepared-id" });
 
   const playerChunk = page.waitForRequest((request) => /\/assets\/OnlinePlayer-[^/]+\.js$/.test(new URL(request.url()).pathname));
   const hlsChunk = page.waitForRequest((request) => /\/assets\/hls-[^/]+\.js$/.test(new URL(request.url()).pathname));
@@ -74,7 +87,8 @@ test("web movie detail warms Habster metadata before click while player preload 
   await watch.click();
   await expect.poll(() => sourceRequests.length).toBe(2);
   expect(sourceRequests[1].body).not.toHaveProperty("prepareOnly");
-  await expect(page.locator(".torrpicker")).toBeVisible();
+  await expect.poll(() => resolveRequests.length).toBe(1);
+  await expect(page.locator("video")).toHaveCount(1);
 });
 
 for (const mode of ["manual", "auto"]) test(`decoded movie playback skips confirmed segments (${mode})`, async ({ page }) => {

@@ -1,4 +1,18 @@
 const ENDPOINT = "/api/source-host";
+const PREPARED_SOURCE_TTL = 15_000;
+const MAX_PREPARED_SOURCES = 4;
+const preparedSources = new Map();
+
+function titleKey(title) {
+  // Keep every field that can change a Habster lookup or the sealed runtime
+  // validation in this key. In particular, never reuse a resolved URL when
+  // the movie runtime was missing or differs from the player request.
+  return JSON.stringify([
+    title.type, title.title, title.originalTitle, title.tmdbId, title.year,
+    title.imdbId, title.kinopoiskId, title.language, Boolean(title.anime),
+    title.catalogSource, title.runtimeMinutes, title.season, title.episode,
+  ]);
+}
 
 async function request(op, body, signal) {
   const response = await fetch(`${ENDPOINT}?op=${op}`, {
@@ -39,6 +53,56 @@ export async function discoverSources(title, { signal, onEvent, prepareOnly = fa
 
 export async function resolveSource(id, quality, signal) {
   return (await request("resolve", { id, ...(quality ? { quality } : {}) }, signal)).json();
+}
+
+export async function prepareMovieSource(title, { signal, discover = discoverSources, resolve = resolveSource } = {}) {
+  const runtime = Number(title.runtimeMinutes);
+  if (!Number.isSafeInteger(runtime) || runtime < 1 || runtime > 1440) return;
+  const key = titleKey(title);
+  const expires = Date.now() + PREPARED_SOURCE_TTL;
+  try {
+    await discover(title, {
+      signal, prepareOnly: true,
+      onEvent: (name, candidate) => {
+        if (name !== "candidate" || candidate.providerId !== "habster:alloha" || signal?.aborted) return;
+        const current = preparedSources.get(key);
+        if (current) return;
+        const entry = { expires, voiceId: candidate.voiceId, voiceName: candidate.voiceName, result: null, claimed: false };
+        signal?.addEventListener("abort", () => {
+          if (preparedSources.get(key) === entry) preparedSources.delete(key);
+        }, { once: true });
+        entry.promise = Promise.resolve(resolve(candidate.id, undefined, signal)).then((result) => {
+          if (signal?.aborted || Date.now() >= expires || preparedSources.get(key) !== entry) return null;
+          resolvedStream(result);
+          entry.result = result;
+          return result;
+        }).catch(() => {
+          if (preparedSources.get(key) === entry) preparedSources.delete(key);
+          return null;
+        });
+        preparedSources.set(key, entry);
+        while (preparedSources.size > MAX_PREPARED_SOURCES) preparedSources.delete(preparedSources.keys().next().value);
+      },
+    });
+  } catch {
+    // Warming is opportunistic; ordinary playback discovery remains the fallback.
+  }
+}
+
+async function takePreparedResult(title, candidate) {
+  const key = titleKey(title);
+  const entry = preparedSources.get(key);
+  if (!entry) return null;
+  if (Date.now() >= entry.expires) {
+    preparedSources.delete(key);
+    return null;
+  }
+  if (candidate.providerId !== "habster:alloha" || candidate.voiceId !== entry.voiceId || candidate.voiceName !== entry.voiceName) return null;
+  if (entry.claimed) return null;
+  entry.claimed = true;
+  const result = entry.result || await entry.promise;
+  if (preparedSources.get(key) === entry) preparedSources.delete(key);
+  return result;
 }
 
 function advertisedHeight(hint) {
@@ -110,7 +174,8 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     pending = true;
     emit({ switching: Boolean(active), sourceError: null, meta: active ? state.meta : `Проверяем ${candidate.providerName}…` });
     try {
-      const result = await resolve(candidate.id, quality, controller.signal);
+      const prepared = !manual && quality == null ? await takePreparedResult(titleForSession, candidate) : null;
+      const result = prepared || await resolve(candidate.id, quality, controller.signal);
       if (controller.signal.aborted || token !== generation) return undefined;
       const stream = resolvedStream(result);
       previous = confirmed ? active : previous;
@@ -144,8 +209,10 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     resolving?.abort();
     pending = false;
   }
+  let titleForSession;
   async function start(title) {
     stop();
+    titleForSession = title;
     candidates = []; failed = new Set(); active = previous = null; confirmed = false; finished = false;
     state = { stream: null, switching: false, sourceError: null, meta: "Ищем источники…", qualities: [], subtitles: [], audioNames: [], skip: null };
     emit();

@@ -32,6 +32,31 @@ function loadHls() {
   return _HlsPromise;
 }
 export function preloadOnlinePlayer() { return loadHls(); }
+
+function applyExternalSubtitle(video, selectedId) {
+  const elements = Array.from(video.querySelectorAll("track[data-cc]"));
+  let selectedElement = selectedId >= 0 ? elements.find((element) => Number(element.dataset.ccIndex) === selectedId) : null;
+  if (selectedElement && !selectedElement.hasAttribute("src")) {
+    const src = selectedElement.dataset.ccSrc;
+    if (src) {
+      // Chromium may not start a native TextTrack load when `src` is assigned
+      // after the empty <track> has already been attached. Replace it with a
+      // fully configured node so selecting a subtitle starts its sole request.
+      const loadedElement = document.createElement("track");
+      loadedElement.kind = selectedElement.kind;
+      loadedElement.label = selectedElement.label;
+      loadedElement.srclang = selectedElement.srclang;
+      loadedElement.dataset.cc = "1";
+      loadedElement.dataset.ccIndex = selectedElement.dataset.ccIndex;
+      loadedElement.dataset.ccSrc = src;
+      loadedElement.src = src;
+      selectedElement.replaceWith(loadedElement);
+      selectedElement = loadedElement;
+    }
+  }
+  elements.forEach((element) => { element.track.mode = element === selectedElement ? "showing" : "disabled"; });
+  if (selectedElement) selectedElement.track.mode = "showing";
+}
 // dash.js is loaded lazily (only on desktop) to avoid shipping its 779KB
 // bundle to mobile, where HLS (ABR) is preferred for faster startup.
 import {
@@ -997,6 +1022,10 @@ export default function OnlinePlayer({
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
+        // Skip hls.js's initial bandwidth-test download on multi-level
+        // masters. That fragment is discarded, so using the default ABR
+        // estimate lets the first requested fragment start playback.
+        testBandwidth: false,
         backBufferLength: 30,
         capLevelToPlayerSize: true,
         maxBufferLength: 60,
@@ -1020,12 +1049,13 @@ export default function OnlinePlayer({
           .sort((a, b) => (b.height || 0) - (a.height || 0))
           .map((l, i) => ({ id: i, height: l.height, width: l.width, label: levelLabel(l), _hlsLevel: l.height }));
         setLevels(lvls);
-        // ABR (Auto) on ALL form factors. The old desktop path pinned
+        // ABR (Auto) on ALL form factors. Auto is already hls.js's default;
+        // assigning currentLevel=-1 here invokes immediateLevelSwitch() and
+        // aborts/flushes the startup fragment. The old desktop path pinned
         // `hls.currentLevel = <1080p index>`, which disables ABR entirely:
         // a bandwidth dip can't downshift, so the engine rebuffers instead
         // (the classic mid-film stall). ABR starts on a mid rung (fast first
         // frame) and adapts up/down with the network.
-        hls.currentLevel = -1;
         setCurrentLevel(-1);
         // Preserve the old default's quota intent: cap the AUTO rung at
         // 1080p so 4K (40+ Mbps) can't be auto-selected and burn the shared
@@ -1152,18 +1182,22 @@ export default function OnlinePlayer({
     Array.from(v.querySelectorAll("track[data-cc]")).forEach((t) => t.remove());
     subtitles.forEach((s, i) => {
       const t = document.createElement("track");
-      t.kind = "subtitles"; t.label = s.name; t.srclang = `cc${i}`; t.src = s.proxyUrl || s.url;
+      t.kind = "subtitles"; t.label = s.name; t.srclang = `cc${i}`; t.dataset.ccSrc = s.proxyUrl || s.url; t.dataset.ccIndex = String(i);
       t.default = false; t.setAttribute("data-cc", "1"); v.appendChild(t);
     });
     subsAddedRef.current = true;
-    // Do NOT touch textTracks' mode here. Per the HTML spec, `hidden` means
-    // the track is ACTIVE and parsed (the browser downloads and builds cues
-    // for every VTT immediately), while the default `disabled` defers the
-    // fetch until the track is actually selected. Collaps ships several `cc`
-    // tracks — forcing `hidden` started N VTT downloads at the exact moment
-    // the first video segments were being fetched. selectSub() flips the
-    // chosen track to `showing` on demand, which loads it lazily.
-  }, [state, subtitles]);
+    // Keep URLs off the `src` attribute until the viewer picks one. Browsers
+    // may fetch external <track src> files even while their text track is
+    // disabled, so `mode = disabled` alone is not a reliable lazy-load guard.
+  }, [state, subtitles, stream]);
+
+  // A source/quality/voice re-attach replaces the external <track> nodes. Keep
+  // the viewer's selected subtitle and load only that one on the replacement.
+  useEffect(() => {
+    if (state !== "ready" || subId < 0 || subtitles.length === 0) return;
+    const v = videoRef.current;
+    if (v) applyExternalSubtitle(v, subId);
+  }, [state, stream, subtitles, subId]);
 
   // ── Video element events ────────────────────────────────────────────────────
   useEffect(() => {
@@ -1746,11 +1780,7 @@ export default function OnlinePlayer({
 
   const selectSub = (id) => {
     const v = videoRef.current; if (!v) return;
-    const tracks = v.textTracks;
-    for (let i = 0; i < tracks.length; i++) {
-      if (tracks[i].label && subtitles.some((s) => s.name === tracks[i].label))
-        tracks[i].mode = i === id ? "showing" : "hidden";
-    }
+    applyExternalSubtitle(v, id);
     setSubId(id); setShowSubs(false);
   };
   const doSkip = () => {

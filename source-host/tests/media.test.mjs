@@ -696,7 +696,9 @@ test("HLS compression negotiates gzip without changing signed children or ranged
   assert(compressed.body.length < Buffer.byteLength(decoded));
   const child = decoded.split("\n").find((line) => line.startsWith(`${fixture.base}/v1/media?`));
   assert(child);
-  const resource = media.resource(new URL(child).searchParams.get("token"));
+  const childToken = new URL(child).searchParams.get("token");
+  assert.equal(childToken.split(".")[0], "v1", "non-public playback stays on the legacy token route");
+  const resource = media.resource(childToken);
   assert.equal(resource.url, `${fixture.base}/proxy/segment.ts`);
   assert.equal(resource.nodeOnly, true);
   const identity = await httpGet(playlistUrl, { headers: { "accept-encoding": "*;q=1, gzip;q=0" } });
@@ -707,6 +709,105 @@ test("HLS compression negotiates gzip without changing signed children or ranged
   const head = await httpGet(playlistUrl, { method: "HEAD", headers: { "accept-encoding": "gzip" } });
   assert.equal(head.body.length, 0);
   assert.equal(head.response.headers.get("content-encoding"), null);
+});
+
+test("node-only public HLS shares one encrypted context across a large playlist", async (t) => {
+  const fixture = await startServer();
+  t.after(() => closeServer(fixture.server));
+  const baseUrl = "https://cdn.example.test/movie/manifest.m3u8";
+  const rows = Array.from({ length: 1450 }, (_, index) => `#EXTINF:4.000,\nsegment-${String(index).padStart(4, "0")}-with-a-long-cdn-path.ts`).join("\n");
+  const text = `#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="keys/movie.key"\n#EXT-X-MAP:URI="init/movie-init.mp4"\n${rows}\n#EXT-X-ENDLIST\n`;
+  const largeHeaders = { authorizations: `Bearer ${"a".repeat(1800)}`, "accepts-controls": "edge-grant-" + "b".repeat(300), referer: "https://embed.example.test/watch" };
+  const transport = { async request(raw, options = {}) {
+    const url = new URL(raw);
+    if (url.href === baseUrl) return { url, headers: options.headers, headerOrigin: url.origin,
+      response: fakeResponse(text, 200, { "content-type": "application/vnd.apple.mpegurl" }) };
+    return { url, headers: options.headers, headerOrigin: url.origin,
+      response: fakeResponse(Buffer.alloc(32, 7), 200, { "content-type": "video/mp4" }) };
+  } };
+  const media = createMedia({ transport, secret: SECRET, publicOrigin: fixture.base });
+  fixture.attachMedia(media.handle);
+  const fetchGzip = (url) => new Promise((resolve, reject) => {
+    http.get(url, { headers: { "accept-encoding": "gzip" } }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("error", reject);
+      response.on("end", () => resolve({ headers: response.headers, body: Buffer.concat(chunks) }));
+    }).on("error", reject);
+  });
+  const playlistUrl = media.url({ url: baseUrl, headers: largeHeaders, headerOrigin: new URL(baseUrl).origin, nodeOnly: true, publicOnly: true });
+  const compressed = await fetchGzip(playlistUrl);
+  assert.equal(compressed.headers["content-encoding"], "gzip");
+  const rewritten = (await import("node:zlib")).gunzipSync(compressed.body).toString("utf8");
+  assert.equal(rewritten.split("\n").filter((line) => line.includes("/v1/media?token=")).length, 1452);
+  assert(compressed.body.length < 250_000, `1450-row gzip output was ${compressed.body.length} bytes`);
+  const childTokens = [...rewritten.matchAll(new RegExp(`${fixture.base}/v1/media\\?token=[^\\s\\\"]+`, "g"))]
+    .map(([line]) => new URL(line).searchParams.get("token"));
+  const first = media.resource(childTokens[0]);
+  assert.equal(first.url, "https://cdn.example.test/movie/keys/movie.key");
+  assert.equal(first.headers.authorizations, largeHeaders.authorizations);
+  assert.equal(first.publicOnly, true);
+  assert.equal(first.nodeOnly, true);
+  assert.equal(first.exp <= media.resource(new URL(playlistUrl).searchParams.get("token")).exp, true);
+  const secondMedia = createMedia({ transport, secret: SECRET, publicOrigin: fixture.base });
+  assert.equal(secondMedia.resource(childTokens.at(-1)).url, "https://cdn.example.test/movie/segment-1449-with-a-long-cdn-path.ts",
+    "a different serverless instance with the same secret can decrypt a child without shared memory");
+
+  const legacyUrl = media.url({ url: baseUrl, headers: largeHeaders, headerOrigin: new URL(baseUrl).origin, nodeOnly: false, publicOnly: true });
+  const legacy = await fetchGzip(legacyUrl);
+  assert.equal(legacy.headers["content-encoding"], "gzip");
+  assert((await import("node:zlib")).gunzipSync(legacy.body).toString("utf8").includes("v1."), "legacy control keeps v1 child tokens");
+  assert(compressed.body.length * 8 < legacy.body.length,
+    `compact gzip ${compressed.body.length} bytes should be under one eighth of legacy gzip ${legacy.body.length} bytes`);
+  assert(legacy.body.length > 3_000_000, `legacy gzip control was only ${legacy.body.length} bytes`);
+});
+
+test("compact HLS child tokens bind URL, headers, flags and lifetime to their encrypted context", async (t) => {
+  const fixture = await startServer();
+  t.after(() => closeServer(fixture.server));
+  const playlistUrl = "https://cdn.example.test/movie/manifest.m3u8";
+  const text = '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example.test/movie/key.bin"\n#EXT-X-MAP:URI="https://other.example.test/init.mp4"\n#EXTINF:4,\nsegment.ts\n#EXT-X-ENDLIST\n';
+  const transport = { async request(raw, options = {}) {
+    const url = new URL(raw);
+    return { url, headers: options.headers, headerOrigin: url.origin,
+      response: fakeResponse(text, 200, { "content-type": "application/vnd.apple.mpegurl" }) };
+  } };
+  const media = createMedia({ transport, secret: SECRET, publicOrigin: fixture.base });
+  fixture.attachMedia(media.handle);
+  const resource = { url: playlistUrl, headers: { authorizations: "grant-A", "accepts-controls": "edge-A", referer: "https://embed.example.test/" },
+    headerOrigin: "https://cdn.example.test", nodeOnly: true, publicOnly: true };
+  const firstPlaylist = await httpGet(media.url(resource));
+  const firstChildren = [...firstPlaylist.body.toString().matchAll(new RegExp(`${fixture.base}/v1/media\\?token=[^\\s\\\"]+`, "g"))].map(([line]) => line);
+  assert.equal(firstChildren.length, 3);
+  const [keyUrl, mapUrl, segmentUrl] = firstChildren;
+  const key = media.resource(new URL(keyUrl).searchParams.get("token"));
+  const map = media.resource(new URL(mapUrl).searchParams.get("token"));
+  assert.equal(key.headers.authorizations, "grant-A");
+  assert.equal(map.headers.authorizations, undefined, "origin-bound grants do not cross to another host");
+  assert.equal(map.headers.referer, resource.headers.referer, "ordinary allowed headers keep existing behavior");
+  const secondPlaylist = await httpGet(media.url({ ...resource, headers: { ...resource.headers, authorizations: "grant-B" } }));
+  const [otherChild] = secondPlaylist.body.toString().match(new RegExp(`${fixture.base}/v1/media\\?token=[^\\s\\\"]+`));
+  const token = new URL(segmentUrl).searchParams.get("token");
+  const otherParts = new URL(otherChild).searchParams.get("token").split(".");
+  const tokenParts = token.split(".");
+  const transplanted = [...otherParts.slice(0, 4), ...tokenParts.slice(4)].join(".");
+  assert.throws(() => media.resource(transplanted), /Invalid or expired media token/);
+  const tampered = tokenParts.slice();
+  tampered[6] = `${tampered[6][0] === "A" ? "B" : "A"}${tampered[6].slice(1)}`;
+  assert.throws(() => media.resource(tampered.join(".")), /Invalid or expired media token/);
+  const tamperedContext = tokenParts.slice();
+  tamperedContext[3] = `${tamperedContext[3][0] === "A" ? "B" : "A"}${tamperedContext[3].slice(1)}`;
+  assert.throws(() => media.resource(tamperedContext.join(".")), /Invalid or expired media token/);
+
+  const now = Date.now;
+  let compact;
+  Date.now = () => 1_000;
+  try { compact = (await httpGet(media.url({ ...resource, url: playlistUrl }))).body.toString().match(new RegExp(`${fixture.base}/v1/media\\?token=[^\\s\\\"]+`))[0]; }
+  finally { Date.now = now; }
+  const expiredToken = new URL(compact).searchParams.get("token");
+  Date.now = () => 13 * 60 * 60 * 1000;
+  try { assert.throws(() => media.resource(expiredToken), /Invalid or expired media token/); }
+  finally { Date.now = now; }
 });
 
 test("media rejects fake video errors, empty bodies, tampered and expired tokens, and aborts upstream", async (t) => {

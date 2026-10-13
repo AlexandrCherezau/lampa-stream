@@ -148,6 +148,7 @@ function decodeTokenPart(value) {
 function parseToken(token, key) {
   try {
     const parts = String(token || "").split(".");
+    if (parts[0] === "v2") return parseCompactToken(parts, key);
     if (parts.length !== 4 || parts[0] !== "v1") throw new Error("invalid");
     const iv = decodeTokenPart(parts[1]);
     const tag = decodeTokenPart(parts[2]);
@@ -164,6 +165,37 @@ function parseToken(token, key) {
   }
 }
 
+function decryptGcmPart(ivPart, tagPart, ciphertextPart, key, aad) {
+  const iv = decodeTokenPart(ivPart);
+  const tag = decodeTokenPart(tagPart);
+  const ciphertext = decodeTokenPart(ciphertextPart);
+  if (iv.length !== 12 || tag.length !== 16 || ciphertext.length === 0) throw new Error("invalid");
+  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  decipher.setAAD(Buffer.from(aad));
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+}
+
+function parseCompactToken(parts, key) {
+  if (parts.length !== 7) throw new Error("invalid");
+  const contextPrefix = parts.slice(0, 4).join(".");
+  const context = JSON.parse(decryptGcmPart(parts[1], parts[2], parts[3], key, "source-host:v2:context").toString("utf8"));
+  if (!context || typeof context.baseUrl !== "string" || !Number.isFinite(context.exp) || context.exp <= Date.now()
+    || !context.headers || typeof context.headers !== "object" || Array.isArray(context.headers)
+    || typeof context.headerOrigin !== "string" || typeof context.publicOnly !== "boolean" || typeof context.nodeOnly !== "boolean") throw new Error("invalid");
+  const base = new URL(context.baseUrl);
+  if (!/^https?:$/.test(base.protocol) || base.username || base.password) throw new Error("invalid");
+  const child = JSON.parse(decryptGcmPart(parts[4], parts[5], parts[6], key, contextPrefix).toString("utf8"));
+  if (!child || typeof child.ref !== "string" || typeof child.sameOrigin !== "boolean") throw new Error("invalid");
+  const target = child.sameOrigin ? new URL(child.ref, base) : new URL(child.ref);
+  if (!/^https?:$/.test(target.protocol) || target.username || target.password
+    || (child.sameOrigin && target.origin !== base.origin) || (!child.sameOrigin && target.origin === base.origin)) throw new Error("invalid");
+  const resource = { url: target.href, headers: context.headers, headerOrigin: context.headerOrigin,
+    nodeOnly: context.nodeOnly, publicOnly: context.publicOnly, exp: context.exp };
+  resource.headers = headersFor(resource);
+  return resource;
+}
+
 function makeToken(resource, key) {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
@@ -177,6 +209,31 @@ function makeToken(resource, key) {
   }));
   const encrypted = Buffer.concat([cipher.update(value), cipher.final()]);
   return `v1.${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${encrypted.toString("base64url")}`;
+}
+
+function makeCompactChildUrl(resource, baseUrl, key, publicOrigin) {
+  const base = new URL(baseUrl);
+  const contextIv = randomBytes(12);
+  const contextCipher = createCipheriv("aes-256-gcm", key, contextIv);
+  const exp = Math.min(Number.isFinite(resource.exp) ? resource.exp : Date.now() + TOKEN_TTL_MS, Date.now() + TOKEN_TTL_MS);
+  const contextValue = Buffer.from(JSON.stringify({ baseUrl: base.href,
+    headers: headersFor({ url: base.href, headers: resource.headers, headerOrigin: resource.headerOrigin }), headerOrigin: resource.headerOrigin || base.origin,
+    nodeOnly: resource.nodeOnly === true, publicOnly: resource.publicOnly === true, exp }));
+  contextCipher.setAAD(Buffer.from("source-host:v2:context"));
+  const contextEncrypted = Buffer.concat([contextCipher.update(contextValue), contextCipher.final()]);
+  const contextPrefix = `v2.${contextIv.toString("base64url")}.${contextCipher.getAuthTag().toString("base64url")}.${contextEncrypted.toString("base64url")}`;
+  return (rawUrl) => {
+    const target = new URL(rawUrl);
+    if (!/^https?:$/.test(target.protocol) || target.username || target.password) throw new TypeError("resource.url must be credential-free HTTP(S)");
+    const sameOrigin = target.origin === base.origin;
+    const childValue = Buffer.from(JSON.stringify({ sameOrigin, ref: sameOrigin ? `${target.pathname}${target.search}${target.hash}` : target.href }));
+    const childIv = randomBytes(12);
+    const childCipher = createCipheriv("aes-256-gcm", key, childIv);
+    childCipher.setAAD(Buffer.from(contextPrefix));
+    const childEncrypted = Buffer.concat([childCipher.update(childValue), childCipher.final()]);
+    const token = `${contextPrefix}.${childIv.toString("base64url")}.${childCipher.getAuthTag().toString("base64url")}.${childEncrypted.toString("base64url")}`;
+    return redirectUrl(publicOrigin, token);
+  };
 }
 
 async function readPlaylist(transport, resource, signal) {
@@ -328,13 +385,14 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
     }
   }
   async function sendPlaylist(req, res, resource, playlist, statusCode, range, signal) {
-    const rewritten = rewritePlaylist(playlist.text, playlist.url, (childUrl) => url({
-      url: childUrl,
-      headers: playlist.headers || resource.headers,
-      headerOrigin: playlist.headerOrigin || playlist.url.origin,
-      nodeOnly: resource.nodeOnly,
-      publicOnly: resource.publicOnly,
-    }));
+    const inherited = { ...resource, headers: playlist.headers || resource.headers,
+      headerOrigin: playlist.headerOrigin || playlist.url.origin };
+    const compactChildUrl = resource.nodeOnly === true && resource.publicOnly === true
+      ? makeCompactChildUrl(inherited, playlist.url, key, publicOrigin) : null;
+    const rewritten = rewritePlaylist(playlist.text, playlist.url, (childUrl) => compactChildUrl
+      ? compactChildUrl(childUrl)
+      : url({ url: childUrl, headers: inherited.headers, headerOrigin: inherited.headerOrigin,
+        nodeOnly: resource.nodeOnly, publicOnly: resource.publicOnly }));
     let payload = Buffer.from(rewritten);
     const output = { "content-type": "application/vnd.apple.mpegurl", "cache-control": playlist.cacheControl || "no-store", vary: "Accept-Encoding" };
     const acceptsGzip = String(req.headers["accept-encoding"] || "").toLowerCase().split(",").some((encoding) => {
