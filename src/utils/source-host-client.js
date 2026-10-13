@@ -11,8 +11,11 @@ async function request(op, body, signal) {
   return response;
 }
 
-export async function discoverSources(title, { signal, onEvent }) {
-  const response = await request("discover", title, signal);
+export async function discoverSources(title, { signal, onEvent, prepareOnly = false }) {
+  const response = await request("discover", {
+    ...title,
+    ...(prepareOnly ? { prepareOnly: true } : {}),
+  }, signal);
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let pending = "";

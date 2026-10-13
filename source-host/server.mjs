@@ -224,9 +224,11 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
       const body = await bodyJson(req);
       if (path.pathname === "/v1/discover") {
         const title = validateTitle(body);
+        if (body.prepareOnly != null && typeof body.prepareOnly !== "boolean") throw failure("Неверный режим подготовки");
+        if (body.prepareOnly && title.type !== "movie") throw failure("Подготовка доступна только для фильма");
         if (discoveries >= 4) throw failure("Сервер занят, повторите запрос", 429, "BUSY");
         discoveries++;
-        deadline = setTimeout(() => controller.abort(failure("Истекло время поиска", 504, "TIMEOUT")), DISCOVERY_MS);
+        deadline = setTimeout(() => controller.abort(failure("Истекло время поиска", 504, "TIMEOUT")), body.prepareOnly ? 20_000 : DISCOVERY_MS);
         res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", "x-accel-buffering": "no" });
         res.flushHeaders();
         const event = (name, value) => { if (!res.destroyed) res.write(`event: ${name}\ndata: ${JSON.stringify(value)}\n\n`); };
@@ -234,7 +236,10 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         let count = 0;
         try {
           event("start", { type: title.type, season: title.season, episode: title.episode });
-          for await (const candidate of discoverSources(title, controller.signal)) {
+          const discovery = body.prepareOnly
+            ? habsterAdapter.discover(title, { signal: controller.signal })
+            : discoverSources(title, controller.signal);
+          for await (const candidate of discovery) {
             if (controller.signal.aborted) break;
             if (candidate.error) {
               record(candidate.providerId, { providerName: candidate.providerName, status: "unavailable", error: "Источник не предоставил выбранную запись" });

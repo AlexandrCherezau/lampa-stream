@@ -31,6 +31,7 @@ function loadHls() {
   }
   return _HlsPromise;
 }
+export function preloadOnlinePlayer() { return loadHls(); }
 // dash.js is loaded lazily (only on desktop) to avoid shipping its 779KB
 // bundle to mobile, where HLS (ABR) is preferred for faster startup.
 import {

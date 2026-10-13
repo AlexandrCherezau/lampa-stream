@@ -35,6 +35,48 @@ test.afterAll(() => {
   if (animeFixtureDir) rmSync(animeFixtureDir, { recursive: true, force: true });
 });
 
+test("web movie detail warms Habster metadata before click while player preload stays side-effect free", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
+    localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
+  });
+  await page.route("**/api/tmdb/**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ id: 550, title: "Movie 550", original_title: "Movie 550", release_date: "1994-01-01", genres: [], credits: [] }),
+  }));
+  const sourceRequests = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/source-host?")) sourceRequests.push({ url: request.url(), body: request.postDataJSON() });
+  });
+  await page.route("**/api/source-host?op=discover", (route) => route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    body: "event: done\ndata: {\"candidates\":0,\"complete\":true}\n\n",
+  }));
+
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  const watch = page.getByRole("button", { name: "Смотреть", exact: true });
+  await expect(watch).toBeVisible();
+  await expect.poll(() => sourceRequests.length).toBe(1);
+  expect(new URL(sourceRequests[0].url).searchParams.get("op")).toBe("discover");
+  expect(sourceRequests[0].body).toMatchObject({ prepareOnly: true, type: "movie", title: "Movie 550", year: 1994 });
+  expect(sourceRequests.some(({ url }) => new URL(url).searchParams.get("op") === "resolve")).toBe(false);
+
+  const playerChunk = page.waitForRequest((request) => /\/assets\/OnlinePlayer-[^/]+\.js$/.test(new URL(request.url()).pathname));
+  const hlsChunk = page.waitForRequest((request) => /\/assets\/hls-[^/]+\.js$/.test(new URL(request.url()).pathname));
+  await watch.focus();
+  await Promise.all([playerChunk, hlsChunk]);
+
+  await expect(page.locator("video")).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("streambert_resumeTime"))).toBeNull();
+
+  await watch.click();
+  await expect.poll(() => sourceRequests.length).toBe(2);
+  expect(sourceRequests[1].body).not.toHaveProperty("prepareOnly");
+  await expect(page.locator(".torrpicker")).toBeVisible();
+});
+
 for (const mode of ["manual", "auto"]) test(`decoded movie playback skips confirmed segments (${mode})`, async ({ page }) => {
   await page.addInitScript((mode) => {
     localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");

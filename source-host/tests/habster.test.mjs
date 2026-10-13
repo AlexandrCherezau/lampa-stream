@@ -216,6 +216,51 @@ test("Habster search+info shares a three-second body deadline and follows caller
 
 const allohaPage = (id = 328, origin = "https://befriend.stravers.live") => `var KP_ID='${id}'; var BEFRIEND_SRC='${origin}/?token=public-fixture&kp=' + KP_ID;`;
 
+function allohaFixtureTransport({ bundle = "/build/app.v1.js", guard = "g".repeat(380), waitBundle } = {}) {
+  const stats = { bundles: 0, posts: 0 };
+  let signalPost;
+  let signalSecondPost;
+  const postStarted = new Promise((resolve) => { signalPost = resolve; });
+  const twoPostsStarted = new Promise((resolve) => { signalSecondPost = resolve; });
+  return {
+    stats,
+    postStarted,
+    twoPostsStarted,
+    transport: { async request(raw, options) {
+      const url = new URL(raw);
+      if (url.origin === "https://habster.sbs") {
+        const id = Number(url.pathname.split("/").at(-1));
+        return response(allohaPage(id).replace("public-fixture", `fixture-${id}`));
+      }
+      if (url.origin !== "https://befriend.stravers.live") throw new Error(`Unexpected fixture URL: ${url.origin}`);
+      if (url.pathname === "/") {
+        const id = Number(url.searchParams.get("kp"));
+        const currentBundle = typeof bundle === "function" ? bundle() : bundle;
+        return response(`<meta name="viewporti" content="abcdefghi"><script src="${currentBundle}"></script><script>fileList = JSON.parse('{"active":{"id":${id + 1000}}}')</script>`);
+      }
+      if (url.pathname.startsWith("/build/")) {
+        stats.bundles++;
+        if (waitBundle) await waitBundle;
+        return response(`return r['a'](1,'${guard}')`);
+      }
+      if (url.pathname.startsWith("/bnsi/movies/")) {
+        assert.equal(options.method, "POST");
+        stats.posts++;
+        signalPost();
+        if (stats.posts === 2) signalSecondPost();
+        const id = Number(url.pathname.split("/").at(-1));
+        return response(JSON.stringify({ hlsSource: [{ audioId: "1", label: "Audio", default: true,
+          quality: { "720": `https://cdn.test/${id}.m3u8` } }], tracks: [], pnr: "wss://befriend.stravers.live/ws/", pnk: `sid-${id}` }));
+      }
+      throw new Error(`Unexpected Alloha path: ${url.pathname}`);
+    } },
+  };
+}
+
+async function allohaDefault(adapter, kinopoiskId) {
+  return (await adapter.discover({ ...movie, kinopoiskId }).next()).value;
+}
+
 test("Habster Alloha reads a matching anonymous page literal and rejects injected origin/title/expression", () => {
   const url = new URL(parseHabsterAllohaEmbed(allohaPage(), 328));
   assert.equal(url.origin, "https://befriend.stravers.live");
@@ -294,4 +339,113 @@ test("Habster exposes native Alloha qualities and independent voice candidates f
   await assert.rejects(adapter.resolve({ ...first, ref: { ...first.ref, voiceId: "alloha:3" } }), /Invalid Habster/);
   await assert.rejects(adapter.resolve({ ...first, voiceId: "alloha:3", ref: { ...first.ref, voiceId: "alloha:3" } }), /requested audio/);
   await assert.rejects(adapter.resolve({ ...first, ref: { ...first.ref, type: "tv", season: 1, episode: 1 }, season: 1, episode: 1 }), /exact movie/);
+});
+
+test("Habster starts Alloha source lookup alongside the bundle and shares one guard fetch across titles", async () => {
+  let releaseBundle;
+  const bundleGate = new Promise((resolve) => { releaseBundle = resolve; });
+  const fixture = allohaFixtureTransport({ waitBundle: bundleGate });
+  const adapter = createHabsterProvider({ transport: fixture.transport, allohaPlayback: async () => "edge" });
+  const first = await allohaDefault(adapter, 328);
+  const second = await allohaDefault(adapter, 329);
+
+  const firstResolve = adapter.resolve(first);
+  await fixture.postStarted;
+  assert.equal(fixture.stats.bundles, 1);
+  const secondResolve = adapter.resolve(second);
+  await fixture.twoPostsStarted;
+  assert.equal(fixture.stats.posts, 2, "the bnsi request starts while the shared bundle response is still pending");
+  assert.equal(fixture.stats.bundles, 1, "distinct film titles share the same in-flight versioned bundle request");
+
+  releaseBundle();
+  const [a, b] = await Promise.all([firstResolve, secondResolve]);
+  assert.equal(a.qualities[0].headers.authorizations, `Bearer ${"g".repeat(380)}`);
+  assert.equal(b.qualities[0].headers.authorizations, a.qualities[0].headers.authorizations);
+});
+
+test("Habster refreshes a failed guard and follows the current hashed bundle URL", async () => {
+  let bundle = "/build/app.v1.js";
+  let guard = "bad";
+  const fixture = allohaFixtureTransport({ bundle: () => bundle, guard });
+  const adapter = createHabsterProvider({ transport: {
+    async request(raw, options) {
+      const url = new URL(raw);
+      if (url.pathname.startsWith("/build/")) {
+        fixture.stats.bundles++;
+        return response(guard === "bad" ? "no guard here" : `return r['a'](1,'${guard}')`);
+      }
+      return fixture.transport.request(raw, options);
+    },
+  }, allohaPlayback: async () => "edge" });
+  const first = await allohaDefault(adapter, 338);
+  await assert.rejects(adapter.resolve(first), /protocol guard is unavailable/);
+  assert.equal(fixture.stats.bundles, 1);
+
+  guard = "h".repeat(380);
+  await adapter.resolve(first);
+  assert.equal(fixture.stats.bundles, 2, "a failed parse is evicted and the same URL is fetched again");
+
+  bundle = "/build/app.v2.js";
+  const next = await allohaDefault(adapter, 339);
+  const resolved = await adapter.resolve(next);
+  assert.equal(fixture.stats.bundles, 3, "bundle URL rotation forces a fresh guard fetch");
+  assert.equal(resolved.qualities[0].headers.authorizations, `Bearer ${guard}`);
+});
+
+test("Habster aborts a stalled title POST when the parallel guard request fails", async () => {
+  let releaseBundle;
+  const bundleGate = new Promise((resolve) => { releaseBundle = resolve; });
+  const fixture = allohaFixtureTransport({ guard: "bad", waitBundle: bundleGate });
+  let signalPostStarted;
+  const postStarted = new Promise((resolve) => { signalPostStarted = resolve; });
+  let postAborted = false;
+  const adapter = createHabsterProvider({ transport: { async request(raw, options) {
+    if (new URL(raw).pathname.startsWith("/bnsi/movies/")) {
+      const stream = new Readable({ read() {} }); stream.headers = {}; stream.statusCode = 200;
+      options.signal.addEventListener("abort", () => { postAborted = true; }, { once: true });
+      signalPostStarted();
+      return { response: stream };
+    }
+    return fixture.transport.request(raw, options);
+  } }, allohaPlayback: async () => "edge" });
+  const candidate = await allohaDefault(adapter, 348);
+  const pending = adapter.resolve(candidate);
+  await postStarted;
+  releaseBundle();
+  await assert.rejects(pending, /protocol guard is unavailable/);
+  assert.equal(postAborted, true, "the losing per-title POST is cancelled immediately after the guard fails");
+});
+
+test("a title deadline stops waiting for a shared guard without cancelling other titles", async (t) => {
+  const deadline = new AbortController();
+  const originalTimeout = AbortSignal.timeout;
+  let titleTimeouts = 0;
+  AbortSignal.timeout = (ms) => ms === 20_000 && titleTimeouts++ === 0 ? deadline.signal : originalTimeout(ms);
+  let releaseBundle;
+  const bundleGate = new Promise((resolve) => { releaseBundle = resolve; });
+  t.after(() => { AbortSignal.timeout = originalTimeout; releaseBundle(); });
+  const fixture = allohaFixtureTransport({ waitBundle: bundleGate });
+  let guardSignal;
+  let postEnded = false;
+  const adapter = createHabsterProvider({ transport: { async request(raw, options) {
+    const path = new URL(raw).pathname;
+    if (path.startsWith("/build/")) guardSignal = options.signal;
+    const result = await fixture.transport.request(raw, options);
+    if (path.startsWith("/bnsi/")) result.response.once("end", () => { postEnded = true; });
+    return result;
+  } }, allohaPlayback: async () => "edge" });
+  const first = await allohaDefault(adapter, 349);
+  const pending = adapter.resolve(first).then(() => "resolved", (error) => error.message);
+  await fixture.postStarted;
+  while (!postEnded) await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  deadline.abort(new Error("title deadline"));
+  const outcome = await Promise.race([pending, new Promise((resolve) => setTimeout(() => resolve("still waiting"), 50))]);
+  assert.equal(outcome, "title deadline", "completed POST must not let the shared guard extend this title's budget");
+  assert.equal(guardSignal.aborted, false);
+  const second = await allohaDefault(adapter, 350);
+  const survivor = adapter.resolve(second);
+  releaseBundle();
+  assert.equal((await survivor).qualities[0].label, "720p");
+  assert.equal(fixture.stats.bundles, 1, "another title still receives the same independent guard fetch");
 });

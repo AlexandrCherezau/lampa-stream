@@ -215,6 +215,29 @@ async function emptyDiscoveryAndSplitSse() {
   assert.equal(events[0][1].id, "x");
 }
 
+async function prepareOnlyDiscoveryPreservesAbortSignal() {
+  const originalFetch = globalThis.fetch;
+  const controller = new AbortController();
+  let request;
+  globalThis.fetch = async (url, options) => {
+    request = { url, options };
+    return new Response("event: done\ndata: {\"complete\":true}\n\n", {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  };
+  try {
+    await discoverSources({ type: "movie", title: "Film", year: 2026 }, {
+      prepareOnly: true, signal: controller.signal, onEvent: () => {},
+    });
+  } finally { globalThis.fetch = originalFetch; }
+  assert.equal(new URL(request.url, "https://app.test").searchParams.get("op"), "discover");
+  assert.deepEqual(JSON.parse(request.options.body), {
+    type: "movie", title: "Film", year: 2026, prepareOnly: true,
+  });
+  assert.equal(request.options.signal, controller.signal, "navigation cleanup can abort the preparation request");
+}
+
 async function skipRangesFollowActiveStream() {
   let state;
   const ranges = { a: [{ start: 5, end: 10 }], b: [{ start: 20, end: 30 }] };
@@ -271,6 +294,7 @@ await failedVoiceKeepsOtherVoices();
 await fallbackRotatesProvidersAndStops();
 await manualFailureAndStaleRequests();
 await emptyDiscoveryAndSplitSse();
+await prepareOnlyDiscoveryPreservesAbortSignal();
 await skipRangesFollowActiveStream();
 await audioNamesFollowActiveStream();
-console.log("Source-host client checks passed: progressive fallback, explicit 4K choice, per-voice recovery, provider rotation, exhausted candidates, manual/stale requests, empty discovery, split SSE, audio labels.");
+console.log("Source-host client checks passed: progressive fallback, explicit 4K choice, per-voice recovery, provider rotation, exhausted candidates, manual/stale requests, empty and prepare-only discovery, split SSE, audio labels.");

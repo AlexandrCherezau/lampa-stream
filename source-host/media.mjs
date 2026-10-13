@@ -8,6 +8,9 @@ const PLAYLIST_MAX = 16 * 1024 * 1024;
 const RANGE_DEFAULT_MAX = 8 * 1024 * 1024;
 const RANGE_LIMIT = 96 * 1024 * 1024;
 const PROBE_PREFIX = 64 * 1024;
+const PLAYLIST_CACHE_MS = 15_000;
+const PLAYLIST_CACHE_LIMIT = 8;
+const PLAYLIST_CACHE_BYTES = 1024 * 1024;
 const HEADER_ALLOWLIST = new Set(["referer", "origin", "user-agent", "accept", "accept-language", "cookie", "authorizations", "accepts-controls"]);
 const ORIGIN_BOUND_HEADERS = new Set(["cookie", "authorizations", "accepts-controls"]);
 const RESPONSE_HEADERS = ["accept-ranges", "cache-control", "content-length", "content-range", "content-type", "etag", "last-modified", "content-encoding"];
@@ -182,7 +185,7 @@ async function readPlaylist(transport, resource, signal) {
   const bytes = decodeBody(raw, response.headers["content-encoding"]);
   const type = response.headers["content-type"] || "";
   if (looksLikeErrorPage(type, bytes) || !isPlaylist(type, bytes)) throw mediaError("Upstream did not return an HLS playlist");
-  return { text: bytes.toString("utf8"), url, headers: headers || headersFor(resource), headerOrigin: headerOrigin || url.origin };
+  return { text: bytes.toString("utf8"), url, headers: headers || headersFor(resource), headerOrigin: headerOrigin || url.origin, cacheControl: response.headers["cache-control"] || "no-store" };
 }
 
 async function readProbeBytes(transport, url, headers, signal, range = true, publicOnly = false) {
@@ -289,7 +292,7 @@ async function inspectRoot(transport, resource, signal) {
   }
   const bytes = decodeBody(Buffer.concat(chunks, size), response.headers["content-encoding"]);
   if (!isPlaylist(contentType, bytes)) throw mediaError("Upstream returned an invalid playlist");
-  return { kind: "hls", url, text: bytes.toString("utf8"), headers: headers || headersFor(resource), headerOrigin: headerOrigin || url.origin };
+  return { kind: "hls", url, text: bytes.toString("utf8"), headers: headers || headersFor(resource), headerOrigin: headerOrigin || url.origin, cacheControl: response.headers["cache-control"] || "no-store" };
 }
 
 export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
@@ -308,6 +311,50 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
     return redirectUrl(publicOrigin, makeToken(resource, key));
   }
 
+  const playlistCache = new Map();
+  function playlistKey(resource) {
+    return createHash("sha256").update(JSON.stringify([String(resource.url), resource.publicOnly === true,
+      resource.headerOrigin || new URL(resource.url).origin, Object.entries(headersFor(resource)).sort(([a], [b]) => a.localeCompare(b))])).digest("hex");
+  }
+  function cachePlaylists(documents) {
+    for (const [key, value] of playlistCache) if (value.expires <= Date.now()) playlistCache.delete(key);
+    for (const { resource, playlist } of documents) {
+      if (resource.publicOnly !== true || new URL(resource.url).href !== playlist.url.href
+        || Buffer.byteLength(playlist.text) > PLAYLIST_CACHE_BYTES) continue;
+      const key = playlistKey(resource);
+      playlistCache.delete(key);
+      if (playlistCache.size >= PLAYLIST_CACHE_LIMIT) playlistCache.delete(playlistCache.keys().next().value);
+      playlistCache.set(key, { playlist, expires: Date.now() + PLAYLIST_CACHE_MS });
+    }
+  }
+  async function sendPlaylist(req, res, resource, playlist, statusCode, range, signal) {
+    const rewritten = rewritePlaylist(playlist.text, playlist.url, (childUrl) => url({
+      url: childUrl,
+      headers: playlist.headers || resource.headers,
+      headerOrigin: playlist.headerOrigin || playlist.url.origin,
+      nodeOnly: resource.nodeOnly,
+      publicOnly: resource.publicOnly,
+    }));
+    let payload = Buffer.from(rewritten);
+    const output = { "content-type": "application/vnd.apple.mpegurl", "cache-control": playlist.cacheControl || "no-store", vary: "Accept-Encoding" };
+    const acceptsGzip = String(req.headers["accept-encoding"] || "").toLowerCase().split(",").some((encoding) => {
+      const match = /^gzip(?:\s*;\s*q=(0(?:\.\d{0,3})?|1(?:\.0{0,3})?))?$/.exec(encoding.trim());
+      return match && Number(match[1] ?? 1) > 0;
+    });
+    if (!range && statusCode === 200 && payload.length >= 1024 && acceptsGzip) {
+      const compressed = await gzipAsync(payload, { level: 1 });
+      if (compressed.length < payload.length) {
+        payload = compressed;
+        output["content-encoding"] = "gzip";
+      }
+    }
+    if (signal?.aborted) return;
+    output["content-length"] = payload.length;
+    res.writeHead(statusCode, output);
+    res.end(payload);
+    return;
+  }
+
   async function handle(req, res, token) {
     let resource;
     try { resource = parseToken(token, key); }
@@ -319,6 +366,12 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
     req.once("aborted", onClose);
     res.once("close", onClose);
     try {
+      const cached = req.method === "GET" && !range ? playlistCache.get(playlistKey(resource)) : null;
+      if (cached?.expires > Date.now()) {
+        await sendPlaylist(req, res, resource, cached.playlist, 200, null, abort.signal);
+        return;
+      }
+      if (cached) playlistCache.delete(playlistKey(resource));
       const headers = headersFor(resource);
       const requestedRange = rangeHeader(range);
       if (requestedRange) headers.range = requestedRange;
@@ -391,30 +444,8 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
         }
         const body = decodeBody(Buffer.concat(chunks, size), response.headers["content-encoding"]);
         if (looksLikeErrorPage(type, body) || !isPlaylist(type, body)) throw mediaError("Upstream returned an invalid playlist");
-        const rewritten = rewritePlaylist(body.toString("utf8"), finalUrl, (childUrl) => url({
-          url: childUrl,
-          headers: upstreamHeaders || resource.headers,
-          headerOrigin: headerOrigin || finalUrl.origin,
-          nodeOnly: resource.nodeOnly,
-          publicOnly: resource.publicOnly,
-        }));
-        let payload = Buffer.from(rewritten);
-        const output = { "content-type": "application/vnd.apple.mpegurl", "cache-control": response.headers["cache-control"] || "no-store", vary: "Accept-Encoding" };
-        const acceptsGzip = String(req.headers["accept-encoding"] || "").toLowerCase().split(",").some((encoding) => {
-          const match = /^gzip(?:\s*;\s*q=(0(?:\.\d{0,3})?|1(?:\.0{0,3})?))?$/.exec(encoding.trim());
-          return match && Number(match[1] ?? 1) > 0;
-        });
-        if (!range && response.statusCode === 200 && payload.length >= 1024 && acceptsGzip) {
-          const compressed = await gzipAsync(payload, { level: 1 });
-          if (compressed.length < payload.length) {
-            payload = compressed;
-            output["content-encoding"] = "gzip";
-          }
-        }
-        if (abort.signal.aborted) return;
-        output["content-length"] = payload.length;
-        res.writeHead(response.statusCode || 200, output);
-        res.end(payload);
+        await sendPlaylist(req, res, resource, { text: body.toString("utf8"), url: finalUrl,
+          headers: upstreamHeaders, headerOrigin, cacheControl: response.headers["cache-control"] }, response.statusCode || 200, range, abort.signal);
         return;
       }
       const outputHeaders = Object.fromEntries(RESPONSE_HEADERS
@@ -459,6 +490,8 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
   }
 
   async function probe(resource, { signal } = {}) {
+    const pending = new AbortController();
+    signal = signal ? AbortSignal.any([signal, pending.signal]) : pending.signal;
     try {
       let inspected = await inspectRoot(transport, resource, signal);
       if (inspected.kind === "file") return {
@@ -470,33 +503,40 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
         headerOrigin: inspected.headerOrigin,
         bytes: inspected.bytes,
       };
-      let playlist = { text: inspected.text, url: inspected.url, headers: inspected.headers, headerOrigin: inspected.headerOrigin };
+      let playlist = inspected;
+      const documents = [{ resource, playlist }];
       let masters = 0;
       while (true) {
         const variant = firstVariant(playlist.text);
         if (!variant) break;
         if (masters >= 3) throw mediaError("Too many HLS master playlist levels");
         masters++;
-        playlist = await readPlaylist(transport, {
+        const child = {
           ...resource,
           url: new URL(variant, playlist.url).toString(),
           headers: playlist.headers,
           headerOrigin: playlist.headerOrigin,
-        }, signal);
+        };
+        playlist = await readPlaylist(transport, child, signal);
+        documents.push({ resource: child, playlist });
       }
       const parts = firstMediaSegment(playlist.text);
       if (!parts.segment) throw mediaError("HLS playlist has no media segment");
-      if (parts.map) {
-        const mapUrl = new URL(parts.map, playlist.url).toString();
-        await readProbeBytes(transport, mapUrl, headersFor({ ...resource, url: mapUrl, headers: playlist.headers, headerOrigin: playlist.headerOrigin }), signal, rangeForProbe(parts.mapRange), resource.publicOnly);
-      }
-      if (parts.key) {
-        const keyUrl = new URL(parts.key, playlist.url).toString();
-        const keyBytes = await readProbeBytes(transport, keyUrl, headersFor({ ...resource, url: keyUrl, headers: playlist.headers, headerOrigin: playlist.headerOrigin }), signal, false, resource.publicOnly);
-        if (keyBytes.length !== 16) throw mediaError("Invalid AES-128 HLS key");
-      }
-      const segmentUrl = new URL(parts.segment, playlist.url).toString();
-      const segment = await readProbeBytes(transport, segmentUrl, headersFor({ ...resource, url: segmentUrl, headers: playlist.headers, headerOrigin: playlist.headerOrigin }), signal, rangeForProbe(parts.segmentRange), resource.publicOnly);
+      const checks = [
+        parts.map && { url: new URL(parts.map, playlist.url).toString(), range: rangeForProbe(parts.mapRange) },
+        parts.key && { url: new URL(parts.key, playlist.url).toString(), range: false, key: true },
+        { url: new URL(parts.segment, playlist.url).toString(), range: rangeForProbe(parts.segmentRange) },
+      ].filter(Boolean);
+      const chunks = await Promise.all(checks.map(async (check) => {
+        const bytes = await readProbeBytes(transport, check.url,
+          headersFor({ ...resource, url: check.url, headers: playlist.headers, headerOrigin: playlist.headerOrigin }),
+          signal, check.range, resource.publicOnly);
+        if (check.key && bytes.length !== 16) throw mediaError("Invalid AES-128 HLS key");
+        return bytes;
+      }));
+      signal.throwIfAborted();
+      const segment = chunks.at(-1);
+      if (vodDuration(playlist.text) != null) cachePlaylists(documents);
       return {
         ok: true,
         ...(resource.publicOnly === true ? { publicOnly: true } : {}),
@@ -512,7 +552,7 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
     } catch (error) {
       console.warn("Media probe failed", error.code || error.name, error.status || 502, error.targetHost || new URL(resource.url).host, error.dnsCode || "");
       return { ok: false, kind: null, reason: error.status === 504 ? "timeout" : error.name === "AbortError" ? "aborted" : error.code || "probe-failed" };
-    }
+    } finally { pending.abort(); }
   }
 
   return { url, handle, probe, resource: (token) => parseToken(token, key) };

@@ -5,6 +5,7 @@ const ORIGIN = "https://habster.sbs";
 const EMBED_ORIGIN = "https://api.initem.ws";
 const ALLOHA_ORIGIN = "https://befriend.stravers.live";
 const BODY_LIMIT = 1024 * 1024;
+const GUARD_CACHE_TTL = 10 * 60_000;
 
 function literal(value) {
   if (value.startsWith('"')) return JSON.parse(value);
@@ -132,6 +133,7 @@ const positiveId = (value) => ["string", "number"].includes(typeof value) && /^[
 export function createHabsterProvider({ transport, allohaPlayback = openAllohaPlayback } = {}) {
   if (typeof transport?.request !== "function") throw new TypeError("transport.request is required");
   const allohaCache = new Map();
+  let allohaGuardCache = null;
   async function readText(url, signal, headers, request = {}) {
     const bounded = signal ? AbortSignal.any([signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000);
     const { response } = await transport.request(url, { signal: bounded, timeout: 12_000, publicOnly: true, headers, ...request });
@@ -167,6 +169,22 @@ export function createHabsterProvider({ transport, allohaPlayback = openAllohaPl
       promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
     });
   }
+  function loadAllohaGuard(bundleUrl, headers) {
+    const now = Date.now();
+    if (allohaGuardCache?.url === bundleUrl && allohaGuardCache.expires > now) return allohaGuardCache.promise;
+    const entry = { url: bundleUrl, expires: now + GUARD_CACHE_TTL, promise: null };
+    entry.promise = (async () => {
+      const bounded = AbortSignal.timeout(20_000);
+      const guard = parseAllohaGuard(await readText(bundleUrl, bounded, headers));
+      if (allohaGuardCache === entry) entry.expires = Date.now() + GUARD_CACHE_TTL;
+      return guard;
+    })().catch((error) => {
+      if (allohaGuardCache === entry) allohaGuardCache = null;
+      throw error;
+    });
+    allohaGuardCache = entry;
+    return entry.promise;
+  }
   async function loadAlloha(kinopoiskId, signal) {
     const now = Date.now();
     for (const [id, entry] of allohaCache) if (entry.expires < now) allohaCache.delete(id);
@@ -177,23 +195,27 @@ export function createHabsterProvider({ transport, allohaPlayback = openAllohaPl
         if (cached) allohaCache.delete(cached[0]);
         else throw new Error("Habster Alloha has too many simultaneous title requests");
       }
-      const bounded = AbortSignal.timeout(20_000);
+      const titleController = new AbortController();
+      const bounded = AbortSignal.any([titleController.signal, AbortSignal.timeout(20_000)]);
       const promise = (async () => {
-        const page = await readText(`${ORIGIN}/film/${kinopoiskId}`, bounded, { accept: "text/html" });
-        const embed = parseHabsterAllohaEmbed(page, kinopoiskId);
-        const headers = { referer: `${ORIGIN}/`, "user-agent": allohaUserAgent, accept: "text/html" };
-        const bootstrap = parseAllohaBootstrap(await readText(embed, bounded, headers));
-        const guard = parseAllohaGuard(await readText(bootstrap.bundleUrl, bounded, headers));
-        const form = new URLSearchParams({ token: new URL(embed).searchParams.get("token"), av1: "true", autoplay: "0", audio: "", subtitle: "" });
-        const data = JSON.parse(await readText(`${ALLOHA_ORIGIN}/bnsi/movies/${bootstrap.movieId}`, bounded, {
-          referer: embed, origin: ALLOHA_ORIGIN, "user-agent": allohaUserAgent,
-          "content-type": "application/x-www-form-urlencoded", "x-requested-with": "XMLHttpRequest", borth: bootstrap.borth,
-        }, { method: "POST", body: form.toString() }));
-        const sources = parseAllohaSources(data);
-        const primary = sources.voices.find((voice) => voice.default) || sources.voices[0];
-        const edgeHash = await allohaPlayback(sources.websocketUrl, primary, { signal: bounded });
-        return { ...sources, primary, headers: { referer: embed, origin: ALLOHA_ORIGIN, "user-agent": allohaUserAgent,
-          authorizations: `Bearer ${guard}`, "accepts-controls": edgeHash } };
+        try {
+          const page = await readText(`${ORIGIN}/film/${kinopoiskId}`, bounded, { accept: "text/html" });
+          const embed = parseHabsterAllohaEmbed(page, kinopoiskId);
+          const headers = { referer: `${ORIGIN}/`, "user-agent": allohaUserAgent, accept: "text/html" };
+          const bootstrap = parseAllohaBootstrap(await readText(embed, bounded, headers));
+          const guardPromise = loadAllohaGuard(bootstrap.bundleUrl, headers);
+          const form = new URLSearchParams({ token: new URL(embed).searchParams.get("token"), av1: "true", autoplay: "0", audio: "", subtitle: "" });
+          const dataPromise = readText(`${ALLOHA_ORIGIN}/bnsi/movies/${bootstrap.movieId}`, bounded, {
+            referer: embed, origin: ALLOHA_ORIGIN, "user-agent": allohaUserAgent,
+            "content-type": "application/x-www-form-urlencoded", "x-requested-with": "XMLHttpRequest", borth: bootstrap.borth,
+          }, { method: "POST", body: form.toString() }).then(JSON.parse);
+          const [guard, data] = await awaitSignal(Promise.all([guardPromise, dataPromise]), bounded);
+          const sources = parseAllohaSources(data);
+          const primary = sources.voices.find((voice) => voice.default) || sources.voices[0];
+          const edgeHash = await allohaPlayback(sources.websocketUrl, primary, { signal: bounded });
+          return { ...sources, primary, headers: { referer: embed, origin: ALLOHA_ORIGIN, "user-agent": allohaUserAgent,
+            authorizations: `Bearer ${guard}`, "accepts-controls": edgeHash } };
+        } finally { titleController.abort(); }
       })();
       entry = { promise, expires: now + 45_000, ready: false };
       allohaCache.set(kinopoiskId, entry);

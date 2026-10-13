@@ -56,7 +56,11 @@ const DownloadModal = lazy(() => import("../components/DownloadModal"));
 const TrailerModal = lazy(() => import("../components/TrailerModal"));
 const BlockedStatsModal = lazy(() => import("../components/BlockedStatsModal"));
 const TorrPlayer = lazy(() => import("../components/TorrPlayer"));
-const OnlinePlayer = lazy(() => import("../components/OnlinePlayer"));
+const loadOnlinePlayer = () => import("../components/OnlinePlayer");
+const OnlinePlayer = lazy(loadOnlinePlayer);
+const preloadOnlinePlayer = () => loadOnlinePlayer()
+  .then((module) => module.preloadOnlinePlayer())
+  .catch(() => {});
 import { useBlockedStats } from "../utils/useBlockedStats";
 import useElementWidth from "../utils/useElementWidth";
 import MediaCard from "../components/MediaCard";
@@ -73,6 +77,7 @@ import {
   getAgeLimitSetting,
   getRatingCountry,
 } from "../utils/ageRating";
+import { discoverSources } from "../utils/source-host-client";
 
 export default function MoviePage({
   item,
@@ -740,6 +745,35 @@ export default function MoviePage({
     return new Date(d.release_date) > today;
   }, [d.release_date]);
 
+  // Warm the Habster lookup while the viewer reads the web movie page. This
+  // endpoint only prepares source metadata; playback still starts on click.
+  useEffect(() => {
+    if (!webMode || !details || restricted || isUnreleased || !["online", "lampac"].includes(playerSource)) return;
+    const title = details.title || details.name || item.title || item.name;
+    if (!title) return;
+    const kpId = [details.kinopoisk_id, details.kinopoiskId, item.kinopoisk_id, item.kinopoiskId]
+      .filter((value) => typeof value === "number" || typeof value === "string")
+      .map(Number)
+      .find((value) => Number.isSafeInteger(value) && value > 0);
+    const year = (details.release_date || details.first_air_date || item.release_date || item.first_air_date || "").slice(0, 4);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    void discoverSources({
+      type: "movie",
+      title,
+      originalTitle: details.original_title || details.original_name || item.original_title || item.original_name || title,
+      ...(year ? { year: Number(year) } : {}),
+      ...(details.imdb_id || details.external_ids?.imdb_id || item.imdb_id
+        ? { imdbId: details.imdb_id || details.external_ids?.imdb_id || item.imdb_id }
+        : {}),
+      ...(kpId ? { kinopoiskId: kpId } : {}),
+    }, { signal: controller.signal, prepareOnly: true, onEvent: () => {} }).catch(() => {});
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [webMode, details, item.id, item.title, item.name, item.release_date, item.kinopoisk_id, item.kinopoiskId, item.imdb_id, item.original_title, item.original_name, playerSource, restricted, isUnreleased]);
+
   // Check if this movie is already downloaded or currently downloading
   const movieDownload = (downloads || []).find(
     (dl) =>
@@ -869,7 +903,16 @@ export default function MoviePage({
                   🔒 Ограничен по возрасту
                 </button>
               ) : (
-                <button className="btn btn-primary" onClick={handlePlay}>
+                <button
+                  className="btn btn-primary"
+                  onPointerEnter={() => {
+                    if (playerSource === "online" || playerSource === "lampac") void preloadOnlinePlayer();
+                  }}
+                  onFocus={() => {
+                    if (playerSource === "online" || playerSource === "lampac") void preloadOnlinePlayer();
+                  }}
+                  onClick={handlePlay}
+                >
                   <PlayIcon /> {playing ? "Сначала" : "Смотреть"}
                 </button>
               )}

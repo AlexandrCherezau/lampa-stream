@@ -893,3 +893,37 @@ test("movie runtime rejects grossly short HLS and accepts full length across sea
   assert.equal((await fullLength.json()).selected.label, "720p");
   assert.equal(probeCalls, 5);
 });
+
+test("movie preparation warms only Habster metadata without probing video or starting the engine", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "habster-prepare-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const ready = join(directory, "engine-ready");
+  let warmed = false;
+  let fleetCalls = 0;
+  const fleet = { async *discover() { fleetCalls++; } };
+  const habsterAdapter = {
+    async *discover(title) {
+      assert.equal(title.type, "movie");
+      assert.equal(title.kinopoiskId, 5494049);
+      yield candidate({ providerId: "habster:alloha", catalogSource: "habster", voiceId: "default", season: null, episode: null });
+      await new Promise((resolve) => setImmediate(resolve));
+      warmed = true;
+      yield candidate({ providerId: "habster:alloha", catalogSource: "habster", voiceId: "alloha:1", season: null, episode: null });
+    },
+    async resolve() { throw Error("preparation must never resolve video"); },
+  };
+  const media = makeMedia();
+  const app = await start(fleet, media, "", undefined, { habsterAdapter, viAdapter: fleet, engineReadyFile: ready });
+  t.after(() => app.close());
+  const response = await post(app.base, "/v1/discover", { type: "movie", title: "Movie", kinopoiskId: 5494049, prepareOnly: true });
+  const stream = sseReader(response.body);
+  await stream.drain();
+  assert.equal(warmed, true);
+  assert.equal(stream.frames.find((frame) => frame.event === "done").data.complete, true);
+  assert.deepEqual(stream.frames.filter((frame) => frame.event === "candidate").map((frame) => frame.data.voiceId), ["default", "alloha:1"]);
+  assert.equal(fleetCalls, 0);
+  assert.deepEqual(media.probes, []);
+  await assert.rejects(stat(`${ready}.start`), { code: "ENOENT" });
+  assert.equal((await post(app.base, "/v1/discover", { type: "movie", title: "Movie", prepareOnly: "true" })).status, 400);
+  assert.equal((await post(app.base, "/v1/discover", { type: "tv", title: "TV", season: 1, episode: 1, prepareOnly: true })).status, 400);
+});

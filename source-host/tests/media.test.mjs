@@ -738,3 +738,96 @@ test("media rejects fake video errors, empty bodies, tampered and expired tokens
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(fixture.slowClosed(), true);
 });
+
+test("validated VOD playlists are reused briefly without sharing grant, origin or public-only privileges", async (t) => {
+  const fixture = await startServer();
+  t.after(() => closeServer(fixture.server));
+  const calls = [];
+  let badKey = false;
+  let live = false;
+  const transport = { async request(raw, options) {
+    const url = new URL(raw);
+    calls.push({ path: url.pathname, method: options.method || "GET", publicOnly: options.publicOnly, headers: options.headers });
+    const text = url.pathname.endsWith("master.m3u8")
+      ? "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100000\nlevel.m3u8\n"
+      : url.pathname.endsWith("level.m3u8")
+        ? '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:6,\nsegment.mp4\n' + (live ? "" : "#EXT-X-ENDLIST\n")
+        : Buffer.alloc(url.pathname.endsWith("key.bin") ? (badKey ? 32 : 16) : 128, 7);
+    return { url, headers: options.headers, headerOrigin: url.origin,
+      response: fakeResponse(text, 200, { "content-type": url.pathname.endsWith("m3u8") ? "application/vnd.apple.mpegurl" : "video/mp4" }) };
+  } };
+  const media = createMedia({ transport, secret: SECRET, publicOrigin: fixture.base });
+  fixture.attachMedia(media.handle);
+  const resource = { url: "https://cdn.example.test/master.m3u8", publicOnly: true, nodeOnly: true,
+    headers: { authorizations: "anonymous-A", "accepts-controls": "edge-A" } };
+  const probe = await media.probe(resource);
+  assert.equal(probe.ok, true);
+  const before = calls.length;
+  const result = await httpGet(media.url(resource));
+  assert.equal(result.response.status, 200);
+  assert.equal(calls.length, before, "successful probe already downloaded the master");
+  const child = result.body.toString().split("\n").find((line) => line.startsWith("http"));
+  const childResource = media.resource(new URL(child).searchParams.get("token"));
+  assert.equal(childResource.nodeOnly, true);
+  assert.equal(childResource.publicOnly, true);
+  assert.equal(childResource.headers.authorizations, "anonymous-A");
+  const variant = await httpGet(child);
+  assert.equal(calls.length, before, "successful probe already downloaded the VOD variant");
+  assert.match(variant.body.toString(), /\/v1\/media\?token=/);
+  await httpGet(media.url({ ...resource, headers: { ...resource.headers, authorizations: "anonymous-B" } }));
+  assert.equal(calls.length, before + 1, "another grant cannot receive a cached private response");
+  await httpGet(media.url({ ...resource, publicOnly: false }));
+  assert.equal(calls.length, before + 2, "engine and public-only request planes stay distinct");
+  await httpGet(media.url({ ...resource, headerOrigin: "https://other.example.test" }));
+  assert.equal(calls.length, before + 3, "origin restrictions remain part of cache identity");
+  await httpGet(media.url(resource), { method: "HEAD" });
+  assert.equal(calls.length, before + 4, "HEAD uses the ordinary upstream path");
+  await httpGet(media.url(resource), { headers: { range: "bytes=0-100" } });
+  assert.equal(calls.length, before + 5, "Range uses the ordinary upstream path");
+  const now = Date.now;
+  Date.now = () => now() + 15_001;
+  try { await httpGet(media.url(resource)); } finally { Date.now = now; }
+  assert.equal(calls.length, before + 6, "cached playlists expire after fifteen seconds");
+  for (const mode of ["invalid-key", "live"]) {
+    badKey = mode === "invalid-key"; live = mode === "live";
+    const fresh = { ...resource, url: `https://cdn.example.test/${mode}/master.m3u8` };
+    const checked = await media.probe(fresh);
+    assert.equal(checked.ok, mode === "live");
+    const count = calls.length;
+    await httpGet(media.url(fresh));
+    assert.equal(calls.length, count + 1, "failed checks and live playlists never populate startup cache");
+  }
+  badKey = false; live = false;
+  for (let index = 0; index < 5; index++) assert.equal((await media.probe({ ...resource, url: `https://cdn.example.test/evict-${index}/master.m3u8` })).ok, true);
+  const count = calls.length;
+  await httpGet(media.url({ ...resource, url: "https://cdn.example.test/evict-0/master.m3u8" }));
+  assert.equal(calls.length, count + 1, "eight cached documents cannot retain the oldest of five title pairs");
+});
+
+test("HLS init, key and segment checks start together and a failed check aborts unfinished siblings", async () => {
+  const started = [];
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let failKey = false;
+  let siblingsAborted = 0;
+  const transport = { async request(raw, { signal, headers }) {
+    const url = new URL(raw);
+    if (url.pathname.endsWith("m3u8")) return { url, headers, headerOrigin: url.origin,
+      response: fakeResponse('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:6,\nsegment.mp4\n#EXT-X-ENDLIST\n', 200, { "content-type": "application/vnd.apple.mpegurl" }) };
+    started.push(url.pathname);
+    if (started.length === 3) release();
+    if (failKey && !url.pathname.endsWith("key.bin")) await new Promise((_resolve, reject) => signal.addEventListener("abort", () => { siblingsAborted++; reject(signal.reason); }, { once: true }));
+    else await gate;
+    return { url, headers, headerOrigin: url.origin,
+      response: fakeResponse(Buffer.alloc(url.pathname.endsWith("key.bin") ? (failKey ? 32 : 16) : 128), 200, { "content-type": "video/mp4" }) };
+  } };
+  const media = createMedia({ transport, secret: SECRET });
+  const resource = { url: "https://cdn.example.test/level.m3u8", publicOnly: true };
+  const pending = media.probe(resource);
+  for (let index = 0; index < 100 && started.length < 3; index++) await new Promise((resolve) => setTimeout(resolve, 2));
+  assert.equal(started.length, 3, "sequential init/key/segment would block at the unopened gate");
+  assert.equal((await pending).ok, true);
+  started.length = 0; failKey = true;
+  assert.equal((await media.probe(resource)).ok, false);
+  assert.equal(siblingsAborted, 2);
+});
