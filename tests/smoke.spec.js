@@ -33,7 +33,17 @@ async function mockTmdb(page, anime = false) {
     const url = new URL(route.request().url());
     const path = url.pathname;
     let json;
-    if (path.includes("/trending/")) json = { results: Array.from({ length: 20 }, (_, i) => movie(i + 1)) };
+    if (path.includes("/trending/")) {
+      const type = path.match(/\/trending\/(all|tv|movie)\//)?.[1];
+      const asType = (id, mediaType) => ({ ...movie(id), media_type: mediaType });
+      const results = type === "all"
+        ? [
+            ...Array.from({ length: 10 }, (_, i) => asType(i + 1, "movie")),
+            ...Array.from({ length: 10 }, (_, i) => asType(i + 11, "tv")),
+          ]
+        : Array.from({ length: 20 }, (_, i) => asType(i + 1, type === "tv" ? "tv" : "movie"));
+      json = { results };
+    }
     else if (path.includes("/external_ids")) json = { imdb_id: "tt0111161" };
     else if (path.includes("/configuration")) json = { images: { secure_base_url: "https://img.tmdb.org/t/p/", poster_sizes: ["w500"] } };
     else if (/\/movie\/\d+$/.test(path)) json = movie(Number(path.split("/").pop()));
@@ -51,7 +61,33 @@ async function mockTmdb(page, anime = false) {
   };
   await page.route("**/api/tmdb/**", respond);
   await page.route("https://api.themoviedb.org/**", respond);
-  await page.route("**/api/source-host?**", (route) => route.fulfill({ status: 503, body: "Offline test" }));
+  await page.route("**/api/source-host?op=discover", (route) => {
+    const request = route.request().postDataJSON();
+    const candidate = {
+      id: request.prepareOnly ? "prepared-boot" : "boot",
+      providerId: "habster:alloha",
+      providerName: "Habster · Alloha",
+      voiceId: "voice-original",
+      voiceName: "Original",
+      qualityHint: "720p",
+    };
+    return route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: `event: candidate\ndata: ${JSON.stringify(candidate)}\n\nevent: done\ndata: {"candidates":1,"complete":true}\n\n`,
+    });
+  });
+  await page.route("**/api/source-host?op=resolve", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      kind: "hls",
+      selected: { label: "720p", height: 720, url: "https://media.example/boot.m3u8" },
+      qualities: [{ label: "720p", height: 720, url: "https://media.example/boot.m3u8" }],
+      subtitles: [],
+      audioNames: [],
+    }),
+  }));
   await page.route("**/api/cub?**", (route) => route.fulfill({
     contentType: "application/json", body: JSON.stringify({ page: 1, total_pages: 1, results: [] }),
   }));
@@ -68,11 +104,37 @@ test("boots, renders the home page, navigates to a movie, mounts the player", as
   await page.addInitScript(() => {
     try { localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token"); } catch {}
     localStorage.setItem("streambert_playerSource", JSON.stringify("online"));
+    localStorage.setItem("streambert_history", JSON.stringify([
+      { id: 550, media_type: "movie", watchedAt: Date.now(), title: "Movie 550" },
+    ]));
+    localStorage.setItem("streambert_progress", JSON.stringify({ movie_550: 42 }));
+    localStorage.setItem("streambert_homeRowOrder", JSON.stringify([
+      "continue", "recommended", "trendingMovies", "trendingTV", "topRated", "zona",
+    ]));
+    localStorage.setItem("streambert_homeRowVisible", JSON.stringify({
+      continue: true, recommended: true, trendingMovies: true, trendingTV: true, topRated: true, zona: true,
+    }));
   });
   await mockTmdb(page);
+  const removedCatalogRequests = [];
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (["/api/cub", "/api/habster", "/api/zona"].includes(pathname)) {
+      removedCatalogRequests.push(pathname);
+    }
+  });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.locator(".sidebar")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".carousel-section .section-title")).toHaveText([
+    "Рекомендации для вас",
+    "Популярные фильмы",
+    "Популярные сериалы",
+    "С высоким рейтингом",
+  ], { timeout: 20_000 });
+  await expect(page.locator(".hero")).toHaveCount(0);
+  await expect(page.getByText("Продолжить просмотр", { exact: true })).toHaveCount(0);
+  expect(removedCatalogRequests).toEqual([]);
 
   // The progressive grid reveals the first batch of cards without mounting all.
   const cards = page.locator(".carousel-item");
@@ -85,10 +147,7 @@ test("boots, renders the home page, navigates to a movie, mounts the player", as
   await expect(page).toHaveURL(/\/movie\/\d+$/);
 
   // Stub resolution so mounting the player does not depend on a live CDN.
-  await page.evaluate(() => {
-    window.electron.collapsResolve = async () => ({ ok: true, hls: "/test-stream.m3u8" });
-  });
-  await page.route("**/test-stream.m3u8", (route) => route.fulfill({
+  await page.route("https://media.example/boot.m3u8", (route) => route.fulfill({
     contentType: "application/vnd.apple.mpegurl",
     body: "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-ENDLIST\n",
   }));
