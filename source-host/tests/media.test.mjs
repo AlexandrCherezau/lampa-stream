@@ -714,7 +714,8 @@ test("HLS compression negotiates gzip without changing signed children or ranged
 test("node-only public HLS shares one encrypted context across a large playlist", async (t) => {
   const fixture = await startServer();
   t.after(() => closeServer(fixture.server));
-  const baseUrl = "https://cdn.example.test/movie/manifest.m3u8";
+  const opaqueDirectory = `/movie/title-${"opaque".repeat(320)}/`;
+  const baseUrl = `https://cdn.example.test${opaqueDirectory}manifest.m3u8`;
   const rows = Array.from({ length: 1450 }, (_, index) => `#EXTINF:4.000,\nsegment-${String(index).padStart(4, "0")}-with-a-long-cdn-path.ts`).join("\n");
   const text = `#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="keys/movie.key"\n#EXT-X-MAP:URI="init/movie-init.mp4"\n${rows}\n#EXT-X-ENDLIST\n`;
   const largeHeaders = { authorizations: `Bearer ${"a".repeat(1800)}`, "accepts-controls": "edge-grant-" + "b".repeat(300), referer: "https://embed.example.test/watch" };
@@ -741,16 +742,17 @@ test("node-only public HLS shares one encrypted context across a large playlist"
   const rewritten = (await import("node:zlib")).gunzipSync(compressed.body).toString("utf8");
   assert.equal(rewritten.split("\n").filter((line) => line.includes("/v1/media?token=")).length, 1452);
   assert(compressed.body.length < 250_000, `1450-row gzip output was ${compressed.body.length} bytes`);
+  assert(!rewritten.includes(opaqueDirectory), "opaque upstream path is encrypted once in shared context instead of appearing in each child token");
   const childTokens = [...rewritten.matchAll(new RegExp(`${fixture.base}/v1/media\\?token=[^\\s\\\"]+`, "g"))]
     .map(([line]) => new URL(line).searchParams.get("token"));
   const first = media.resource(childTokens[0]);
-  assert.equal(first.url, "https://cdn.example.test/movie/keys/movie.key");
+  assert.equal(first.url, `https://cdn.example.test${opaqueDirectory}keys/movie.key`);
   assert.equal(first.headers.authorizations, largeHeaders.authorizations);
   assert.equal(first.publicOnly, true);
   assert.equal(first.nodeOnly, true);
   assert.equal(first.exp <= media.resource(new URL(playlistUrl).searchParams.get("token")).exp, true);
   const secondMedia = createMedia({ transport, secret: SECRET, publicOrigin: fixture.base });
-  assert.equal(secondMedia.resource(childTokens.at(-1)).url, "https://cdn.example.test/movie/segment-1449-with-a-long-cdn-path.ts",
+  assert.equal(secondMedia.resource(childTokens.at(-1)).url, `https://cdn.example.test${opaqueDirectory}segment-1449-with-a-long-cdn-path.ts`,
     "a different serverless instance with the same secret can decrypt a child without shared memory");
 
   const legacyUrl = media.url({ url: baseUrl, headers: largeHeaders, headerOrigin: new URL(baseUrl).origin, nodeOnly: false, publicOnly: true });

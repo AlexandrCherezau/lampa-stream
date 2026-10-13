@@ -226,7 +226,14 @@ function makeCompactChildUrl(resource, baseUrl, key, publicOrigin) {
     const target = new URL(rawUrl);
     if (!/^https?:$/.test(target.protocol) || target.username || target.password) throw new TypeError("resource.url must be credential-free HTTP(S)");
     const sameOrigin = target.origin === base.origin;
-    const childValue = Buffer.from(JSON.stringify({ sameOrigin, ref: sameOrigin ? `${target.pathname}${target.search}${target.hash}` : target.href }));
+    let ref = target.href;
+    if (sameOrigin) {
+      const directory = base.pathname.slice(0, base.pathname.lastIndexOf("/") + 1);
+      ref = target.pathname.startsWith(directory)
+        ? `./${target.pathname.slice(directory.length)}${target.search}${target.hash}`
+        : `${target.pathname}${target.search}${target.hash}`;
+    }
+    const childValue = Buffer.from(JSON.stringify({ sameOrigin, ref }));
     const childIv = randomBytes(12);
     const childCipher = createCipheriv("aes-256-gcm", key, childIv);
     childCipher.setAAD(Buffer.from(contextPrefix));
