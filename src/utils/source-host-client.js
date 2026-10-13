@@ -50,16 +50,6 @@ function resolvedStream(result) {
   if (!url) throw new Error("Источник не предоставил видео");
   if (result.kind === "hls") return { hls: url };
   if (result.kind === "file") return { mp4: url };
-  if (result.kind === "embed" && result.source?.providerId === "habster:alloha" && result.source?.catalogSource === "habster") {
-    const embed = new URL(url);
-    const kp = embed.searchParams.get("kp");
-    if (embed.origin === "https://befriend.stravers.live" && embed.pathname === "/" &&
-        !embed.username && !embed.password && !embed.hash && /^\d+$/.test(kp || "") &&
-        Number.isSafeInteger(Number(kp)) && Number(kp) > 0 && embed.searchParams.getAll("kp").length === 1 &&
-        result.source.kinopoiskId === Number(kp)) {
-      return { embed: embed.href };
-    }
-  }
   throw new Error("Источник не предоставил поддерживаемое видео");
 }
 
@@ -180,9 +170,15 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       const requestedHeight = advertisedHeight(quality);
       const candidate = (requestedHeight ? providerCandidates.find((value) => advertisedHeight(value.qualityHint) >= requestedHeight) : null)
         || providerCandidates[0];
-      return candidate ? choose(candidate, id === "habster:alloha" ? undefined : quality, true) : undefined;
+      return candidate ? choose(candidate, quality, true) : undefined;
     },
-    selectVoice: (id) => { const candidate = candidates.find((value) => value.id === id); return candidate ? choose(candidate, undefined, true) : undefined; },
+    selectVoice: (id) => {
+      const candidate = candidates.find((value) => value.id === id);
+      // Alloha provides each dub as a separate file with the same quality ladder.
+      const quality = candidate?.providerId === "habster:alloha" && active?.candidate.providerId === candidate.providerId
+        ? active.result.selected?.label : undefined;
+      return candidate ? choose(candidate, quality === "auto" ? undefined : quality, true) : undefined;
+    },
     selectQuality: (label) => active ? choose(active.candidate, label, true) : undefined,
     clearSwitching: () => emit({ switching: false }),
     notePlaying: () => { confirmed = true; previous = null; emit({ switching: false }); },

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Readable } from "node:stream";
+import { gzipSync } from "node:zlib";
 import { createHabsterProvider, parseHabsterEmbed, parseHabsterAllohaEmbed, parseHabsterPlayer } from "../providers/habster.mjs";
 
 const movie = { type: "movie", kinopoiskId: 328, title: "Movie", catalogSource: "habster" };
@@ -13,7 +14,7 @@ const response = (text, headers = {}, statusCode = 200) => {
   stream.headers = headers; stream.statusCode = statusCode;
   return { response: stream };
 };
-const collect = async (iterator) => { const items = []; for await (const item of iterator) items.push(item); return items; };
+const collect = async (iterator, limit = 2) => { const items = []; for await (const item of iterator) { items.push(item); if (items.length >= limit) break; } return items; };
 
 test("Habster reads only the exact public embed literal and matching Kinopoisk title", () => {
   assert.equal(new URL(parseHabsterEmbed(page(), 328)).pathname, "/embed/kp/328");
@@ -108,6 +109,18 @@ test("Habster bounds HTTP errors/body size and propagates cancellation through s
   await assert.rejects(collect(adapter.discover(movie, { signal: controller.signal })), { name: "AbortError" });
   await assert.rejects(collect(adapter.discover({ ...movie, kinopoiskId: "328" })), /valid Kinopoisk/);
   await assert.rejects(collect(adapter.discover({ ...movie, type: "tv", season: 2 })), /exact season and episode/);
+});
+
+test("Habster bounds decoded compressed responses rather than only compressed wire bytes", async () => {
+  const good = createHabsterProvider({ transport: { async request(raw) {
+    return response(gzipSync(new URL(raw).origin === "https://habster.sbs" ? page() : player()), { "content-encoding": "gzip" });
+  } } });
+  const [, candidate] = await collect(good.discover(movie));
+  assert.equal((await good.resolve(candidate)).qualities[0].url, source.hls);
+  const bomb = createHabsterProvider({ transport: { async request() {
+    return response(gzipSync("x".repeat(1024 * 1024 + 1)), { "content-encoding": "gzip" });
+  } } });
+  await assert.rejects(bomb.resolve(candidate), /too large/);
 });
 
 test("Habster TV discovery preserves the exact episode in sealed references and cold refresh", async () => {
@@ -218,28 +231,67 @@ test("Habster Alloha reads a matching anonymous page literal and rejects injecte
   assert.throws(() => parseHabsterAllohaEmbed(allohaPage().replace(" + KP_ID", " + KP_ID + '#evil'"), 328), /unavailable/);
 });
 
-test("Habster movie discovery prioritizes native Alloha and resolves fresh page-derived iframe without exposing URL in candidate", async () => {
-  let calls = 0;
-  const adapter = createHabsterProvider({ transport: { async request(raw, options) {
-    assert.equal(raw, "https://habster.sbs/film/328");
+test("Habster exposes native Alloha qualities and independent voice candidates from a shared anonymous session", async () => {
+  let calls = 0, playbackCalls = 0;
+  const data = { hlsSource: [
+    { audioId: "1", label: "MovieDalen", default: true, quality: { "2160": "https://cdn.test/4k.m3u8 or https://backup.test/4k.m3u8", "720": "https://cdn.test/720.m3u8" } },
+    { audioId: "2", label: "HDrezka Studio", quality: { "2160": "https://cdn.test/4k-ru.m3u8", "720": "https://cdn.test/720-ru.m3u8" } },
+  ], tracks: [{ kind: "subtitles", label: "Русские", language: "ru", src: "https://cdn.test/ru.vtt" }], pnr: "wss://befriend.stravers.live/ws/", pnk: "anonymous-fixture" };
+  const transport = { async request(raw, options) {
+    const url = new URL(raw);
     assert.equal(options.publicOnly, true);
-    return response(allohaPage().replace("public-fixture", `public-fixture-${++calls}`));
+    if (url.origin === "https://habster.sbs") { calls++; return response(allohaPage().replace("public-fixture", `public-fixture-${calls}`)); }
+    if (url.pathname === "/") return response(`<meta name="viewporti" content="abcdefghi"><script src="/build/app.fixture.js"></script><script>fileList = JSON.parse('{"active":{"id":123}}')</script>`);
+    if (url.pathname === "/build/app.fixture.js") return response(`return r['a'](1,'${"x".repeat(380)}')`);
+    assert.equal(url.pathname, "/bnsi/movies/123");
+    assert.equal(options.method, "POST");
+    assert.equal(new URLSearchParams(options.body).get("token"), `public-fixture-${calls}`);
+    assert.equal(new URLSearchParams(options.body).get("audio"), "");
+    assert.equal(new URLSearchParams(options.body).get("subtitle"), "");
+    assert.equal(options.headers.origin, "https://befriend.stravers.live");
+    assert.match(options.headers.borth, /^[0-9a-f]{64}\|/);
+    return response(JSON.stringify(data));
+  } };
+  const allohaPlayback = async (_url, voice, { signal }) => { playbackCalls++; assert.equal(voice.id, "1"); assert(signal instanceof AbortSignal); return "anonymous-edge-fixture"; };
+  const adapter = createHabsterProvider({ transport, allohaPlayback });
+  const iterator = adapter.discover(movie);
+  const first = (await iterator.next()).value;
+  assert.equal(first.providerId, "habster:alloha");
+  assert.equal(first.voiceId, "default");
+  assert.equal(calls, 0, "default source is available before any player metadata I/O");
+  assert.equal(JSON.stringify(first).includes("token"), false);
+  const pending = adapter.resolve(first);
+  const remaining = await collect(iterator, 10);
+  const resolved = await pending;
+  assert.deepEqual(remaining.map((item) => item.voiceId), ["multi", "alloha:1", "alloha:2"]);
+  assert.equal(calls, 1); assert.equal(playbackCalls, 1);
+  assert.equal(resolved.kind, undefined, "there is no iframe resolve variant");
+  assert.deepEqual(resolved.qualities.map((item) => item.label), ["720p", "2160p"]);
+  assert(resolved.qualities.every((item) => item.publicOnly && item.type === "hls"));
+  assert.equal(resolved.qualities[1].height, 2160);
+  assert.deepEqual(resolved.audioNames, ["MovieDalen"]);
+  const russian = await adapter.resolve(remaining[2]);
+  assert.deepEqual(russian.audioNames, ["HDrezka Studio"]);
+  assert.equal(russian.qualities[1].url, "https://cdn.test/4k-ru.m3u8");
+  assert.equal(russian.subtitles[0].publicOnly, true);
+  assert.equal(russian.qualities[0].headers.authorizations, `Bearer ${"x".repeat(380)}`);
+  await createHabsterProvider({ transport, allohaPlayback }).resolve(first);
+  assert.equal(calls, 2, "a cold instance uses fresh title-specific public token data");
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const shared = createHabsterProvider({ allohaPlayback, transport: { async request(raw, options) {
+    if (new URL(raw).origin === "https://habster.sbs") await gate;
+    return transport.request(raw, options);
   } } });
-  const [candidate, collaps] = await collect(adapter.discover(movie));
-  assert.equal(candidate.providerId, "habster:alloha");
-  assert.equal(candidate.voiceId, "embedded");
-  assert.equal(candidate.qualityHint, "До 4K");
-  assert.equal(collaps.providerId, "habster:collaps");
-  assert.equal(calls, 0);
-  assert.equal(Object.keys(candidate).includes("ref"), false);
-  assert.equal(JSON.stringify(candidate).includes("token"), false);
-  const first = await adapter.resolve(candidate);
-  assert.equal(first.kind, "embed");
-  assert.equal(first.embedOrigin, "https://befriend.stravers.live");
-  assert.equal(new URL(first.embedUrl).searchParams.get("token"), "public-fixture-1");
-  const second = await createHabsterProvider({ transport: { async request() { return response(allohaPage().replace("public-fixture", "fresh-token")); } } }).resolve(candidate);
-  assert.equal(new URL(second.embedUrl).searchParams.get("token"), "fresh-token");
-  await assert.rejects(adapter.resolve({ ...candidate, ref: candidate.ref, voiceId: "multi" }), /Invalid Habster/);
-  await assert.rejects(adapter.resolve({ ...candidate, ref: { type: "tv", kinopoiskId: 328, season: 1, episode: 1 }, season: 1, episode: 1 }), /exact movie/);
-  assert.equal(calls, 1);
+  const controller = new AbortController();
+  const cancelled = shared.resolve(first, { signal: controller.signal });
+  const survivor = shared.resolve(first);
+  controller.abort();
+  await assert.rejects(cancelled, { name: "AbortError" });
+  release();
+  assert.equal((await survivor).qualities[1].height, 2160, "one caller cannot abort a shared anonymous metadata refresh");
+  await assert.rejects(adapter.resolve({ ...first, ref: first.ref, voiceId: "embedded" }), /Invalid Habster/);
+  await assert.rejects(adapter.resolve({ ...first, ref: { ...first.ref, voiceId: "alloha:3" } }), /Invalid Habster/);
+  await assert.rejects(adapter.resolve({ ...first, voiceId: "alloha:3", ref: { ...first.ref, voiceId: "alloha:3" } }), /requested audio/);
+  await assert.rejects(adapter.resolve({ ...first, ref: { ...first.ref, type: "tv", season: 1, episode: 1 }, season: 1, episode: 1 }), /exact movie/);
 });

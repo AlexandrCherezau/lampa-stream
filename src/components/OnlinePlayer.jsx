@@ -74,7 +74,8 @@ function skipEndFor(segment, timings) {
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
-const is4KLevel = (level) => level.width >= 3840 || level.height >= 2160;
+// Cinematic 4K often crops the encoded frame (Habster: 3832×1600).
+const is4KLevel = (level) => level.width >= 3800 || level.height >= 2160;
 const levelLabel = (level) => is4KLevel(level) ? "4K" : `${level.height}p`;
 const providerQualityLabel = (source) => source.qualityHeight >= 2160 ? "4K" : `${source.qualityHeight}p`;
 // Fleet stall watchdog window. A freshly-attached fleet stream that hasn't reached
@@ -130,46 +131,6 @@ const Fwd10I = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 // Fleet-only glyphs (Lampac): balancer = stacked servers, voice/dub = globe+dot.
 const BalancerI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><rect x="3" y="4" width="18" height="6" rx="1.5" /><rect x="3" y="14" width="18" height="6" rx="1.5" /><line x1="7" y1="7" x2="7.01" y2="7" /><line x1="7" y1="17" x2="7.01" y2="17" /></svg>);
 const VoiceI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>);
-
-// Habster's Alloha player owns its quality/audio controls. Frame load confirms
-// only that the document opened; it cannot prove playback or update our clock.
-function HabsterEmbedPlayer({ url, balansers, balanser, selectBalanser, clearSwitching, reportFailure, sourceError, switching }) {
-  const [opened, setOpened] = useState(false);
-  const [slow, setSlow] = useState(false);
-  const [showSources, setShowSources] = useState(false);
-  useEffect(() => {
-    setOpened(false);
-    setSlow(false);
-    const timer = setTimeout(() => setSlow(true), 12_000);
-    return () => clearTimeout(timer);
-  }, [url]);
-  const active = balansers.find((source) => source.id === balanser);
-  return (
-    <div className="torrplayer torrplayer--embed">
-      <iframe key={url} src={url} className="torrplayer-video" title="Плеер Habster · Alloha"
-        style={{ position: "relative", inset: "auto", border: 0, height: 0 }} allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowFullScreen
-        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
-        onLoad={() => { setOpened(true); clearSwitching?.(); }}
-        onError={() => { setSlow(true); clearSwitching?.(); reportFailure?.(); }} />
-      <div className="torrplayer-embed-controls" style={{ position: "relative", flexShrink: 0, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, padding: "10px 14px", background: "var(--surface)", zIndex: 25 }}>
-        <div className="torrplayer-audio">
-          <button className={"torrplayer-btn" + (showSources ? " torrplayer-btn--active" : "")}
-            title="Источник" onClick={() => setShowSources((value) => !value)}>
-            <BalancerI /><span className="torrplayer-audio-label">{active?.name || "Habster · Alloha"}</span>
-          </button>
-          {showSources && <div className="torrplayer-audio-menu torrplayer-audio-menu--wide">
-            {balansers.map((source) => <button key={source.id}
-              className={"torrplayer-audio-item" + (source.id === balanser ? " active" : "")}
-              onClick={() => { setShowSources(false); selectBalanser(source.id); }}>{source.name}</button>)}
-          </div>}
-        </div>
-        {!opened && <span role="status">{slow ? "Плеер долго открывается. Можно выбрать другой источник." : "Открываем плеер Habster…"}</span>}
-        {opened && switching && <span role="status">Переключаем источник…</span>}
-        {sourceError && <span role="status">{sourceError.message}</span>}
-      </div>
-    </div>
-  );
-}
 
 export default function OnlinePlayer({
   apiKey, item, details, type = "movie", season = null, episode = null,
@@ -550,8 +511,8 @@ export default function OnlinePlayer({
       loadingEnteredAtRef.current = 0;
       setError("");
       setState("ready");
-      setStream((previous) => previous?.mp4 === ls.mp4 && previous?.hls === ls.hls && previous?.embed === ls.embed && previous?.viaRelay === ls.viaRelay
-        ? previous : ls.embed ? { embed: ls.embed } : ls.mp4 ? { mp4: ls.mp4, viaRelay: ls.viaRelay } : { hls: ls.hls, viaRelay: ls.viaRelay });
+      setStream((previous) => previous?.mp4 === ls.mp4 && previous?.hls === ls.hls && previous?.viaRelay === ls.viaRelay
+        ? previous : ls.mp4 ? { mp4: ls.mp4, viaRelay: ls.viaRelay } : { hls: ls.hls, viaRelay: ls.viaRelay });
       setSubtitles(lampac.subtitles || []);
       setAudioNames(lampac.audioNames || []);
       setMeta(lampac.meta || "");
@@ -769,15 +730,6 @@ export default function OnlinePlayer({
 
   useEffect(() => {
     if (!stream) return;
-    if (stream.embed) {
-      destroyAll();
-      setPlaying(false); setWaiting(false);
-      setCurrent(0); setDuration(0); setBuffered(0);
-      setAudioTracks([]); setAudioId(-1);
-      setLevels([]); setCurrentLevel(-1);
-      fleetPlayedRef.current = false;
-      return;
-    }
     const v = videoRef.current;
     if (!v) return;
     destroyAll();
@@ -1887,11 +1839,6 @@ export default function OnlinePlayer({
   // failover paid a cold re-buffer (plus the 7 s stall watchdog) to get back.
   // The full-screen branches stay for the honest "nothing ever played" case.
   const hasMedia = !!stream || hadPlayedRef.current || fleetPlayedRef.current;
-  if (stream?.embed) {
-    return <HabsterEmbedPlayer url={stream.embed} balansers={balansers} balanser={lampac.balanser}
-      selectBalanser={selectBalanser} clearSwitching={lampac.clearSwitching}
-      reportFailure={lampac.reportPlaybackFailure} sourceError={lampac.sourceError} switching={switching} />;
-  }
   if (state === "loading" && !hasMedia) {
     return (
       <div className="torrpicker">
@@ -1939,9 +1886,10 @@ export default function OnlinePlayer({
   const activeBalanser = isLampac ? balansers.find((b) => b.id === lampac.balanser) : null;
   const activeVoice = isLampac ? voices.find((v) => v.id === lampac.voice) : null;
   const activeSrcQuality = isLampac ? srcQualities.find((q) => q.id === lampac.quality) : null;
+  const showEngineQualities = levels.length > 0 && !(isLampac && srcQualities.length > 1 && levels.length === 1);
   const highestCurrentQuality = Math.max(0, ...srcQualities.map((q) => q.height || 0),
     ...levels.map((level) => is4KLevel(level) ? 2160 : level.height || 0));
-  const higherQualitySources = balansers.filter((source) => source.id !== lampac.balanser && source.id !== "habster:alloha" && source.qualityHeight > highestCurrentQuality);
+  const higherQualitySources = balansers.filter((source) => source.id !== lampac.balanser && source.qualityHeight > highestCurrentQuality);
   const voicePickerTitle = ["vkmovie", "rutubemovie"].includes(lampac.balanser)
     ? "Версия / озвучка"
     : "Озвучка";
@@ -2147,7 +2095,7 @@ export default function OnlinePlayer({
                     ))}
                   </>
                 )}
-                {levels.length > 0 && (
+                {showEngineQualities && (
                   <>
                     {isLampac && srcQualities.length > 0 && <div className="torrplayer-audio-head">Поток (ABR)</div>}
                     <button className={"torrplayer-audio-item" + (currentLevel < 0 ? " active" : "")} onClick={() => selectQuality(-1)}>Авто</button>

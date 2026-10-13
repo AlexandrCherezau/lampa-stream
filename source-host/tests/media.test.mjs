@@ -305,6 +305,74 @@ test("media opts probe and playback into bounded direct-404 retry before respond
   assert.equal(counts.get("/playback-segment.ts"), 2);
 });
 
+test("transport posts bounded public form bodies and protects them across redirects", async (t) => {
+  const body = "token=public-fixture&name=Привет";
+  const server = http.createServer(async (req, res) => {
+    assert.equal(req.method, "POST");
+    assert.equal(req.headers["content-length"], String(Buffer.byteLength(body)));
+    assert.equal(req.headers.borth, "public-borth");
+    assert.equal(req.headers["content-type"], "application/x-www-form-urlencoded");
+    assert.equal(Buffer.concat(await Array.fromAsync(req)).toString(), body);
+    res.end("posted");
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(() => closeServer(server));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const transport = createTransport({ engineUrl: `${base}/` });
+  const response = await transport.request(`${base}/lite/post`, { method: "POST", body,
+    headers: { borth: "public-borth", "content-type": "application/x-www-form-urlencoded" } });
+  assert.equal(Buffer.concat(await Array.fromAsync(response.response)).toString(), "posted");
+  for (const options of [{ method: "GET", body }, { method: "POST", body: {} }, { method: "POST", body: "x".repeat(65537) }]) {
+    await assert.rejects(transport.request(`${base}/lite/post`, options), { code: "BAD_BODY" });
+  }
+  for (const status of [302, 303, 307]) {
+    const calls = [];
+    const redirected = createTransport({ lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      requestOnceImpl: async (url, options) => {
+        calls.push({ method: options.method, body: options.body, headers: options.headers });
+        return calls.length === 1 ? fakeResponse("", status, { location: "https://public.test/next" }) : fakeResponse("ok");
+      } });
+    const result = await redirected.request("https://public.test/start", { method: "POST", body,
+      headers: { borth: "public-borth", "content-type": "application/x-www-form-urlencoded" }, publicOnly: true });
+    result.response.resume();
+    assert.equal(calls[1].method, status === 307 ? "POST" : "GET");
+    assert.equal(calls[1].body, status === 307 ? body : undefined);
+    assert.equal(calls[1].headers.borth, status === 307 ? "public-borth" : undefined);
+  }
+  const unsafe = createTransport({ lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async () => fakeResponse("", 307, { location: "https://other.test/" }) });
+  await assert.rejects(unsafe.request("https://public.test/start", { method: "POST", body, publicOnly: true }), { code: "UNSAFE_REDIRECT" });
+});
+
+test("CDN playback headers survive sealing and same-origin requests but never follow another origin", async () => {
+  const calls = [];
+  const transport = createTransport({ lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async (url, options) => {
+      calls.push({ url, headers: { ...options.headers } });
+      return url.pathname === "/redirect" ? fakeResponse("", 302, { location: "https://other.test/media.ts" }) : fakeResponse("segment");
+    } });
+  const media = createMedia({ transport, secret: "media-test-secret-that-is-at-least-32-bytes" });
+  const resource = { url: "https://cdn.test/media.ts", publicOnly: true, headerOrigin: "https://cdn.test",
+    headers: { authorizations: "public-grant", "accepts-controls": "public-edge", borth: "not-media", authorization: "visitor-secret" } };
+  const token = new URL(media.url(resource), "https://host.test").searchParams.get("token");
+  const sealed = media.resource(token);
+  assert.equal(sealed.headers.authorizations, "public-grant");
+  assert.equal(sealed.headers["accepts-controls"], "public-edge");
+  assert.equal(sealed.headers.borth, undefined);
+  assert.equal(sealed.headers.authorization, undefined);
+  const same = await transport.request(resource.url, { headers: sealed.headers, publicOnly: true });
+  same.response.resume();
+  assert.equal(calls[0].headers.authorizations, "public-grant");
+  const redirected = await transport.request("https://cdn.test/redirect", { headers: sealed.headers, publicOnly: true });
+  redirected.response.resume();
+  assert.equal(calls.at(-1).headers.authorizations, undefined);
+  assert.equal(calls.at(-1).headers["accepts-controls"], undefined);
+  const crossToken = new URL(media.url({ ...resource, url: "https://other.test/media.ts" }), "https://host.test").searchParams.get("token");
+  assert.equal(media.resource(crossToken).headers.authorizations, undefined);
+  assert.equal(media.resource(crossToken).headers["accepts-controls"], undefined);
+});
+
 test("transport unwraps exact-engine AES proxy links and filters provider headers", async (t) => {
   const fixture = await startServer();
   t.after(() => closeServer(fixture.server));

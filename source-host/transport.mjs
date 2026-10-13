@@ -7,8 +7,11 @@ import net from "node:net";
 const MAX_REDIRECTS = 5;
 const MAX_JSON_BYTES = 4 * 1024 * 1024;
 const MAX_PROXY_TOKEN = 48 * 1024;
-const PROXY_HEADER_ALLOWLIST = new Set(["referer", "origin", "user-agent", "accept", "accept-language", "cookie"]);
+const PROXY_HEADER_ALLOWLIST = new Set(["referer", "origin", "user-agent", "accept", "accept-language", "cookie", "authorizations", "accepts-controls"]);
+const ORIGIN_BOUND_HEADERS = new Set(["cookie", "authorizations", "accepts-controls"]);
 const REQUEST_HEADER_ALLOWLIST = new Set([...PROXY_HEADER_ALLOWLIST, "range", "accept-encoding"]);
+const REQUEST_ONLY_HEADERS = ["borth", "x-requested-with", "content-type"];
+for (const name of REQUEST_ONLY_HEADERS) REQUEST_HEADER_ALLOWLIST.add(name);
 
 export class TransportError extends Error {
   constructor(message, { code = "UPSTREAM_ERROR", status = 502, cause } = {}) {
@@ -164,11 +167,11 @@ function allowedProviderHeaders(headers) {
     .map(([name, value]) => [name.toLowerCase(), value]));
 }
 
-function dropCookie(headers) {
-  for (const name of Object.keys(headers)) if (name.toLowerCase() === "cookie") delete headers[name];
+function dropOriginHeaders(headers) {
+  for (const name of Object.keys(headers)) if (ORIGIN_BOUND_HEADERS.has(name.toLowerCase())) delete headers[name];
 }
 
-function requestOnce(url, { headers, method, signal, timeout, addresses }) {
+function requestOnce(url, { headers, method, body, signal, timeout, addresses }) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(abortError(signal));
     const client = url.protocol === "https:" ? https : http;
@@ -179,7 +182,7 @@ function requestOnce(url, { headers, method, signal, timeout, addresses }) {
     } : undefined;
     const req = client.request(url, {
       method,
-      headers,
+      headers: body == null ? headers : { ...headers, "content-length": Buffer.byteLength(body) },
       lookup: pinnedLookup,
       servername: url.protocol === "https:" && net.isIP(url.hostname.replace(/^\[|\]$/g, "")) ? undefined : url.hostname.replace(/^\[|\]$/g, ""),
     });
@@ -198,7 +201,7 @@ function requestOnce(url, { headers, method, signal, timeout, addresses }) {
       resolve(response);
     });
     req.once("error", (error) => { cleanup(); reject(error); });
-    req.end();
+    req.end(body);
   });
 }
 
@@ -252,13 +255,15 @@ export function createTransport({ engineUrl, engineKey, lookup = dns.lookup, req
 
   async function route(resource, { signal, timeout = 15_000, publicOnly = false } = {}) {
     const headers = { ...(resource.headers || {}) };
-    if (resource.headerOrigin && new URL(resource.url).origin !== resource.headerOrigin) dropCookie(headers);
+    if (resource.headerOrigin && new URL(resource.url).origin !== resource.headerOrigin) dropOriginHeaders(headers);
     const { url, providerHeaders, trustedEngine } = unwrapResource(resource.url, headers, resource.publicOnly === true || publicOnly === true);
     await validateDestination(url, trustedEngine, signal, timeout, lookup);
     return { kind: url.origin === trustedEngine ? "engine" : "direct", url: url.toString(), headers: providerHeaders, headerOrigin: url.origin };
   }
 
-  async function request(rawUrl, { headers = {}, method = "GET", signal, timeout = 15_000, retryNotFound = false, publicOnly = false } = {}) {
+  async function request(rawUrl, { headers = {}, method = "GET", body, signal, timeout = 15_000, retryNotFound = false, publicOnly = false } = {}) {
+    if (body != null && ((typeof body !== "string" && !Buffer.isBuffer(body)) || Buffer.byteLength(body) > 64 * 1024
+      || method.toUpperCase() !== "POST")) throw new TransportError("Invalid upstream POST body", { code: "BAD_BODY" });
     let { url, requestHeaders, providerHeaders, trustedEngine } = unwrapResource(rawUrl, headers, publicOnly);
     let deadline = Date.now() + timeout;
     let redirects = 0;
@@ -294,7 +299,7 @@ export function createTransport({ engineUrl, engineKey, lookup = dns.lookup, req
       }
       let response;
       try {
-        response = await requestOnceImpl(url, { headers: requestHeaders, method, signal, timeout: deadline - Date.now(), addresses });
+        response = await requestOnceImpl(url, { headers: requestHeaders, method, body, signal, timeout: deadline - Date.now(), addresses });
       } catch (cause) {
         if (cause instanceof TransportError || cause.name === "AbortError") throw cause;
         throw new TransportError("Upstream request failed", { code: "UPSTREAM_CONNECT_ERROR", cause });
@@ -304,9 +309,17 @@ export function createTransport({ engineUrl, engineKey, lookup = dns.lookup, req
         if (redirects >= MAX_REDIRECTS) throw new TransportError("Too many upstream redirects", { code: "TOO_MANY_REDIRECTS" });
         redirects++;
         const redirected = new URL(response.headers.location, url);
+        if ((response.statusCode === 303 && method.toUpperCase() !== "HEAD")
+          || ([301, 302].includes(response.statusCode) && method.toUpperCase() === "POST")) {
+          method = "GET";
+          body = undefined;
+          for (const name of Object.keys(requestHeaders)) if (REQUEST_ONLY_HEADERS.includes(name.toLowerCase())) delete requestHeaders[name];
+        }
         if (redirected.origin !== url.origin) {
-          dropCookie(requestHeaders);
-          dropCookie(providerHeaders);
+          if (body != null) throw new TransportError("Upstream POST cannot redirect its body to another origin", { code: "UNSAFE_REDIRECT" });
+          dropOriginHeaders(requestHeaders);
+          dropOriginHeaders(providerHeaders);
+          for (const name of Object.keys(requestHeaders)) if (REQUEST_ONLY_HEADERS.includes(name.toLowerCase())) delete requestHeaders[name];
         }
         url = redirected;
         continue;

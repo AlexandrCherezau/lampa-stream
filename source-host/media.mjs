@@ -8,7 +8,8 @@ const PLAYLIST_MAX = 16 * 1024 * 1024;
 const RANGE_DEFAULT_MAX = 8 * 1024 * 1024;
 const RANGE_LIMIT = 96 * 1024 * 1024;
 const PROBE_PREFIX = 64 * 1024;
-const HEADER_ALLOWLIST = new Set(["referer", "origin", "user-agent", "accept", "accept-language", "cookie"]);
+const HEADER_ALLOWLIST = new Set(["referer", "origin", "user-agent", "accept", "accept-language", "cookie", "authorizations", "accepts-controls"]);
+const ORIGIN_BOUND_HEADERS = new Set(["cookie", "authorizations", "accepts-controls"]);
 const RESPONSE_HEADERS = ["accept-ranges", "cache-control", "content-length", "content-range", "content-type", "etag", "last-modified", "content-encoding"];
 const gzipAsync = promisify(gzip);
 
@@ -22,7 +23,7 @@ function headersFor(resource) {
   const headerOrigin = resource.headerOrigin || targetOrigin;
   for (const [name, value] of Object.entries(resource.headers || {})) {
     const key = name.toLowerCase();
-    if (key === "cookie" && targetOrigin !== headerOrigin) continue;
+    if (ORIGIN_BOUND_HEADERS.has(key) && targetOrigin !== headerOrigin) continue;
     if (HEADER_ALLOWLIST.has(key) && typeof value === "string" && !/[\r\n]/.test(value)) result[key] = value;
   }
   return result;

@@ -267,7 +267,7 @@ test("late 4K sources stay optional and the quality shortcut preserves playback 
   await page.route("**/*-master.m3u8", (route) => {
     const high = route.request().url().includes("high-master");
     const variants = high
-      ? "#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=3840x1604\nfixture.m3u8\n"
+      ? "#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=3832x1600\nfixture.m3u8\n"
       : "#EXT-X-STREAM-INF:BANDWIDTH=200000,RESOLUTION=1272x530\nfixture.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=100000,RESOLUTION=640x270\nfixture.m3u8\n";
     return route.fulfill({ status: 200, contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" }, body: `#EXTM3U\n${variants}` });
   });

@@ -261,27 +261,10 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         if (!["vi3000", "habster"].includes(candidate.catalogSource)) await waitForEngine(controller.signal);
         if (resolutions >= 8) throw failure("Сервер занят, повторите запрос", 429, "BUSY");
         resolutions++;
-        deadline = setTimeout(() => controller.abort(failure("Истекло время проверки", 504, "TIMEOUT")), candidate.catalogSource === "habster" ? 8_000 : RESOLVE_MS);
+        deadline = setTimeout(() => controller.abort(failure("Истекло время проверки", 504, "TIMEOUT")), candidate.providerId === "habster:alloha" ? 30_000 : candidate.catalogSource === "habster" ? 8_000 : RESOLVE_MS);
         try {
           const selectedAdapter = sourceAdapter(candidate.catalogSource);
           const resolved = await selectedAdapter.resolve(candidate, { signal: controller.signal });
-          if (resolved.kind === "embed") {
-            const embed = new URL(resolved.embedUrl);
-            const kp = candidate.ref?.kinopoiskId;
-            if (candidate.providerId !== "habster:alloha" || candidate.catalogSource !== "habster"
-              || candidate.ref?.type !== "movie" || !Number.isSafeInteger(kp) || kp < 1
-              || resolved.embedOrigin !== "https://befriend.stravers.live" || embed.origin !== resolved.embedOrigin
-              || embed.pathname !== "/" || embed.username || embed.password || embed.hash
-              || embed.searchParams.getAll("kp").length !== 1 || embed.searchParams.get("kp") !== String(kp)
-              || [...embed.searchParams.keys()].some((key) => !["kp", "token"].includes(key))) {
-              throw failure("Плеер Habster недоступен", 502, "INVALID_EMBED");
-            }
-            if (body.quality != null) throw failure("Качество выбирается внутри плеера Habster", 400, "EMBED_QUALITY");
-            record(candidate.providerId, { providerName: candidate.providerName, status: "embedded" });
-            json(res, 200, { source: { ...publicCandidate(candidate), kinopoiskId: kp }, kind: "embed",
-              selected: { label: "Плеер Habster", url: embed.href }, qualities: [], subtitles: [], audioNames: [] });
-            return;
-          }
           const qualities = resolved.qualities || [];
           if (!qualities.length) throw failure("Источник не предоставил видео", 502, "NO_MEDIA");
           const wanted = body.quality == null ? null : String(body.quality);
@@ -323,7 +306,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
             || (providerId === "zetflix" && candidate.season == null && candidate.episode == null)
             || (providerId === "vkmovie" && probe.kind === "file")
             || (candidate.catalogSource === "vi3000" && providerId === "filmix" && probe.kind === "file")
-            || (candidate.catalogSource === "habster" && candidate.providerId === "habster:collaps");
+            || (candidate.catalogSource === "habster" && ["habster:collaps", "habster:alloha"].includes(candidate.providerId));
           const variants = qualities.map((quality) => ({ label: quality.label, height: quality.height,
             url: media.url({ ...(quality === selected && probe.url ? { ...quality, url: String(probe.url), headers: probe.headers || quality.headers, headerOrigin: probe.headerOrigin } : quality), nodeOnly }),
           }));
