@@ -1,0 +1,1798 @@
+{
+  "beforeCoreFlow": {
+    "beforeRangeBatching": {
+      "beforeNodeRetry": {
+        "checkedAt": "2026-10-13T08:15:38.722Z",
+        "origin": "https://lampa-stream-six.vercel.app",
+        "backend": "https://lampa-source-host.vercel.app",
+        "deployments": {
+          "frontend": "dpl_FRzS95jkBw1zYptYVyodUhfwrr8Q",
+          "backend": "dpl_FHtNtwAnwQyquqjsUhiJaXH4mQAS",
+          "frontendCommit": "68a737a69cea834a6467e643d700ff81c65e13ca",
+          "backendCommit": "96e76149058281373a64d9c7f704d06acfecee4d"
+        },
+        "scope": "Focused public production delivery recheck: real CUBfirepage1 Movie120→OnlinePlayer discovery/resolve/media startup+seek60 andmanual720p. Earlier8 CUBpages and429failure are retained underbeforeDeliveryFix, not rerun. Matching TMDB metadata/poster fixtures and existing-client-session localStorage flag; site-password/login flow is not tested. No source/media mocking. One title and at most one explicit720p selection, not whole catalog/film.",
+        "catalogPages": [
+          {
+            "feed": "fire",
+            "page": 1,
+            "status": 200,
+            "elapsedMs": 236,
+            "contentType": "application/json; charset=utf-8",
+            "cards": 20,
+            "valid": true
+          }
+        ],
+        "uiCatalogPages": [
+          {
+            "feed": "hundred",
+            "page": 1,
+            "status": 200
+          },
+          {
+            "feed": "now_playing",
+            "page": 1,
+            "status": 200
+          },
+          {
+            "feed": "fire",
+            "page": 1,
+            "status": 200
+          },
+          {
+            "feed": "latest",
+            "page": 1,
+            "status": 200
+          }
+        ],
+        "resolves": [
+          {
+            "status": 200,
+            "elapsedMs": 3281,
+            "requestedQuality": "default",
+            "provider": "vi3000:filmix",
+            "voice": "Дублированный (4K,SDR)",
+            "quality": "720p",
+            "kind": "file",
+            "qualities": [
+              "2160p",
+              "1440p",
+              "1080p",
+              "720p",
+              "480p"
+            ]
+          },
+          {
+            "status": 502,
+            "elapsedMs": 27452,
+            "requestedQuality": "default",
+            "error": "MEDIA_UNAVAILABLE"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 909,
+            "requestedQuality": "default",
+            "provider": "vi3000:cdnvideohub",
+            "voice": "Дубляж",
+            "quality": "auto",
+            "kind": "hls",
+            "qualities": [
+              "auto"
+            ]
+          }
+        ],
+        "media": [
+          {
+            "surface": "production-backend",
+            "status": 502,
+            "elapsedMs": 569,
+            "contentType": "text/plain; charset=utf-8",
+            "contentLength": null,
+            "contentRange": null
+          },
+          {
+            "surface": "production-backend",
+            "status": 200,
+            "elapsedMs": 456,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "3729",
+            "contentRange": null
+          },
+          {
+            "surface": "production-backend",
+            "status": 200,
+            "elapsedMs": 730,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "634349",
+            "contentRange": null
+          },
+          {
+            "surface": "production-backend",
+            "status": 200,
+            "elapsedMs": 144,
+            "contentType": "video/MP2T",
+            "contentLength": "277488",
+            "contentRange": "bytes 0-277487/277488"
+          },
+          {
+            "surface": "production-backend",
+            "status": 200,
+            "elapsedMs": 330,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "634239",
+            "contentRange": null
+          },
+          {
+            "surface": "production-backend",
+            "status": 200,
+            "elapsedMs": 351,
+            "contentType": "video/MP2T",
+            "contentLength": "1715876",
+            "contentRange": "bytes 0-1715875/1715876"
+          },
+          {
+            "surface": "production-backend",
+            "status": 200,
+            "elapsedMs": 301,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "634582",
+            "contentRange": null
+          },
+          {
+            "surface": "production-backend",
+            "status": 200,
+            "elapsedMs": 108,
+            "contentType": "video/MP2T",
+            "contentLength": "1201132",
+            "contentRange": "bytes 0-1201131/1201132"
+          },
+          {
+            "surface": "production-backend",
+            "status": 200,
+            "elapsedMs": 107,
+            "contentType": "video/MP2T",
+            "contentLength": "508540",
+            "contentRange": "bytes 0-508539/508540"
+          },
+          {
+            "surface": "production-backend",
+            "status": 200,
+            "elapsedMs": 107,
+            "contentType": "video/MP2T",
+            "contentLength": "476768",
+            "contentRange": "bytes 0-476767/476768"
+          },
+          {
+            "surface": "production-backend",
+            "status": 200,
+            "elapsedMs": 101,
+            "contentType": "video/MP2T",
+            "contentLength": "549712",
+            "contentRange": "bytes 0-549711/549712"
+          },
+          {
+            "surface": "production-backend",
+            "status": 200,
+            "elapsedMs": 105,
+            "contentType": "video/MP2T",
+            "contentLength": "413600",
+            "contentRange": "bytes 0-413599/413600"
+          }
+        ],
+        "playable": false,
+        "manual720p": null,
+        "item": {
+          "id": 120,
+          "title": "Властелин колец: братство кольца",
+          "type": "movie",
+          "kinopoiskId": "328",
+          "imdbId": "tt0120737"
+        },
+        "stage": "first-frame",
+        "discovery": {
+          "tmdbId": 120,
+          "kinopoiskId": 328,
+          "imdbId": "tt0120737",
+          "catalogSource": "vi3000"
+        },
+        "lastSuccessfulResolve": {
+          "provider": "vi3000:cdnvideohub",
+          "voice": "Дубляж",
+          "quality": "auto",
+          "kind": "hls"
+        },
+        "selected": {
+          "provider": "vi3000:cdnvideohub",
+          "voice": "Дубляж",
+          "quality": "auto",
+          "kind": "hls"
+        },
+        "startupMs": 37602,
+        "decodedSource": {
+          "provider": "vi3000:cdnvideohub",
+          "voice": "Дубляж",
+          "quality": "auto",
+          "kind": "hls"
+        },
+        "initial_source": {
+          "provider": "vi3000:cdnvideohub",
+          "voice": "Дубляж",
+          "quality": "auto",
+          "kind": "hls"
+        },
+        "failure": "contract-or-playback-assertion",
+        "status": "RED",
+        "deadlineReached": false,
+        "focusedNodeRangeDelivery": [
+          {
+            "range": "bytes=0-0",
+            "status": 502,
+            "headersMs": 241,
+            "contentType": "text/plain; charset=utf-8",
+            "contentLength": null,
+            "contentRange": null,
+            "firstChunkBytes": 24,
+            "firstChunkMs": 243,
+            "bodyEndedImmediately": false,
+            "knownGenericFailure": true
+          },
+          {
+            "range": "bytes=0-8388607",
+            "status": 206,
+            "headersMs": 107,
+            "contentType": "video/mp4",
+            "contentLength": "8388608",
+            "contentRange": "bytes 0-8388607/7989078414",
+            "firstChunkBytes": 7677,
+            "firstChunkMs": 108,
+            "bodyEndedImmediately": false
+          },
+          {
+            "range": "bytes=0-",
+            "status": 206,
+            "headersMs": 206,
+            "contentType": "video/mp4",
+            "contentLength": "8388608",
+            "contentRange": "bytes 0-8388607/7989078414",
+            "firstChunkBytes": 7677,
+            "firstChunkMs": 206,
+            "bodyEndedImmediately": false
+          }
+        ],
+        "deliveryObservations": [
+          "NewFilmixmedia no longer redirects throughWorker: actualUI observed directbackend502 in569ms before CDN fallback.",
+          "Focused actualUI guard failed ondecodedCDN at37.602s, preventing fallback success from being attributed toFilmix; seek/manual720 were not attempted in this recheck.",
+          "Same newlyissuedFilmix720 token later yielded502 forRange0-0, but206video/mp4 forexplicit8MiB andopen-ended ranges with first7677B received. Those206 streams were intentionally cancelled afterfirstchunk; bodycompletion was not tested.",
+          "Cause of initial Node502 remains unresolved. No codec, watchdog, or full-response truncation cause is claimed."
+        ]
+      },
+      "checkedAt": "2026-10-13T08:22:47.912Z",
+      "origin": "https://lampa-stream-six.vercel.app",
+      "backend": "https://lampa-source-host.vercel.app",
+      "deployments": {
+        "frontend": "dpl_FRzS95jkBw1zYptYVyodUhfwrr8Q",
+        "backend": "dpl_FHtNtwAnwQyquqjsUhiJaXH4mQAS",
+        "frontendCommit": "68a737a69cea834a6467e643d700ff81c65e13ca",
+        "backendCommit": "96e76149058281373a64d9c7f704d06acfecee4d"
+      },
+      "scope": "Focused public production delivery recheck: real CUBfirepage1 Movie120→OnlinePlayer discovery/resolve/media defaultFile720p startup+seek60 only; no repeatedmanualquality request. Earlier8 CUBpages and429failure are retained underbeforeDeliveryFix, not rerun. Matching TMDB metadata/poster fixtures and existing-client-session localStorage flag; site-password/login flow is not tested. No source/media mocking. One title and at most one explicit720p selection, not whole catalog/film.",
+      "beforeDeliveryFix": {
+        "checkedAt": "2026-10-13T08:04:15.067Z",
+        "origin": "https://lampa-stream-six.vercel.app",
+        "backend": "https://lampa-source-host.vercel.app",
+        "scope": "Public production: four real CUB feeds pages1+2 and actual CUB-card→detail→OnlinePlayer discovery/resolve/media startup+seek60. Matching TMDB metadata/poster fixtures and existing-client-session localStorage flag; site-password/login flow is not tested. No source/media mocking. One title and at most one explicit720p selection, not whole catalog/film.",
+        "catalogPages": [
+          {
+            "feed": "now_playing",
+            "page": 1,
+            "status": 200,
+            "elapsedMs": 1336,
+            "contentType": "application/json; charset=utf-8",
+            "cards": 20,
+            "valid": true
+          },
+          {
+            "feed": "now_playing",
+            "page": 2,
+            "status": 200,
+            "elapsedMs": 867,
+            "contentType": "application/json; charset=utf-8",
+            "cards": 20,
+            "valid": true
+          },
+          {
+            "feed": "latest",
+            "page": 1,
+            "status": 200,
+            "elapsedMs": 1293,
+            "contentType": "application/json; charset=utf-8",
+            "cards": 20,
+            "valid": true
+          },
+          {
+            "feed": "latest",
+            "page": 2,
+            "status": 200,
+            "elapsedMs": 1173,
+            "contentType": "application/json; charset=utf-8",
+            "cards": 20,
+            "valid": true
+          },
+          {
+            "feed": "fire",
+            "page": 1,
+            "status": 200,
+            "elapsedMs": 1122,
+            "contentType": "application/json; charset=utf-8",
+            "cards": 20,
+            "valid": true
+          },
+          {
+            "feed": "fire",
+            "page": 2,
+            "status": 200,
+            "elapsedMs": 1572,
+            "contentType": "application/json; charset=utf-8",
+            "cards": 20,
+            "valid": true
+          },
+          {
+            "feed": "hundred",
+            "page": 1,
+            "status": 200,
+            "elapsedMs": 1130,
+            "contentType": "application/json; charset=utf-8",
+            "cards": 20,
+            "valid": true
+          },
+          {
+            "feed": "hundred",
+            "page": 2,
+            "status": 200,
+            "elapsedMs": 1267,
+            "contentType": "application/json; charset=utf-8",
+            "cards": 20,
+            "valid": true
+          }
+        ],
+        "uiCatalogPages": [
+          {
+            "feed": "now_playing",
+            "page": 1,
+            "status": 200
+          },
+          {
+            "feed": "fire",
+            "page": 1,
+            "status": 200
+          },
+          {
+            "feed": "hundred",
+            "page": 1,
+            "status": 200
+          },
+          {
+            "feed": "latest",
+            "page": 1,
+            "status": 200
+          }
+        ],
+        "resolves": [
+          {
+            "status": 200,
+            "elapsedMs": 3359,
+            "requestedQuality": "default",
+            "provider": "vi3000:filmix",
+            "voice": "Дублированный (4K,SDR)",
+            "quality": "720p",
+            "kind": "file",
+            "qualities": [
+              "2160p",
+              "1440p",
+              "1080p",
+              "720p",
+              "480p"
+            ]
+          },
+          {
+            "status": 502,
+            "elapsedMs": 27502,
+            "requestedQuality": "default",
+            "error": "MEDIA_UNAVAILABLE"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 1015,
+            "requestedQuality": "default",
+            "provider": "vi3000:cdnvideohub",
+            "voice": "Дубляж",
+            "quality": "auto",
+            "kind": "hls",
+            "qualities": [
+              "auto"
+            ]
+          },
+          {
+            "status": 200,
+            "elapsedMs": 485,
+            "requestedQuality": "default",
+            "provider": "vi3000:filmix",
+            "voice": "Дублированный (4K,SDR)",
+            "quality": "720p",
+            "kind": "file",
+            "qualities": [
+              "2160p",
+              "1440p",
+              "1080p",
+              "720p",
+              "480p"
+            ]
+          },
+          {
+            "status": 200,
+            "elapsedMs": 394,
+            "requestedQuality": "720p",
+            "provider": "vi3000:filmix",
+            "voice": "Дублированный (4K,SDR)",
+            "quality": "720p",
+            "kind": "file",
+            "qualities": [
+              "2160p",
+              "1440p",
+              "1080p",
+              "720p",
+              "480p"
+            ]
+          },
+          {
+            "networkFailed": true,
+            "op": "discover",
+            "elapsedMs": 42360
+          }
+        ],
+        "media": [
+          {
+            "status": 302,
+            "elapsedMs": 419,
+            "contentType": null,
+            "contentLength": null,
+            "contentRange": null
+          },
+          {
+            "status": 429,
+            "elapsedMs": 1010,
+            "contentType": "text/plain; charset=utf-8",
+            "contentLength": "24",
+            "contentRange": null
+          },
+          {
+            "status": 200,
+            "elapsedMs": 387,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "3727",
+            "contentRange": null
+          },
+          {
+            "status": 200,
+            "elapsedMs": 497,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "634289",
+            "contentRange": null
+          },
+          {
+            "status": 200,
+            "elapsedMs": 334,
+            "contentType": "video/MP2T",
+            "contentLength": "277488",
+            "contentRange": "bytes 0-277487/277488"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 291,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "634325",
+            "contentRange": null
+          },
+          {
+            "status": 200,
+            "elapsedMs": 221,
+            "contentType": "video/MP2T",
+            "contentLength": "1715876",
+            "contentRange": "bytes 0-1715875/1715876"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 370,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "634434",
+            "contentRange": null
+          },
+          {
+            "status": 200,
+            "elapsedMs": 113,
+            "contentType": "video/MP2T",
+            "contentLength": "1201132",
+            "contentRange": "bytes 0-1201131/1201132"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 100,
+            "contentType": "video/MP2T",
+            "contentLength": "508540",
+            "contentRange": "bytes 0-508539/508540"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 101,
+            "contentType": "video/MP2T",
+            "contentLength": "476768",
+            "contentRange": "bytes 0-476767/476768"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 112,
+            "contentType": "video/MP2T",
+            "contentLength": "549712",
+            "contentRange": "bytes 0-549711/549712"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 101,
+            "contentType": "video/MP2T",
+            "contentLength": "413600",
+            "contentRange": "bytes 0-413599/413600"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 226,
+            "contentType": "video/MP2T",
+            "contentLength": "504968",
+            "contentRange": "bytes 0-504967/504968"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 100,
+            "contentType": "video/MP2T",
+            "contentLength": "1599316",
+            "contentRange": "bytes 0-1599315/1599316"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 109,
+            "contentType": "video/MP2T",
+            "contentLength": "1574876",
+            "contentRange": "bytes 0-1574875/1574876"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 108,
+            "contentType": "video/MP2T",
+            "contentLength": "2235508",
+            "contentRange": "bytes 0-2235507/2235508"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 99,
+            "contentType": "video/MP2T",
+            "contentLength": "2883920",
+            "contentRange": "bytes 0-2883919/2883920"
+          },
+          {
+            "status": 302,
+            "elapsedMs": 120,
+            "contentType": null,
+            "contentLength": null,
+            "contentRange": null
+          },
+          {
+            "status": 429,
+            "elapsedMs": 342,
+            "contentType": "text/plain; charset=utf-8",
+            "contentLength": "24",
+            "contentRange": null
+          },
+          {
+            "status": 302,
+            "elapsedMs": 50,
+            "contentType": null,
+            "contentLength": null,
+            "contentRange": null
+          },
+          {
+            "status": 429,
+            "elapsedMs": 133,
+            "contentType": "text/plain; charset=utf-8",
+            "contentLength": "24",
+            "contentRange": null
+          },
+          {
+            "status": 200,
+            "elapsedMs": 106,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "3727",
+            "contentRange": null
+          },
+          {
+            "status": 200,
+            "elapsedMs": 226,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "634300",
+            "contentRange": null
+          },
+          {
+            "status": 200,
+            "elapsedMs": 108,
+            "contentType": "video/MP2T",
+            "contentLength": "162244",
+            "contentRange": "bytes 0-162243/162244"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 224,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "634196",
+            "contentRange": null
+          },
+          {
+            "status": 200,
+            "elapsedMs": 129,
+            "contentType": "video/MP2T",
+            "contentLength": "583176",
+            "contentRange": "bytes 0-583175/583176"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 267,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "634455",
+            "contentRange": null
+          },
+          {
+            "status": 200,
+            "elapsedMs": 104,
+            "contentType": "video/MP2T",
+            "contentLength": "504968",
+            "contentRange": "bytes 0-504967/504968"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 112,
+            "contentType": "video/MP2T",
+            "contentLength": "1599316",
+            "contentRange": "bytes 0-1599315/1599316"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 105,
+            "contentType": "video/MP2T",
+            "contentLength": "1574876",
+            "contentRange": "bytes 0-1574875/1574876"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 114,
+            "contentType": "video/MP2T",
+            "contentLength": "2235508",
+            "contentRange": "bytes 0-2235507/2235508"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 105,
+            "contentType": "video/MP2T",
+            "contentLength": "2883920",
+            "contentRange": "bytes 0-2883919/2883920"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 104,
+            "contentType": "video/MP2T",
+            "contentLength": "2333268",
+            "contentRange": "bytes 0-2333267/2333268"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 103,
+            "contentType": "video/MP2T",
+            "contentLength": "3648892",
+            "contentRange": "bytes 0-3648891/3648892"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 107,
+            "contentType": "video/MP2T",
+            "contentLength": "4936692",
+            "contentRange": "bytes 0-4936691/4936692"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 105,
+            "contentType": "video/MP2T",
+            "contentLength": "3244504",
+            "contentRange": "bytes 0-3244503/3244504"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 104,
+            "contentType": "video/MP2T",
+            "contentLength": "3213296",
+            "contentRange": "bytes 0-3213295/3213296"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 101,
+            "contentType": "video/MP2T",
+            "contentLength": "3524248",
+            "contentRange": "bytes 0-3524247/3524248"
+          },
+          {
+            "status": 200,
+            "elapsedMs": 104,
+            "contentType": "video/MP2T",
+            "contentLength": "3900248",
+            "contentRange": "bytes 0-3900247/3900248"
+          }
+        ],
+        "playable": true,
+        "manual720p": null,
+        "item": {
+          "id": 120,
+          "title": "Властелин колец: братство кольца",
+          "type": "movie",
+          "kinopoiskId": "328",
+          "imdbId": "tt0120737"
+        },
+        "stage": "seek60",
+        "discovery": {
+          "tmdbId": 120,
+          "kinopoiskId": 328,
+          "imdbId": "tt0120737",
+          "catalogSource": "vi3000"
+        },
+        "selected": {
+          "provider": "vi3000:cdnvideohub",
+          "voice": "Дубляж",
+          "quality": "auto",
+          "kind": "hls"
+        },
+        "startupMs": 38093,
+        "initial": {
+          "time": 1.015983,
+          "duration": 10705.359159000049,
+          "frames": 28,
+          "readyState": 4,
+          "mediaErrorCode": null
+        },
+        "afterSeek": {
+          "time": 60.01156,
+          "frames": 102,
+          "readyState": 4,
+          "mediaErrorCode": null
+        },
+        "failure": "ui-total-deadline",
+        "status": "RED",
+        "deadlineReached": true,
+        "focusedFilmixDelivery": [
+          {
+            "surface": "production-backend",
+            "status": 302,
+            "elapsedMs": 275,
+            "contentType": null,
+            "contentLength": null,
+            "contentRange": null
+          },
+          {
+            "surface": "cloudflare-relay",
+            "status": 429,
+            "elapsedMs": 679,
+            "contentType": "text/plain; charset=utf-8",
+            "contentLength": "24",
+            "contentRange": null,
+            "knownGenericRelayFailure": true
+          }
+        ],
+        "observations": [
+          "All8 CUB feed pages returned realJSON200 and20 normalized cards.",
+          "Default Filmix720p resolves successfully but media redirects to a relay returning HTTP429; default CDN fallback genuinely decoded startup andseek60.",
+          "Explicit manualFilmix720p resolves200 but no newFile720p frames were observed before120s UI deadline.",
+          "selected/decodedSource/initial_source now describe the decoded CDN HLS startup andseek60; attemptedManual and lastSuccessfulResolve separately retain the laterFilmix720p resolve without successful newframes.",
+          "Relay generic429 is confirmed, but distinguishing upstreamFilmix429 from media-route429 needs private server/relay evidence; no codec or ordering root cause is claimed."
+        ],
+        "deployments": {
+          "frontend": "dpl_FRzS95jkBw1zYptYVyodUhfwrr8Q",
+          "backend": "dpl_9QXdhSJLvynWVzhM8MWQkBurKzzz",
+          "commit": "68a737a69cea834a6467e643d700ff81c65e13ca"
+        },
+        "defaultPlaybackSource": {
+          "provider": "vi3000:cdnvideohub",
+          "quality": "auto",
+          "kind": "hls"
+        },
+        "manual720pAttempt": {
+          "resolveStatus": 200,
+          "resolveMs": 394,
+          "decodedNew720pFrames": false,
+          "observedMediaStatus": 429,
+          "failure": "no-new720p-frames-before-ui-total-deadline"
+        },
+        "limitations": [
+          "Matching TMDB metadata/poster fixtures and existing client-session localStorage flag were used; no personal key/password was accessed and authentication flow was not tested.",
+          "Source discovery, resolves, CUB pages and media bytes were real public production requests, with no source/media mocks.",
+          "The relay429 body matches the generic Worker failure. Upstream Filmix429 versus backend media-route429 is not distinguished by this public observation.",
+          "No retry of the entire UI run; one same-issued-token range-byte delivery diagnostic followed. No all-catalog, all-voice, all-quality or full-film claim."
+        ],
+        "lastSuccessfulResolve": {
+          "provider": "vi3000:filmix",
+          "voice": "Дублированный (4K,SDR)",
+          "quality": "720p",
+          "kind": "file"
+        },
+        "decodedSource": {
+          "provider": "vi3000:cdnvideohub",
+          "voice": "Дубляж",
+          "quality": "auto",
+          "kind": "hls"
+        },
+        "initial_source": {
+          "provider": "vi3000:cdnvideohub",
+          "voice": "Дубляж",
+          "quality": "auto",
+          "kind": "hls"
+        },
+        "attemptedManual": {
+          "provider": "vi3000:filmix",
+          "voice": "Дублированный (4K,SDR)",
+          "quality": "720p",
+          "kind": "file",
+          "resolveStatus": 200,
+          "resolveMs": 394,
+          "decoded": false,
+          "failure": "no-new720p-frames-before-ui-total-deadline",
+          "observedMediaStatus": 429
+        },
+        "sourceAttributionCorrection": "Initial/seek renderedVideo duration10705.359s and resolver sequence match CDN HLS. The original selected field was overwritten by latermanualFilmix720p resolve; corrected without claiming Filmix decoded."
+      },
+      "catalogPages": [
+        {
+          "feed": "fire",
+          "page": 1,
+          "status": 200,
+          "elapsedMs": 285,
+          "contentType": "application/json; charset=utf-8",
+          "cards": 20,
+          "valid": true
+        }
+      ],
+      "uiCatalogPages": [
+        {
+          "feed": "fire",
+          "page": 1,
+          "status": 200
+        },
+        {
+          "feed": "hundred",
+          "page": 1,
+          "status": 200
+        },
+        {
+          "feed": "latest",
+          "page": 1,
+          "status": 200
+        },
+        {
+          "feed": "now_playing",
+          "page": 1,
+          "status": 200
+        }
+      ],
+      "resolves": [
+        {
+          "status": 200,
+          "elapsedMs": 541,
+          "requestedQuality": "default",
+          "provider": "vi3000:filmix",
+          "voice": "Дублированный (4K,SDR)",
+          "quality": "720p",
+          "kind": "file",
+          "qualities": [
+            "2160p",
+            "1440p",
+            "1080p",
+            "720p",
+            "480p"
+          ]
+        },
+        {
+          "status": 502,
+          "elapsedMs": 27496,
+          "requestedQuality": "default",
+          "error": "MEDIA_UNAVAILABLE"
+        },
+        {
+          "status": 200,
+          "elapsedMs": 888,
+          "requestedQuality": "default",
+          "provider": "vi3000:cdnvideohub",
+          "voice": "Дубляж",
+          "quality": "auto",
+          "kind": "hls",
+          "qualities": [
+            "auto"
+          ]
+        },
+        {
+          "networkFailed": true,
+          "op": "discover",
+          "elapsedMs": 40610
+        }
+      ],
+      "media": [
+        {
+          "surface": "production-backend",
+          "requestRange": "bytes=0-",
+          "status": 206,
+          "elapsedMs": 234,
+          "contentType": "video/mp4",
+          "contentLength": "8388608",
+          "contentRange": "bytes 0-8388607/7989078414",
+          "bodyFinished": true,
+          "responseBodyBytes": 8393935
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": "bytes=8388608-",
+          "status": 206,
+          "elapsedMs": 65,
+          "contentType": "video/mp4",
+          "contentLength": "8388608",
+          "contentRange": "bytes 8388608-16777215/7989078414",
+          "bodyFinished": true,
+          "responseBodyBytes": 8394517
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": "bytes=16777216-",
+          "status": 206,
+          "elapsedMs": 80,
+          "contentType": "video/mp4",
+          "contentLength": "8388608",
+          "contentRange": "bytes 16777216-25165823/7989078414",
+          "bodyFinished": true,
+          "responseBodyBytes": 8394248
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": "bytes=25165824-",
+          "status": 502,
+          "elapsedMs": 2901,
+          "contentType": "text/plain; charset=utf-8",
+          "contentLength": null,
+          "contentRange": null,
+          "bodyFinished": true,
+          "responseBodyBytes": 179,
+          "errorBodyBytes": 24,
+          "knownGenericFailure": true,
+          "errorBodyCompleted": true
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": null,
+          "status": 200,
+          "elapsedMs": 3393,
+          "contentType": "application/vnd.apple.mpegurl",
+          "contentLength": "3730",
+          "contentRange": null,
+          "bodyFinished": true,
+          "responseBodyBytes": 3900
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": null,
+          "status": 200,
+          "elapsedMs": 484,
+          "contentType": "application/vnd.apple.mpegurl",
+          "contentLength": "634348",
+          "contentRange": null,
+          "bodyFinished": true,
+          "responseBodyBytes": 634809
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": null,
+          "status": 200,
+          "elapsedMs": 257,
+          "contentType": "video/MP2T",
+          "contentLength": "277488",
+          "contentRange": "bytes 0-277487/277488",
+          "bodyFinished": true,
+          "responseBodyBytes": 277769
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": null,
+          "status": 200,
+          "elapsedMs": 250,
+          "contentType": "application/vnd.apple.mpegurl",
+          "contentLength": "634160",
+          "contentRange": null,
+          "bodyFinished": true,
+          "responseBodyBytes": 634631
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": null,
+          "status": 200,
+          "elapsedMs": 151,
+          "contentType": "video/MP2T",
+          "contentLength": "1715876",
+          "contentRange": "bytes 0-1715875/1715876",
+          "bodyFinished": true,
+          "responseBodyBytes": 1716994
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": null,
+          "status": 200,
+          "elapsedMs": 242,
+          "contentType": "application/vnd.apple.mpegurl",
+          "contentLength": "634463",
+          "contentRange": null,
+          "bodyFinished": true,
+          "responseBodyBytes": 634921
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": null,
+          "status": 200,
+          "elapsedMs": 98,
+          "contentType": "video/MP2T",
+          "contentLength": "1201132",
+          "contentRange": "bytes 0-1201131/1201132",
+          "bodyFinished": true,
+          "responseBodyBytes": 1202115
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": null,
+          "status": 200,
+          "elapsedMs": 105,
+          "contentType": "video/MP2T",
+          "contentLength": "508540",
+          "contentRange": "bytes 0-508539/508540",
+          "bodyFinished": true,
+          "responseBodyBytes": 509000
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": null,
+          "status": 200,
+          "elapsedMs": 109,
+          "contentType": "video/MP2T",
+          "contentLength": "476768",
+          "contentRange": "bytes 0-476767/476768",
+          "bodyFinished": true,
+          "responseBodyBytes": 477175
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": null,
+          "status": 200,
+          "elapsedMs": 131,
+          "contentType": "video/MP2T",
+          "contentLength": "549712",
+          "contentRange": "bytes 0-549711/549712",
+          "bodyFinished": true,
+          "responseBodyBytes": 550181
+        },
+        {
+          "surface": "production-backend",
+          "requestRange": null,
+          "status": 200,
+          "elapsedMs": 101,
+          "contentType": "video/MP2T",
+          "contentLength": "413600",
+          "contentRange": "bytes 0-413599/413600",
+          "bodyFinished": true,
+          "responseBodyBytes": 414132
+        }
+      ],
+      "playable": false,
+      "manual720p": null,
+      "item": {
+        "id": 120,
+        "title": "Властелин колец: братство кольца",
+        "type": "movie",
+        "kinopoiskId": "328",
+        "imdbId": "tt0120737"
+      },
+      "stage": "first-frame",
+      "discovery": {
+        "tmdbId": 120,
+        "kinopoiskId": 328,
+        "imdbId": "tt0120737",
+        "catalogSource": "vi3000"
+      },
+      "lastSuccessfulResolve": {
+        "provider": "vi3000:cdnvideohub",
+        "voice": "Дубляж",
+        "quality": "auto",
+        "kind": "hls"
+      },
+      "selected": {
+        "provider": "vi3000:cdnvideohub",
+        "voice": "Дубляж",
+        "quality": "auto",
+        "kind": "hls"
+      },
+      "startupMs": 44327,
+      "decodedSource": {
+        "provider": "vi3000:cdnvideohub",
+        "voice": "Дубляж",
+        "quality": "auto",
+        "kind": "hls"
+      },
+      "initial_source": {
+        "provider": "vi3000:cdnvideohub",
+        "voice": "Дубляж",
+        "quality": "auto",
+        "kind": "hls"
+      },
+      "observedInitialVideo": {
+        "time": 1.010837,
+        "duration": 10705.359159000049,
+        "frames": 27,
+        "readyState": 4,
+        "mediaErrorCode": null,
+        "width": 1920,
+        "height": 804
+      },
+      "failure": "contract-or-playback-assertion",
+      "videoEvents": [
+        {
+          "event": "error",
+          "ms": 4419,
+          "kind": "file",
+          "readyState": 0,
+          "networkState": 3,
+          "mediaErrorCode": 4,
+          "duration": null,
+          "frames": 0
+        }
+      ],
+      "status": "RED",
+      "deadlineReached": false,
+      "confirmedPriorRuntimeCause": {
+        "attempt": "beforeNodeRetry",
+        "at": "2026-10-13T08:15:46.404Z",
+        "code": "UPSTREAM_HTTP_ERROR",
+        "status": 429,
+        "source": "Parent release engineer Vercel runtime-log inspection"
+      },
+      "deliveryObservations": [
+        "Fresh defaultFilmix720p resolve succeeds but the actualFile video does not decode. Firstthree open-ended Chromium ranges receive directbackend206 capped8MiB responses with requestfinished flags.",
+        "Fourth Chromium range bytes25165824- returns completedgeneric502body24B; nativeFile mediaErrorCode4 follows withreadyState0/networkState3/no metadata/no frames. NoWorker302 andno observed206 requestfailure occurred.",
+        "A prior NodeFile502 is correlated by parentruntime logs withupstreamCDN429. Exactcause ofthisnewfourth-range502 stillrequiresruntime correlation; unsupportedcodec or truncated206body is not established.",
+        "CDN fallback renders27frames after44.327s; strictFilmix-source assertion stops beforeseek/manual so fallback cannot passFilmix requirement. The original pre-fix successfulCDN seek60 andeightfeedpages remain beforeDeliveryFix."
+      ],
+      "verificationLimitations": [
+        "Only realCUBfirepage1 andactualUI defaultFilmix720p startup were rerun; earlier8feedchecks are preserved, not freshly rerun.",
+        "No whole206body was buffered/read bydiagnostics; requestfinished andPlaywright responseBodySize are transport observations, not payloadchecksum checks.",
+        "One earlier temporary-harness attempt lost finaltelemetry duecleanup scoping error; afterfix thevalidboundedrecording capturedthistrace. No furtherUI retries are planned.",
+        "Matching TMDB metadata/poster fixtures andexistingclient-sessionflag used; authentication flow/allcatalog/allqualities/wholefilm remain unchecked."
+      ]
+    },
+    "checkedAt": "2026-10-13T08:34:43.393Z",
+    "origin": "https://lampa-stream-six.vercel.app",
+    "backend": "https://lampa-source-host.vercel.app",
+    "deployments": {
+      "frontend": "dpl_FRzS95jkBw1zYptYVyodUhfwrr8Q",
+      "backend": "dpl_HCv78c8AmnLsDThqdGp6cBFr4eZA",
+      "frontendCommit": "68a737a69cea834a6467e643d700ff81c65e13ca",
+      "backendCommit": "df59ee8ea2deb376b7078589938794fe04660afe"
+    },
+    "scope": "Focused public production delivery recheck: real CUBfirepage1 Movie120→OnlinePlayer discovery/resolve/media defaultFile720p startup+seek60 only; no repeatedmanualquality request. All previous8 CUBpages, Worker429, Node502 andfailed8MiB range traces are retained underbeforeRangeBatching, not rerun. Matching TMDB metadata/poster fixtures and existing-client-session localStorage flag; site-password/login flow is not tested. No source/media mocking. One title/default720p only; no manual quality selection, wholecatalog orwholefilm check.",
+    "catalogPages": [
+      {
+        "feed": "fire",
+        "page": 1,
+        "status": 200,
+        "elapsedMs": 423,
+        "contentType": "application/json; charset=utf-8",
+        "cards": 20,
+        "valid": true
+      }
+    ],
+    "uiCatalogPages": [
+      {
+        "feed": "latest",
+        "page": 1,
+        "status": 200
+      },
+      {
+        "feed": "fire",
+        "page": 1,
+        "status": 200
+      },
+      {
+        "feed": "hundred",
+        "page": 1,
+        "status": 200
+      },
+      {
+        "feed": "now_playing",
+        "page": 1,
+        "status": 200
+      }
+    ],
+    "resolves": [
+      {
+        "status": 200,
+        "elapsedMs": 3166,
+        "requestedQuality": "default",
+        "provider": "vi3000:filmix",
+        "voice": "Дублированный (4K,SDR)",
+        "quality": "720p",
+        "kind": "file",
+        "qualities": [
+          "2160p",
+          "1440p",
+          "1080p",
+          "720p",
+          "480p"
+        ]
+      },
+      {
+        "status": 502,
+        "elapsedMs": 27602,
+        "requestedQuality": "default",
+        "error": "MEDIA_UNAVAILABLE"
+      },
+      {
+        "status": 200,
+        "elapsedMs": 1293,
+        "requestedQuality": "default",
+        "provider": "vi3000:cdnvideohub",
+        "voice": "Дубляж",
+        "quality": "auto",
+        "kind": "hls",
+        "qualities": [
+          "auto"
+        ]
+      },
+      {
+        "networkFailed": true,
+        "op": "discover",
+        "intentionalCleanup": false,
+        "elapsedMs": 40771
+      }
+    ],
+    "media": [
+      {
+        "surface": "production-backend",
+        "requestRange": "bytes=0-",
+        "status": 502,
+        "elapsedMs": 608,
+        "contentType": "text/plain; charset=utf-8",
+        "contentLength": null,
+        "contentRange": null,
+        "bodyFinished": true,
+        "responseBodyBytes": 360,
+        "errorBodyBytes": 24,
+        "knownGenericFailure": true,
+        "errorBodyCompleted": true
+      },
+      {
+        "surface": "production-backend",
+        "requestRange": null,
+        "status": 200,
+        "elapsedMs": 445,
+        "contentType": "application/vnd.apple.mpegurl",
+        "contentLength": "3728",
+        "contentRange": null,
+        "bodyFinished": true,
+        "responseBodyBytes": 3898
+      },
+      {
+        "surface": "production-backend",
+        "requestRange": null,
+        "status": 200,
+        "elapsedMs": 445,
+        "contentType": "application/vnd.apple.mpegurl",
+        "contentLength": "634478",
+        "contentRange": null,
+        "bodyFinished": true,
+        "responseBodyBytes": 634940
+      },
+      {
+        "surface": "production-backend",
+        "requestRange": null,
+        "status": 200,
+        "elapsedMs": 551,
+        "contentType": "video/MP2T",
+        "contentLength": "277488",
+        "contentRange": "bytes 0-277487/277488",
+        "bodyFinished": true,
+        "responseBodyBytes": 277804
+      },
+      {
+        "surface": "production-backend",
+        "requestRange": null,
+        "status": 200,
+        "elapsedMs": 3676,
+        "contentType": "application/vnd.apple.mpegurl",
+        "contentLength": "634375",
+        "contentRange": null,
+        "bodyFinished": true,
+        "responseBodyBytes": 634861
+      },
+      {
+        "surface": "production-backend",
+        "requestRange": null,
+        "status": 200,
+        "elapsedMs": 238,
+        "contentType": "video/MP2T",
+        "contentLength": "1715876",
+        "contentRange": "bytes 0-1715875/1715876",
+        "bodyFinished": true,
+        "responseBodyBytes": 1716985
+      },
+      {
+        "surface": "production-backend",
+        "requestRange": null,
+        "status": 200,
+        "elapsedMs": 269,
+        "contentType": "application/vnd.apple.mpegurl",
+        "contentLength": "634417",
+        "contentRange": null,
+        "bodyFinished": true,
+        "responseBodyBytes": 634865
+      },
+      {
+        "surface": "production-backend",
+        "requestRange": null,
+        "status": 200,
+        "elapsedMs": 109,
+        "contentType": "video/MP2T",
+        "contentLength": "1201132",
+        "contentRange": "bytes 0-1201131/1201132",
+        "bodyFinished": true,
+        "responseBodyBytes": 1201907
+      },
+      {
+        "surface": "production-backend",
+        "requestRange": null,
+        "status": 200,
+        "elapsedMs": 100,
+        "contentType": "video/MP2T",
+        "contentLength": "508540",
+        "contentRange": "bytes 0-508539/508540",
+        "bodyFinished": true,
+        "responseBodyBytes": 508982
+      },
+      {
+        "surface": "production-backend",
+        "requestRange": null,
+        "status": 200,
+        "elapsedMs": 229,
+        "contentType": "video/MP2T",
+        "contentLength": "476768",
+        "contentRange": "bytes 0-476767/476768",
+        "bodyFinished": true,
+        "responseBodyBytes": 477215
+      },
+      {
+        "surface": "production-backend",
+        "requestRange": null,
+        "status": 200,
+        "elapsedMs": 106,
+        "contentType": "video/MP2T",
+        "contentLength": "549712",
+        "contentRange": "bytes 0-549711/549712",
+        "bodyFinished": true,
+        "responseBodyBytes": 550198
+      },
+      {
+        "surface": "production-backend",
+        "requestRange": null,
+        "status": 200,
+        "elapsedMs": 100,
+        "contentType": "video/MP2T",
+        "contentLength": "413600",
+        "contentRange": "bytes 0-413599/413600",
+        "bodyFinished": true,
+        "responseBodyBytes": 414014
+      }
+    ],
+    "playable": false,
+    "item": {
+      "id": 120,
+      "title": "Властелин колец: братство кольца",
+      "type": "movie",
+      "kinopoiskId": "328",
+      "imdbId": "tt0120737"
+    },
+    "stage": "first-frame",
+    "discovery": {
+      "tmdbId": 120,
+      "kinopoiskId": 328,
+      "imdbId": "tt0120737",
+      "catalogSource": "vi3000"
+    },
+    "lastSuccessfulResolve": {
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Дубляж",
+      "quality": "auto",
+      "kind": "hls"
+    },
+    "selected": {
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Дубляж",
+      "quality": "auto",
+      "kind": "hls"
+    },
+    "startupMs": 44865,
+    "decodedSource": {
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Дубляж",
+      "quality": "auto",
+      "kind": "hls"
+    },
+    "initial_source": {
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Дубляж",
+      "quality": "auto",
+      "kind": "hls"
+    },
+    "observedInitialVideo": {
+      "time": 1.010933,
+      "duration": 10705.359159000049,
+      "frames": 27,
+      "readyState": 4,
+      "mediaErrorCode": null,
+      "width": 1920,
+      "height": 804
+    },
+    "failure": "contract-or-playback-assertion",
+    "cleanupIntentional": true,
+    "videoEvents": [
+      {
+        "event": "error",
+        "ms": 447,
+        "kind": "file",
+        "readyState": 0,
+        "networkState": 3,
+        "mediaErrorCode": 4,
+        "duration": null,
+        "frames": 0
+      }
+    ],
+    "status": "RED",
+    "deadlineReached": false
+  },
+  "checkedAt": "2026-10-13T08:47:59.258Z",
+  "origin": "https://lampa-stream-six.vercel.app",
+  "backend": "https://lampa-source-host.vercel.app",
+  "deployments": {
+    "frontend": "dpl_FRzS95jkBw1zYptYVyodUhfwrr8Q",
+    "backend": "dpl_71zEQUsJzhN8oHyaeot5TgkQ1V2b",
+    "frontendCommit": "68a737a69cea834a6467e643d700ff81c65e13ca",
+    "backendCommit": "d83ce6f8071f45702a9273762bbe97a855e24378"
+  },
+  "verificationClaim": "GREEN proves coreCUB/defaultvi3000 playback andsame-source seek60 only, not Filmixavailability.",
+  "filmixExternalRisk": {
+    "confirmedPriorFailure": "UpstreamfileCDN429 mapped toNode502 andpriorWorker429; earlierFilmix-only verificationfailed.",
+    "currentTest": "No forcedFilmix ormanual720 request; actualdefaultsource accepted."
+  },
+  "scope": "Focused public production delivery recheck: real CUBfirepage1 Movie120→OnlinePlayer discovery/resolve/media actual defaultvi3000 source startup+seek60 only; no manualquality request orforcedFilmix. All previous8 CUBpages, Worker429, Node502 andfailed8MiB range traces are retained underbeforeCoreFlow, not rerun. Matching TMDB metadata/poster fixtures and existing-client-session localStorage flag; site-password/login flow is not tested. No source/media mocking. Coredefaultflow forone title only; GREEN doesnot proveFilmix/playback ofallvoices/allqualities/wholecatalog/wholefilm.",
+  "catalogPages": [
+    {
+      "feed": "fire",
+      "page": 1,
+      "status": 200,
+      "elapsedMs": 264,
+      "contentType": "application/json; charset=utf-8",
+      "cards": 20,
+      "valid": true
+    }
+  ],
+  "uiCatalogPages": [
+    {
+      "feed": "fire",
+      "page": 1,
+      "status": 200
+    },
+    {
+      "feed": "latest",
+      "page": 1,
+      "status": 200
+    },
+    {
+      "feed": "hundred",
+      "page": 1,
+      "status": 200
+    },
+    {
+      "feed": "now_playing",
+      "page": 1,
+      "status": 200
+    }
+  ],
+  "resolves": [
+    {
+      "status": 200,
+      "elapsedMs": 3344,
+      "requestedQuality": "default",
+      "provider": "vi3000:filmix",
+      "voice": "Дублированный (4K,SDR)",
+      "quality": "720p",
+      "kind": "file",
+      "qualities": [
+        "2160p",
+        "1440p",
+        "1080p",
+        "720p",
+        "480p"
+      ]
+    },
+    {
+      "status": 200,
+      "elapsedMs": 1441,
+      "requestedQuality": "default",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Дубляж",
+      "quality": "auto",
+      "kind": "hls",
+      "qualities": [
+        "auto"
+      ]
+    }
+  ],
+  "media": [
+    {
+      "surface": "production-backend",
+      "requestRange": "bytes=0-",
+      "status": 502,
+      "elapsedMs": 562,
+      "contentType": "text/plain; charset=utf-8",
+      "contentLength": null,
+      "contentRange": null,
+      "bodyFinished": true,
+      "responseBodyBytes": 360,
+      "errorBodyBytes": 24,
+      "knownGenericFailure": true,
+      "errorBodyCompleted": true
+    },
+    {
+      "surface": "production-backend",
+      "requestRange": null,
+      "status": 200,
+      "elapsedMs": 416,
+      "contentType": "application/vnd.apple.mpegurl",
+      "contentLength": "3727",
+      "contentRange": null,
+      "bodyFinished": true,
+      "responseBodyBytes": 3905
+    },
+    {
+      "surface": "production-backend",
+      "requestRange": null,
+      "status": 200,
+      "elapsedMs": 775,
+      "contentType": "application/vnd.apple.mpegurl",
+      "contentLength": "634563",
+      "contentRange": null,
+      "bodyFinished": true,
+      "responseBodyBytes": 635011
+    },
+    {
+      "surface": "production-backend",
+      "requestRange": null,
+      "status": 200,
+      "elapsedMs": 379,
+      "contentType": "video/MP2T",
+      "contentLength": "277488",
+      "contentRange": "bytes 0-277487/277488",
+      "bodyFinished": true,
+      "responseBodyBytes": 277782
+    },
+    {
+      "surface": "production-backend",
+      "requestRange": null,
+      "status": 200,
+      "elapsedMs": 254,
+      "contentType": "application/vnd.apple.mpegurl",
+      "contentLength": "634339",
+      "contentRange": null,
+      "bodyFinished": true,
+      "responseBodyBytes": 634806
+    },
+    {
+      "surface": "production-backend",
+      "requestRange": null,
+      "status": 200,
+      "elapsedMs": 353,
+      "contentType": "video/MP2T",
+      "contentLength": "1715876",
+      "contentRange": "bytes 0-1715875/1715876",
+      "bodyFinished": true,
+      "responseBodyBytes": 1716968
+    },
+    {
+      "surface": "production-backend",
+      "requestRange": null,
+      "status": 200,
+      "elapsedMs": 387,
+      "contentType": "application/vnd.apple.mpegurl",
+      "contentLength": "634351",
+      "contentRange": null,
+      "bodyFinished": true,
+      "responseBodyBytes": 634795
+    },
+    {
+      "surface": "production-backend",
+      "requestRange": null,
+      "status": 200,
+      "elapsedMs": 111,
+      "contentType": "video/MP2T",
+      "contentLength": "1201132",
+      "contentRange": "bytes 0-1201131/1201132",
+      "bodyFinished": true,
+      "responseBodyBytes": 1201975
+    },
+    {
+      "surface": "production-backend",
+      "requestRange": null,
+      "status": 200,
+      "elapsedMs": 106,
+      "contentType": "video/MP2T",
+      "contentLength": "508540",
+      "contentRange": "bytes 0-508539/508540",
+      "bodyFinished": true,
+      "responseBodyBytes": 509000
+    },
+    {
+      "surface": "production-backend",
+      "requestRange": null,
+      "status": 200,
+      "elapsedMs": 103,
+      "contentType": "video/MP2T",
+      "contentLength": "476768",
+      "contentRange": "bytes 0-476767/476768",
+      "bodyFinished": true,
+      "responseBodyBytes": 477210
+    },
+    {
+      "surface": "production-backend",
+      "requestRange": null,
+      "status": 200,
+      "elapsedMs": 101,
+      "contentType": "video/MP2T",
+      "contentLength": "549712",
+      "contentRange": "bytes 0-549711/549712",
+      "bodyFinished": true,
+      "responseBodyBytes": 550172
+    },
+    {
+      "surface": "production-backend",
+      "requestRange": null,
+      "status": 200,
+      "elapsedMs": 226,
+      "contentType": "video/MP2T",
+      "contentLength": "413600",
+      "contentRange": "bytes 0-413599/413600",
+      "bodyFailed": true,
+      "failureDuringCleanup": false,
+      "networkFailure": "net::ERR_ABORTED"
+    },
+    {
+      "surface": "production-backend",
+      "requestRange": null,
+      "status": 200,
+      "elapsedMs": 104,
+      "contentType": "video/MP2T",
+      "contentLength": "1599316",
+      "contentRange": "bytes 0-1599315/1599316",
+      "bodyFinished": true,
+      "responseBodyBytes": 1600507
+    }
+  ],
+  "playable": true,
+  "item": {
+    "id": 120,
+    "title": "Властелин колец: братство кольца",
+    "type": "movie",
+    "kinopoiskId": "328",
+    "imdbId": "tt0120737"
+  },
+  "stage": "complete",
+  "discovery": {
+    "tmdbId": 120,
+    "kinopoiskId": 328,
+    "imdbId": "tt0120737",
+    "catalogSource": "vi3000"
+  },
+  "lastSuccessfulResolve": {
+    "provider": "vi3000:cdnvideohub",
+    "voice": "Дубляж",
+    "quality": "auto",
+    "kind": "hls"
+  },
+  "selected": {
+    "provider": "vi3000:cdnvideohub",
+    "voice": "Дубляж",
+    "quality": "auto",
+    "kind": "hls"
+  },
+  "startupMs": 14105,
+  "decodedSource": {
+    "provider": "vi3000:cdnvideohub",
+    "voice": "Дубляж",
+    "quality": "auto",
+    "kind": "hls"
+  },
+  "initial_source": {
+    "provider": "vi3000:cdnvideohub",
+    "voice": "Дубляж",
+    "quality": "auto",
+    "kind": "hls"
+  },
+  "observedInitialVideo": {
+    "time": 1.01303,
+    "duration": 10705.359159000049,
+    "frames": 27,
+    "readyState": 4,
+    "mediaErrorCode": null,
+    "width": 1920,
+    "height": 804
+  },
+  "initial": {
+    "time": 1.018182,
+    "duration": 10705.359159000049,
+    "frames": 27,
+    "readyState": 4,
+    "mediaErrorCode": null,
+    "width": 1920,
+    "height": 804
+  },
+  "qualityProof": {
+    "selection": "default",
+    "provider": "vi3000:cdnvideohub",
+    "label": "auto",
+    "kind": "hls",
+    "adaptive": true,
+    "decoded": true,
+    "width": 1920,
+    "height": 804,
+    "seek60Decoded": true
+  },
+  "afterSeek": {
+    "time": 60.010078,
+    "frames": 31,
+    "readyState": 4,
+    "mediaErrorCode": null,
+    "width": 1280,
+    "height": 536
+  },
+  "afterSeekSource": {
+    "provider": "vi3000:cdnvideohub",
+    "voice": "Дубляж",
+    "quality": "auto",
+    "kind": "hls"
+  },
+  "directBackendVideoObserved": true,
+  "uiElapsedMs": 15519,
+  "cleanupIntentional": true,
+  "videoEvents": [
+    {
+      "event": "error",
+      "ms": 486,
+      "kind": "file",
+      "readyState": 0,
+      "networkState": 3,
+      "mediaErrorCode": 4,
+      "duration": null,
+      "frames": 0
+    }
+  ],
+  "status": "GREEN",
+  "deadlineReached": false
+}
