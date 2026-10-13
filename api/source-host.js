@@ -47,9 +47,21 @@ export default async function handler(req, res) {
           if (value.origin !== origin.origin || value.pathname !== "/v1/media" || !value.searchParams.get("token")) throw new Error("Invalid media URL");
           return value.toString();
         };
-        data.selected.url = absolute(data.selected.url);
-        data.qualities = (data.qualities || []).map((value) => ({ ...value, url: absolute(value.url) }));
-        data.subtitles = (data.subtitles || []).map((value) => ({ ...value, url: absolute(value.url) }));
+        if (data.kind === "embed") {
+          const value = new URL(data.selected.url);
+          if (data.source?.providerId !== "habster:alloha" || data.source?.catalogSource !== "habster"
+            || !Number.isSafeInteger(data.source.kinopoiskId) || data.source.kinopoiskId < 1
+            || value.origin !== "https://befriend.stravers.live" || value.pathname !== "/"
+            || value.username || value.password || value.hash || value.searchParams.getAll("kp").length !== 1
+            || value.searchParams.get("kp") !== String(data.source.kinopoiskId)
+            || [...value.searchParams.keys()].some((key) => !["kp", "token"].includes(key))) throw new Error("Invalid Habster player URL");
+          data.selected.url = value.href;
+          data.qualities = []; data.subtitles = []; data.audioNames = [];
+        } else {
+          data.selected.url = absolute(data.selected.url);
+          data.qualities = (data.qualities || []).map((value) => ({ ...value, url: absolute(value.url) }));
+          data.subtitles = (data.subtitles || []).map((value) => ({ ...value, url: absolute(value.url) }));
+        }
       }
       res.json(data);
     }

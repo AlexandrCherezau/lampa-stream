@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Readable } from "node:stream";
-import { createHabsterProvider, parseHabsterEmbed, parseHabsterPlayer } from "../providers/habster.mjs";
+import { createHabsterProvider, parseHabsterEmbed, parseHabsterAllohaEmbed, parseHabsterPlayer } from "../providers/habster.mjs";
 
 const movie = { type: "movie", kinopoiskId: 328, title: "Movie", catalogSource: "habster" };
 const page = (id = 328, origin = "https://api.initem.ws") => `var KP_ID='${id}';var VARIYT_SRC='${origin}/embed/kp/'+KP_ID+'?host=partner.test&token=public-fixture';`;
@@ -69,30 +69,32 @@ test("Habster discovery is immediate and cold resolve reads page-derived URLs wi
     return response(player());
   } };
   const candidates = await collect(createHabsterProvider({ transport }).discover(movie));
-  assert.equal(candidates.length, 1);
-  assert.equal(candidates[0].providerId, "habster:collaps");
-  assert.equal(candidates[0].voiceName, "Мультиаудио");
-  assert.equal(Object.keys(candidates[0]).includes("ref"), false);
-  assert.deepEqual(candidates[0].ref, { type: "movie", kinopoiskId: 328 });
+  assert.equal(candidates.length, 2);
+  assert.equal(candidates[0].providerId, "habster:alloha");
+  const collapsCandidate = candidates[1];
+  assert.equal(collapsCandidate.providerId, "habster:collaps");
+  assert.equal(collapsCandidate.voiceName, "Мультиаудио");
+  assert.equal(Object.keys(collapsCandidate).includes("ref"), false);
+  assert.deepEqual(collapsCandidate.ref, { type: "movie", kinopoiskId: 328 });
   assert.equal(requests.length, 0, "known Kinopoisk titles need no availability preflight");
   const cold = createHabsterProvider({ transport });
-  const resolved = await cold.resolve(candidates[0]);
+  const resolved = await cold.resolve(collapsCandidate);
   assert.equal(refreshes, 1);
   assert.equal(resolved.qualities[0].type, "hls");
   assert.deepEqual(resolved.audioNames, source.audio.names);
   assert(resolved.qualities.every((q) => q.publicOnly === true));
   assert(resolved.subtitles.every((s) => s.publicOnly === true));
   assert.equal(new URL(resolved.qualities[0].headers.referer).searchParams.get("token"), "public-fixture-1");
-  await assert.rejects(cold.resolve({ ...candidates[0], ref: candidates[0].ref, catalogSource: "vi3000" }), /Invalid Habster/);
-  await assert.rejects(cold.resolve({ ...candidates[0], ref: { ...candidates[0].ref, kinopoiskId: -1 } }), /valid Kinopoisk/);
-  await assert.rejects(cold.resolve({ ...candidates[0], ref: candidates[0].ref, episode: 1 }), /episode reference/);
+  await assert.rejects(cold.resolve({ ...collapsCandidate, ref: collapsCandidate.ref, catalogSource: "vi3000" }), /Invalid Habster/);
+  await assert.rejects(cold.resolve({ ...collapsCandidate, ref: { ...collapsCandidate.ref, kinopoiskId: -1 } }), /valid Kinopoisk/);
+  await assert.rejects(cold.resolve({ ...collapsCandidate, ref: collapsCandidate.ref, episode: 1 }), /episode reference/);
   assert.equal(requests.length, 2, "invalid references must not reach the network");
 });
 
 test("Habster bounds HTTP errors/body size and propagates cancellation through stalled bodies", async () => {
   for (const body of [response("bad", {}, 403), response("x", { "content-length": 1024 * 1024 + 1 }), response("x".repeat(1024 * 1024 + 1))]) {
     const adapter = createHabsterProvider({ transport: { async request() { return body; } } });
-    const [candidate] = await collect(adapter.discover(movie));
+    const [, candidate] = await collect(adapter.discover(movie));
     await assert.rejects(adapter.resolve(candidate), /HTTP 403|too large/);
   }
   const controller = new AbortController();
@@ -101,7 +103,7 @@ test("Habster bounds HTTP errors/body size and propagates cancellation through s
     setImmediate(() => controller.abort());
     return { response: stream };
   } } });
-  const [candidate] = await collect(adapter.discover(movie));
+  const [, candidate] = await collect(adapter.discover(movie));
   await assert.rejects(adapter.resolve(candidate, { signal: controller.signal }), { name: "AbortError" });
   await assert.rejects(collect(adapter.discover(movie, { signal: controller.signal })), { name: "AbortError" });
   await assert.rejects(collect(adapter.discover({ ...movie, kinopoiskId: "328" })), /valid Kinopoisk/);
@@ -197,4 +199,47 @@ test("Habster search+info shares a three-second body deadline and follows caller
   const pending = collect(adapter.discover({ type: "movie", title: "Exact film", year: 2026 }, { signal: controller.signal }));
   controller.abort();
   await assert.rejects(pending, { name: "AbortError" });
+});
+
+const allohaPage = (id = 328, origin = "https://befriend.stravers.live") => `var KP_ID='${id}'; var BEFRIEND_SRC='${origin}/?token=public-fixture&kp=' + KP_ID;`;
+
+test("Habster Alloha reads a matching anonymous page literal and rejects injected origin/title/expression", () => {
+  const url = new URL(parseHabsterAllohaEmbed(allohaPage(), 328));
+  assert.equal(url.origin, "https://befriend.stravers.live");
+  assert.equal(url.searchParams.get("kp"), "328");
+  assert.throws(() => parseHabsterAllohaEmbed(allohaPage(329), 328), /does not match/);
+  for (const origin of ["http://befriend.stravers.live", "https://befriend.stravers.live.evil.test", "https://user:pass@befriend.stravers.live", "https://evil.test"]) {
+    assert.throws(() => parseHabsterAllohaEmbed(allohaPage(328, origin), 328), /unsupported/);
+  }
+  for (const replacement of ["/?kp=329&token=public-fixture&kp=", "/?token=public-fixture&other=evil&kp=", "/embed?token=public-fixture&kp=", "/?kp="]) {
+    assert.throws(() => parseHabsterAllohaEmbed(allohaPage().replace("/?token=public-fixture&kp=", replacement), 328), /unsupported/);
+  }
+  assert.throws(() => parseHabsterAllohaEmbed(allohaPage().replace(" + KP_ID", " + execute()"), 328), /unavailable/);
+  assert.throws(() => parseHabsterAllohaEmbed(allohaPage().replace(" + KP_ID", " + KP_ID + '#evil'"), 328), /unavailable/);
+});
+
+test("Habster movie discovery prioritizes native Alloha and resolves fresh page-derived iframe without exposing URL in candidate", async () => {
+  let calls = 0;
+  const adapter = createHabsterProvider({ transport: { async request(raw, options) {
+    assert.equal(raw, "https://habster.sbs/film/328");
+    assert.equal(options.publicOnly, true);
+    return response(allohaPage().replace("public-fixture", `public-fixture-${++calls}`));
+  } } });
+  const [candidate, collaps] = await collect(adapter.discover(movie));
+  assert.equal(candidate.providerId, "habster:alloha");
+  assert.equal(candidate.voiceId, "embedded");
+  assert.equal(candidate.qualityHint, "До 4K");
+  assert.equal(collaps.providerId, "habster:collaps");
+  assert.equal(calls, 0);
+  assert.equal(Object.keys(candidate).includes("ref"), false);
+  assert.equal(JSON.stringify(candidate).includes("token"), false);
+  const first = await adapter.resolve(candidate);
+  assert.equal(first.kind, "embed");
+  assert.equal(first.embedOrigin, "https://befriend.stravers.live");
+  assert.equal(new URL(first.embedUrl).searchParams.get("token"), "public-fixture-1");
+  const second = await createHabsterProvider({ transport: { async request() { return response(allohaPage().replace("public-fixture", "fresh-token")); } } }).resolve(candidate);
+  assert.equal(new URL(second.embedUrl).searchParams.get("token"), "fresh-token");
+  await assert.rejects(adapter.resolve({ ...candidate, ref: candidate.ref, voiceId: "multi" }), /Invalid Habster/);
+  await assert.rejects(adapter.resolve({ ...candidate, ref: { type: "tv", kinopoiskId: 328, season: 1, episode: 1 }, season: 1, episode: 1 }), /exact movie/);
+  assert.equal(calls, 1);
 });

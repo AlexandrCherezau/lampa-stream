@@ -1,5 +1,6 @@
 const ORIGIN = "https://habster.sbs";
 const EMBED_ORIGIN = "https://api.initem.ws";
+const ALLOHA_ORIGIN = "https://befriend.stravers.live";
 const BODY_LIMIT = 1024 * 1024;
 
 function literal(value) {
@@ -18,6 +19,25 @@ export function parseHabsterEmbed(html, kinopoiskId) {
   catch { throw new Error("Habster returned an invalid embed URL"); }
   if (url.origin !== EMBED_ORIGIN || url.username || url.password || url.pathname !== `/embed/kp/${id}` || url.hash) {
     throw new Error("Habster returned an unsupported embed origin or title");
+  }
+  return url.href;
+}
+
+// The iframe URL is published on the anonymous Habster page. Its JavaScript
+// runs in the browser's isolated provider frame, never in this server.
+export function parseHabsterAllohaEmbed(html, kinopoiskId) {
+  const id = /\b(?:var|let|const)\s+KP_ID\s*=\s*(['"])([1-9]\d*)\1\s*;/.exec(html)?.[2];
+  if (id !== String(kinopoiskId)) throw new Error("Habster page does not match the requested Kinopoisk ID");
+  const expression = /\b(?:var|let|const)\s+BEFRIEND_SRC\s*=\s*((?:"(?:\\.|[^"\\])*"|'[^'\\]*'))\s*\+\s*KP_ID\s*;/.exec(html);
+  if (!expression) throw new Error("Habster Alloha embed is unavailable");
+  let url;
+  try { url = new URL(literal(expression[1]) + id); }
+  catch { throw new Error("Habster returned an invalid Alloha embed URL"); }
+  if (url.origin !== ALLOHA_ORIGIN || url.username || url.password || url.pathname !== "/" || url.hash
+    || url.searchParams.getAll("kp").length !== 1 || url.searchParams.get("kp") !== id
+    || [...url.searchParams.keys()].some((key) => !["kp", "token"].includes(key))
+    || url.searchParams.getAll("token").length !== 1 || !url.searchParams.get("token")) {
+    throw new Error("Habster returned an unsupported Alloha embed origin or title");
   }
   return url.href;
 }
@@ -172,6 +192,12 @@ export function createHabsterProvider({ transport } = {}) {
     }
     validateTitle(title);
     signal?.throwIfAborted();
+    if (title.type === "movie") {
+      const embedCandidate = { providerId: "habster:alloha", providerName: "Habster · Alloha", catalogSource: "habster",
+        voiceId: "embedded", voiceName: "Озвучки в плеере", qualityHint: "До 4K", season: null, episode: null };
+      Object.defineProperty(embedCandidate, "ref", { value: { type: "movie", kinopoiskId: title.kinopoiskId }, enumerable: false });
+      yield embedCandidate;
+    }
     const candidate = { providerId: "habster:collaps", providerName: "Habster · Collaps", catalogSource: "habster",
       voiceId: "multi", voiceName: "Мультиаудио", qualityHint: "Auto", season: title.type === "tv" ? title.season : null,
       episode: title.type === "tv" ? title.episode : null };
@@ -180,12 +206,19 @@ export function createHabsterProvider({ transport } = {}) {
     yield candidate;
   }
   async function resolve(candidate, { signal } = {}) {
-    if (candidate?.providerId !== "habster:collaps" || candidate.catalogSource !== "habster" || candidate.voiceId !== "multi") {
+    const embedded = candidate?.providerId === "habster:alloha";
+    if (!["habster:collaps", "habster:alloha"].includes(candidate?.providerId) || candidate.catalogSource !== "habster"
+      || candidate.voiceId !== (embedded ? "embedded" : "multi")) {
       throw new Error("Invalid Habster source reference");
     }
     validateTitle(candidate.ref);
     if ((candidate.ref.type === "tv" && (candidate.season !== candidate.ref.season || candidate.episode !== candidate.ref.episode))
       || (candidate.ref.type === "movie" && (candidate.season != null || candidate.episode != null))) throw new Error("Invalid Habster episode reference");
+    if (embedded) {
+      if (candidate.ref.type !== "movie") throw new Error("Habster Alloha needs an exact movie reference");
+      const html = await readText(`${ORIGIN}/film/${candidate.ref.kinopoiskId}`, signal, { accept: "text/html" });
+      return { kind: "embed", embedUrl: parseHabsterAllohaEmbed(html, candidate.ref.kinopoiskId), embedOrigin: ALLOHA_ORIGIN };
+    }
     return refresh(candidate.ref, signal);
   }
   return { discover, resolve };

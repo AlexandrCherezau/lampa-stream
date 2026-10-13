@@ -624,6 +624,40 @@ test("Zona catalog provenance retains exact IDs and uses Habster first followed 
     ["habster:collaps", "hdvb"]);
 });
 
+test("Habster native player is restricted to its sealed movie and fixed public embed origin", async (t) => {
+  let embedUrl = "https://befriend.stravers.live/?token=public-fixture&kp=5494049";
+  const habsterAdapter = {
+    async *discover() { yield candidate({ providerId: "habster:alloha", catalogSource: "habster", season: null,
+      episode: null, ref: { type: "movie", kinopoiskId: 5494049 } }); },
+    async resolve() { return { kind: "embed", embedOrigin: "https://befriend.stravers.live", embedUrl }; },
+  };
+  const media = makeMedia();
+  const app = await start({ async *discover() {} }, media, "", undefined, { habsterAdapter });
+  t.after(() => app.close());
+  const discovery = await post(app.base, "/v1/discover", { type: "movie", title: "Movie", kinopoiskId: 5494049 });
+  const stream = sseReader(discovery.body);
+  const { data: { id } } = await stream.until("candidate");
+  await stream.drain();
+  const resolved = await post(app.base, "/v1/resolve", { id, embedUrl: "https://evil.test/", catalogSource: "vi3000" });
+  assert.equal(resolved.status, 200);
+  const result = await resolved.json();
+  assert.equal(result.kind, "embed");
+  assert.equal(result.source.kinopoiskId, 5494049);
+  assert.equal(result.selected.url, embedUrl);
+  assert.deepEqual(result.qualities, []);
+  assert.deepEqual(media.probes, [], "an iframe is never passed off as probed video");
+  assert.equal((await post(app.base, "/v1/resolve", { id, quality: "2160p" })).status, 400);
+  for (const bad of ["https://evil.test/?kp=5494049", "http://befriend.stravers.live/?kp=5494049",
+    "https://user:pass@befriend.stravers.live/?kp=5494049", "https://befriend.stravers.live/?kp=328",
+    "https://befriend.stravers.live/?kp=5494049&kp=328", "https://befriend.stravers.live/other?kp=5494049",
+    "https://befriend.stravers.live/?kp=5494049#x", "https://befriend.stravers.live/?kp=5494049&url=https://evil.test"]) {
+    embedUrl = bad;
+    const rejected = await post(app.base, "/v1/resolve", { id });
+    assert.equal(rejected.status, 502);
+    assert.equal((await rejected.json()).error, "INVALID_EMBED");
+  }
+});
+
 test("Habster resolve has an eight-second budget while disconnect aborts background discovery", async (t) => {
   let discoveryAborted = false;
   let resolveAborted = false;

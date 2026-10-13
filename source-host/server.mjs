@@ -265,6 +265,23 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         try {
           const selectedAdapter = sourceAdapter(candidate.catalogSource);
           const resolved = await selectedAdapter.resolve(candidate, { signal: controller.signal });
+          if (resolved.kind === "embed") {
+            const embed = new URL(resolved.embedUrl);
+            const kp = candidate.ref?.kinopoiskId;
+            if (candidate.providerId !== "habster:alloha" || candidate.catalogSource !== "habster"
+              || candidate.ref?.type !== "movie" || !Number.isSafeInteger(kp) || kp < 1
+              || resolved.embedOrigin !== "https://befriend.stravers.live" || embed.origin !== resolved.embedOrigin
+              || embed.pathname !== "/" || embed.username || embed.password || embed.hash
+              || embed.searchParams.getAll("kp").length !== 1 || embed.searchParams.get("kp") !== String(kp)
+              || [...embed.searchParams.keys()].some((key) => !["kp", "token"].includes(key))) {
+              throw failure("Плеер Habster недоступен", 502, "INVALID_EMBED");
+            }
+            if (body.quality != null) throw failure("Качество выбирается внутри плеера Habster", 400, "EMBED_QUALITY");
+            record(candidate.providerId, { providerName: candidate.providerName, status: "embedded" });
+            json(res, 200, { source: { ...publicCandidate(candidate), kinopoiskId: kp }, kind: "embed",
+              selected: { label: "Плеер Habster", url: embed.href }, qualities: [], subtitles: [], audioNames: [] });
+            return;
+          }
           const qualities = resolved.qualities || [];
           if (!qualities.length) throw failure("Источник не предоставил видео", 502, "NO_MEDIA");
           const wanted = body.quality == null ? null : String(body.quality);

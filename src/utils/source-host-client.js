@@ -45,6 +45,24 @@ function advertisedHeight(hint) {
     ...[...text.matchAll(/\b(\d{3,4})p?\b/gi)].map((match) => Number(match[1])).filter((height) => knownHeights.includes(height)));
 }
 
+function resolvedStream(result) {
+  const url = result.selected?.url;
+  if (!url) throw new Error("Источник не предоставил видео");
+  if (result.kind === "hls") return { hls: url };
+  if (result.kind === "file") return { mp4: url };
+  if (result.kind === "embed" && result.source?.providerId === "habster:alloha" && result.source?.catalogSource === "habster") {
+    const embed = new URL(url);
+    const kp = embed.searchParams.get("kp");
+    if (embed.origin === "https://befriend.stravers.live" && embed.pathname === "/" &&
+        !embed.username && !embed.password && !embed.hash && /^\d+$/.test(kp || "") &&
+        Number.isSafeInteger(Number(kp)) && Number(kp) > 0 && embed.searchParams.getAll("kp").length === 1 &&
+        result.source.kinopoiskId === Number(kp)) {
+      return { embed: embed.href };
+    }
+  }
+  throw new Error("Источник не предоставил поддерживаемое видео");
+}
+
 export function createSourceSession({ discover = discoverSources, resolve = resolveSource, publish }) {
   let generation = 0;
   let discovery;
@@ -101,12 +119,12 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     try {
       const result = await resolve(candidate.id, quality, controller.signal);
       if (controller.signal.aborted || token !== generation) return undefined;
-      if (!result.selected?.url || !["hls", "file"].includes(result.kind)) throw new Error("Источник не предоставил видео");
+      const stream = resolvedStream(result);
       previous = confirmed ? active : previous;
       active = { candidate, result };
       confirmed = false;
-      emit({ stream: result.kind === "hls" ? { hls: result.selected.url } : { mp4: result.selected.url },
-        qualities: result.qualities.map((value) => ({ id: value.label, label: value.height >= 2160 ? "4K" : value.label === "auto" ? "Авто" : value.label, height: value.height })),
+      emit({ stream,
+        qualities: (result.qualities || []).map((value) => ({ id: value.label, label: value.height >= 2160 ? "4K" : value.label === "auto" ? "Авто" : value.label, height: value.height })),
         subtitles: (result.subtitles || []).map((value) => ({ name: value.label, language: value.language, url: value.url })),
         audioNames: result.audioNames || [],
         meta: `${candidate.providerName} · ${candidate.voiceName}`, sourceError: null, skip: result.skip || null,
@@ -162,7 +180,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       const requestedHeight = advertisedHeight(quality);
       const candidate = (requestedHeight ? providerCandidates.find((value) => advertisedHeight(value.qualityHint) >= requestedHeight) : null)
         || providerCandidates[0];
-      return candidate ? choose(candidate, quality, true) : undefined;
+      return candidate ? choose(candidate, id === "habster:alloha" ? undefined : quality, true) : undefined;
     },
     selectVoice: (id) => { const candidate = candidates.find((value) => value.id === id); return candidate ? choose(candidate, undefined, true) : undefined; },
     selectQuality: (label) => active ? choose(active.candidate, label, true) : undefined,
@@ -174,8 +192,8 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       if (previous) {
         active = previous; previous = null; confirmed = true;
         const result = active.result;
-        emit({ stream: result.kind === "hls" ? { hls: result.selected.url } : { mp4: result.selected.url }, switching: false,
-          qualities: result.qualities.map((value) => ({ id: value.label, label: value.height >= 2160 ? "4K" : value.label === "auto" ? "Авто" : value.label, height: value.height })),
+        emit({ stream: resolvedStream(result), switching: false,
+          qualities: (result.qualities || []).map((value) => ({ id: value.label, label: value.height >= 2160 ? "4K" : value.label === "auto" ? "Авто" : value.label, height: value.height })),
           subtitles: (result.subtitles || []).map((value) => ({ name: value.label, url: value.url })),
           audioNames: result.audioNames || [],
           meta: `${active.candidate.providerName} · ${active.candidate.voiceName}`,

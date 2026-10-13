@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import http from 'node:http';import {once} from 'node:events';
+import express from 'express';
+import handler from '../api/source-host.js';
+const prior={url:process.env.SOURCE_HOST_URL,key:process.env.SOURCE_API_KEY};
+let payload={kind:'embed',source:{providerId:'habster:alloha',catalogSource:'habster',kinopoiskId:5494049},selected:{label:'Плеер',url:'https://befriend.stravers.live/?kp=5494049&token=public-fixture'},qualities:[]};
+const source=http.createServer((req,res)=>{assert.equal(req.url,'/v1/resolve');res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify(payload));});const app=express();app.use(express.json());app.post('/api/source-host',handler);const gateway=http.createServer(app);
+async function listen(s){s.listen(0,'127.0.0.1');await once(s,'listening');return 'http://127.0.0.1:'+s.address().port;}
+try{process.env.SOURCE_HOST_URL=await listen(source);process.env.SOURCE_API_KEY='fixture-key';const base=await listen(gateway);const call=()=>fetch(base+'/api/source-host?op=resolve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:'fixture'})});let r=await call();assert.equal(r.status,200);assert.equal((await r.json()).kind,'embed');const original=structuredClone(payload);
+for(const url of ['http://befriend.stravers.live/?kp=5494049','https://evil.test/?kp=5494049','https://u:p@befriend.stravers.live/?kp=5494049','https://befriend.stravers.live/?kp=328','https://befriend.stravers.live/?kp=5494049&kp=328','https://befriend.stravers.live/x?kp=5494049','https://befriend.stravers.live/?kp=5494049#x','https://befriend.stravers.live/?kp=5494049&url=evil']){payload={...original,selected:{...original.selected,url}};r=await call();assert.equal(r.status,502);assert.equal((await r.json()).error,'HOST_UNAVAILABLE');}
+for(const source of [{providerId:'habster:collaps',catalogSource:'habster',kinopoiskId:5494049},{providerId:'habster:alloha',catalogSource:'vi3000',kinopoiskId:5494049},{providerId:'habster:alloha',catalogSource:'habster',kinopoiskId:'5494049'}]){payload={...original,source};assert.equal((await call()).status,502);}console.log('Embed gateway permits exact Habster Alloha movie and rejects origin/identity/spoofed provider cases');
+}finally{for(const s of [gateway,source]){s.closeAllConnections();s.close();}for(const[k,v]of Object.entries({SOURCE_HOST_URL:prior.url,SOURCE_API_KEY:prior.key})){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
