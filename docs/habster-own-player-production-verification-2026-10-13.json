@@ -1,0 +1,249 @@
+{
+  "checkedAt": "2026-10-13T14:54:06.072Z",
+  "status": "GREEN",
+  "frontend": "https://lampa-stream-six.vercel.app",
+  "backend": {
+    "commit": "3fe71192c2cbc3a40ba77fd0d7fd9ba51d09e981",
+    "deployment": "dpl_6Yqz9VhVkkVzvAPudqTLA3c8Q6yS",
+    "state": "READY",
+    "alias": "https://lampa-source-host.vercel.app"
+  },
+  "frontendDeployment": {
+    "commit": "40a19096e292f4a7903f7b77511582c5109ff1cf",
+    "deployment": "dpl_JADWGwsU5quDAGfhEJApGFn7b6Hq",
+    "state": "READY"
+  },
+  "scope": "Real production discovery, resolve and media. Only matching Spider-Man TMDB metadata, blank posters and client session flags are fixtures. Own video decoding, six qualities, 4K, dub switch, seek, pause, history and reload resume are checked. Login, personal credentials, other titles and full-film endurance are not checked.",
+  "fixtures": {
+    "metadata": {
+      "tmdbId": 969681,
+      "imdbId": "tt22084616",
+      "kinopoiskIdSupplied": false,
+      "posters": "blank"
+    },
+    "clientSessionFlag": true,
+    "personalTmdbCredential": false,
+    "initialResumeSeconds": 40,
+    "initialProgressPercent": 0,
+    "discovery": false,
+    "resolve": false,
+    "media": false
+  },
+  "title": {
+    "tmdbId": 969681,
+    "kinopoiskId": 5494049,
+    "imdbId": "tt22084616"
+  },
+  "ownPlayer": {
+    "iframeCount": 0,
+    "startupMs": 9889,
+    "initial": {
+      "before": {
+        "width": 1280,
+        "height": 534,
+        "time": 40.009589,
+        "duration": 8700.74,
+        "frames": 6,
+        "readyState": 4,
+        "paused": false,
+        "seeking": false,
+        "error": null
+      },
+      "after": {
+        "width": 1280,
+        "height": 534,
+        "time": 41.019964,
+        "duration": 8700.74,
+        "frames": 31,
+        "readyState": 4,
+        "paused": false,
+        "seeking": false,
+        "error": null
+      }
+    },
+    "qualityLabels": [
+      "720p",
+      "4K ⭐",
+      "1440p",
+      "1080p",
+      "480p",
+      "360p"
+    ],
+    "uhdMaster": {
+      "status": 200,
+      "dimensions": [
+        "3832x1600"
+      ]
+    },
+    "uhd": {
+      "before": {
+        "width": 3832,
+        "height": 1600,
+        "time": 41.170054,
+        "duration": 8700.74,
+        "frames": 11,
+        "readyState": 4,
+        "paused": false,
+        "seeking": false,
+        "error": null
+      },
+      "after": {
+        "width": 3832,
+        "height": 1600,
+        "time": 42.178687,
+        "duration": 8700.74,
+        "frames": 37,
+        "readyState": 4,
+        "paused": false,
+        "seeking": false,
+        "error": null
+      }
+    },
+    "voice": "(English) English | E-AC-3 JOC | 51 | 768 kbps",
+    "voicePlayback": {
+      "before": {
+        "width": 3832,
+        "height": 1600,
+        "time": 42.331719,
+        "duration": 8700.74,
+        "frames": 6,
+        "readyState": 4,
+        "paused": false,
+        "seeking": false,
+        "error": null
+      },
+      "after": {
+        "width": 3832,
+        "height": 1600,
+        "time": 43.338921,
+        "duration": 8700.74,
+        "frames": 31,
+        "readyState": 4,
+        "paused": false,
+        "seeking": false,
+        "error": null
+      }
+    },
+    "voiceSwitchPosition": {
+      "before": 42.279077,
+      "after": 43.338921
+    },
+    "seekAction": {
+      "control": "seekbar",
+      "requestedSeconds": 117
+    },
+    "paused": {
+      "width": 3832,
+      "height": 1600,
+      "time": 116.087436,
+      "duration": 8700.74,
+      "frames": 360,
+      "readyState": 4,
+      "paused": true,
+      "seeking": false,
+      "error": null
+    },
+    "pausedAfter7500ms": {
+      "width": 3832,
+      "height": 1600,
+      "time": 116.087436,
+      "duration": 8700.74,
+      "frames": 360,
+      "readyState": 4,
+      "paused": true,
+      "seeking": false,
+      "error": null
+    },
+    "saved": {
+      "time": 116.1,
+      "progress": 1,
+      "history": {
+        "id": 969681,
+        "media_type": "movie",
+        "kinopoisk_id": null
+      }
+    },
+    "reloaded": {
+      "before": {
+        "width": 1280,
+        "height": 534,
+        "time": 116.138414,
+        "duration": 8700.74,
+        "frames": 6,
+        "readyState": 4,
+        "paused": false,
+        "seeking": false,
+        "error": null
+      },
+      "after": {
+        "width": 1280,
+        "height": 534,
+        "time": 117.156197,
+        "duration": 8700.74,
+        "frames": 31,
+        "readyState": 4,
+        "paused": false,
+        "seeking": false,
+        "error": null
+      }
+    }
+  },
+  "resolveTrace": [
+    {
+      "providerId": "habster:alloha",
+      "requestedQuality": null,
+      "status": 200,
+      "kind": "hls",
+      "quality": "720p",
+      "height": 720,
+      "voice": "Основная озвучка"
+    },
+    {
+      "providerId": "habster:alloha",
+      "requestedQuality": "2160p",
+      "status": 200,
+      "kind": "hls",
+      "quality": "2160p",
+      "height": 2160,
+      "voice": "Основная озвучка"
+    },
+    {
+      "providerId": "habster:alloha",
+      "requestedQuality": "2160p",
+      "status": 200,
+      "kind": "hls",
+      "quality": "2160p",
+      "height": 2160,
+      "voice": "(English) English | E-AC-3 JOC | 51 | 768 kbps"
+    }
+  ],
+  "reloadTrace": [
+    {
+      "providerId": "habster:alloha",
+      "requestedQuality": null,
+      "status": 200,
+      "kind": "hls",
+      "quality": "720p",
+      "height": 720,
+      "voice": "Основная озвучка"
+    }
+  ],
+  "httpFailures": [],
+  "requestAbortsDuringSwitches": 3,
+  "validation": {
+    "sourceHostTests": "68/68",
+    "initialFrontendCases": "23 unique cases across overlapping targeted runs",
+    "earlyPauseAndExistingStartupCases": "4/4 after final pause fix",
+    "build": "PASS",
+    "diffCheck": "PASS",
+    "gatewayNativeAndSse": "PASS",
+    "sourceHostClientAndPlayerChecks": "PASS"
+  },
+  "limits": [
+    "Full film endurance, login and personal TMDB credentials not checked.",
+    "Same closed-WebSocket header snapshot replay verified for 321 seconds; total validity unknown.",
+    "Each quality uses the first of two published CDN alternatives; backup outage recovery not exercised.",
+    "A fresh upstream bnsi response without websocket metadata is rejected rather than inventing an unverified grant.",
+    "A deliberate early pause cancels startup watchdog for this attachment; it is not rearmed on resume, while engine error handlers remain active."
+  ]
+}
