@@ -21,7 +21,7 @@ sources.example.com {
 
 ## Vercel container
 
-The source-host project uses `infrastructure/lampac/vercel.json` and `Dockerfile.vercel`. The service config routes requests to the `sources` container service. Vercel's project setting **Settings → Functions → Default Regions** must also select Frankfurt (`fra1`); setting `regions` in `vercel.json` alone did not move the container. Keep this project and domain separate from the frontend project.
+The source-host project uses `infrastructure/lampac/vercel.json` and `Dockerfile.vercel`. The service config routes requests to the `sources-cub` container service. Vercel's project setting **Settings → Functions → Default Regions** must also select Frankfurt (`fra1`); setting `regions` in `vercel.json` alone did not move the container. Keep this project and domain separate from the frontend project.
 
 Set these server-side project environment values:
 

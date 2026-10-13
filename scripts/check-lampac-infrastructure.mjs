@@ -54,13 +54,14 @@ assert.equal(vercelConfig.listen.port, 9118);
 assert.ok(vercelConfig.listen.ResponseCancelAfter >= 50);
 assert.deepEqual(vercelConfig.BaseModule.LoadModules, ['Online', 'OnlineRUS', 'OnlineAnime', 'OnlinePaid', 'Kit']);
 assert.deepEqual(vercelConfig.BaseModule.SkipModules, config.BaseModule.SkipModules);
-assert.deepEqual(vercelProjectConfig.services.sources, {
+assert.deepEqual(Object.keys(vercelProjectConfig.services), ['sources-cub']);
+assert.deepEqual(vercelProjectConfig.services['sources-cub'], {
   root: '.',
   runtime: 'container',
   entrypoint: 'Dockerfile.vercel',
 });
 assert.deepEqual(vercelProjectConfig.regions, ['fra1'], 'the source container should use Vercel Frankfurt');
-assert.deepEqual(vercelProjectConfig.rewrites, [{ source: '/(.*)', destination: { service: 'sources' } }]);
+assert.deepEqual(vercelProjectConfig.rewrites, [{ source: '/(.*)', destination: { service: 'sources-cub' } }]);
 assert.match(vercelDockerfile, /ghcr\.io\/lampac-nextgen\/lampac:1\.81\.0@sha256:[a-f0-9]{64}/);
 assert.match(vercelDockerfile, /node:24\.13\.0-bookworm-slim@sha256:[a-f0-9]{64}/);
 assert.match(vercelDockerfile, /COPY source-host\/ \/app\//);

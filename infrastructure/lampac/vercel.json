@@ -2,13 +2,13 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["fra1"],
   "services": {
-    "sources": {
+    "sources-cub": {
       "root": ".",
       "runtime": "container",
       "entrypoint": "Dockerfile.vercel"
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": { "service": "sources" } }
+    { "source": "/(.*)", "destination": { "service": "sources-cub" } }
   ]
 }
