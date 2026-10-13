@@ -61,6 +61,7 @@ export function createVi3000Provider({ transport } = {}) {
   function adapter(origin) {
     return createLampacProvider({
       baseUrl: origin,
+      providerOrder: ["cdnvideohub"],
       providerFilter: (provider) => /^[a-z0-9_-]{1,64}$/i.test(String(provider?.balanser || ""))
         && provider.balanser !== "pidtor" && provider.show !== false && provider.enable !== false,
       fetchJson: async (rawUrl, opts) => {

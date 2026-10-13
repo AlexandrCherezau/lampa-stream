@@ -68,6 +68,56 @@ test("vi uses the anonymous Filmix TMDB contract and public registry without cha
   assert.deepEqual(await collect(native.discover(title)), [], "native RU filtering must remain unchanged");
 });
 
+test("vi keeps Filmix first then yields CDNVideoHub before three stalled fleet providers", async () => {
+  const stalled = ["phantom", "kinobase", "veoveo"];
+  const started = [];
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let finished = 0;
+  const provider = createVi3000Provider({ transport: { async request(raw, { signal }) {
+    const url = new URL(raw);
+    if (url.pathname === "/api/filmix/lite") return response(filmix);
+    if (url.pathname === "/api/plugin/lampac/hosts") return response({ hosts: ["fleet.test"] });
+    if (url.pathname === "/lite/events") return response([...stalled, "cdnvideohub"].map((balanser) => ({
+      balanser, name: balanser, url: `https://fleet.test/lite/${balanser}`,
+    })));
+    const id = url.pathname.split("/").at(-1);
+    started.push(id);
+    if (stalled.includes(id)) {
+      await new Promise((resolve, reject) => {
+        const abort = () => reject(signal.reason);
+        if (signal.aborted) { abort(); return; }
+        signal.addEventListener("abort", abort, { once: true });
+        gate.then(() => { signal.removeEventListener("abort", abort); resolve(); });
+      });
+      finished++;
+    }
+    return response({ type: "movie", data: [filmix] });
+  } } });
+  const caller = new AbortController();
+  const iterator = provider.discover(title, { signal: caller.signal });
+  let next;
+  let timer;
+  try {
+    assert.equal((await iterator.next()).value.providerId, "vi3000:filmix");
+    next = iterator.next();
+    const candidate = await Promise.race([next, new Promise((resolve) => { timer = setTimeout(() => resolve(null), 250); })]);
+    assert(candidate, "three stalled upstream entries must not occupy every slot before CDNVideoHub starts");
+    assert.equal(candidate.value.providerId, "vi3000:cdnvideohub");
+    assert.equal(started[0], "cdnvideohub");
+    assert.equal(finished, 0, "CDNVideoHub is available before stalled requests complete");
+    release();
+    const rest = await collect(iterator);
+    assert.deepEqual(new Set(rest.map((c) => c.providerId)), new Set(stalled.map((id) => `vi3000:${id}`)), "other providers remain selectable");
+  } finally {
+    clearTimeout(timer);
+    caller.abort();
+    release();
+    await next?.catch(() => {});
+    await iterator.return();
+  }
+});
+
 test("vi rejects oversized bodies, reports registry failure and propagates cancellation", async () => {
   const tooLarge = createVi3000Provider({ transport: { async request(raw) {
     if (new URL(raw).pathname === "/api/plugin/lampac/hosts") return response({ hosts: [] });
