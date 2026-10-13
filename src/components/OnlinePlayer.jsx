@@ -178,6 +178,7 @@ export default function OnlinePlayer({
   // whether a resolve error should blank the player (nothing ever played) or just
   // show an inline notice (a switch failed but the current media is fine).
   const hadPlayedRef = useRef(false);
+  const userPausedRef = useRef(false);
   // Genuine-playback signal for the fleet: `play`/`playing` fire the instant
   // hls.js calls v.play() on MANIFEST_PARSED — before a single segment has
   // decoded — so hadPlayedRef flips true even on a stream that immediately dies
@@ -610,9 +611,14 @@ export default function OnlinePlayer({
       // the probe couldn't see and no error will report. Jump to the next balancer.
       fleetFailover();
     }, stream.mp4 ? SWITCH_WATCHDOG_MS : FLEET_STALL_MS);
+    // A viewer can pause after the first decoded frames, before timeupdate
+    // has latched playback. The startup timer must not resume or replace it.
+    const onPause = () => { if (userPausedRef.current) clearTimeout(t); };
+    v.addEventListener("pause", onPause);
     return () => {
       clearTimeout(t);
       v.removeEventListener("loadedmetadata", onMeta);
+      v.removeEventListener("pause", onPause);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLampac, stream, fleetFailover]);
@@ -733,6 +739,7 @@ export default function OnlinePlayer({
     const v = videoRef.current;
     if (!v) return;
     destroyAll();
+    userPausedRef.current = false;
     resumeDoneRef.current = false; // allow one resume seek for this stream
     subsAddedRef.current = false;  // re-add subtitle <track>s for the new media
     setCurrent(0); setDuration(0); setBuffered(0);
@@ -1569,7 +1576,11 @@ export default function OnlinePlayer({
   useEffect(() => { showControls(); return () => clearTimeout(hideTimerRef.current); }, [showControls, playing]);
 
   // ── Controls (engine-agnostic) ──────────────────────────────────────────────
-  const togglePlay = () => { const v = videoRef.current; if (!v) return; if (v.paused) v.play().catch(() => {}); else v.pause(); };
+  const togglePlay = () => {
+    const v = videoRef.current; if (!v) return;
+    userPausedRef.current = !v.paused;
+    if (v.paused) v.play().catch(() => {}); else v.pause();
+  };
   const seekTo = (ratio) => {
     const v = videoRef.current;
     if (!v || !Number.isFinite(v.duration) || v.duration <= 0 || !Number.isFinite(ratio)) return;

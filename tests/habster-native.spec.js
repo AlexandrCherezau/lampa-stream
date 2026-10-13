@@ -83,21 +83,35 @@ test("Habster HLS uses our player, full quality ladder, voice switching and save
   await expect.poll(() => video.evaluate((value) => value.readyState)).toBeGreaterThanOrEqual(2);
   await page.locator(".torrplayer").hover();
   await page.getByTitle("Озвучка", { exact: true }).click();
+  await video.evaluate((value) => {
+    // Reproduce pause before the coarser timeupdate playback latch fires.
+    value.addEventListener("timeupdate", (event) => event.stopImmediatePropagation(), { capture: true });
+    value.addEventListener("loadstart", () => { value.dataset.voiceAttachedAt = String(performance.now()); }, { once: true });
+  });
   await menu.getByRole("button", { name: "Eng.Original", exact: true }).click();
   await expect.poll(() => resolutions.at(-1)?.id).toBe("alloha-eng");
   expect(resolutions.at(-1)?.quality).toBe("2160p");
   await expect.poll(() => video.evaluate((value) => value.currentTime)).toBeGreaterThanOrEqual(29);
   await expect.poll(() => mediaRequests.some((path) => path.includes("alloha-eng") && path.endsWith(".ts"))).toBe(true);
-  await expect.poll(() => video.evaluate((value) => !value.seeking && value.readyState >= 3 && value.currentTime > 31)).toBe(true);
-  await video.evaluate((value) => { value.currentTime = 60; });
+  await expect.poll(() => video.evaluate((value) => !value.seeking && value.readyState >= 3 && value.getVideoPlaybackQuality().totalVideoFrames >= 3)).toBe(true);
+  await page.locator(".torrplayer").hover();
+  const seekBar = page.getByTitle("Перемотка (0–9)", { exact: true });
+  const box = await seekBar.boundingBox();
+  const duration = await video.evaluate((value) => value.duration);
+  await seekBar.click({ position: { x: box.width * 60 / duration, y: box.height / 2 } });
   await expect.poll(() => video.evaluate((value) => !value.seeking && value.currentTime >= 59)).toBe(true);
-  await video.evaluate((value) => value.pause());
+  await page.getByTitle("Пауза (Space / K)", { exact: true }).click();
+  expect(await video.evaluate((value) => performance.now() - Number(value.dataset.voiceAttachedAt))).toBeLessThan(7000);
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("streambert_resumeTime"))?.movie_969681)).toBeGreaterThanOrEqual(59);
   await expect.poll(() => page.evaluate(() => {
     // The app debounces the percentage write, and flushes it when leaving.
     window.dispatchEvent(new Event("pagehide"));
     return JSON.parse(localStorage.getItem("streambert_progress"))?.movie_969681;
   }), { timeout: 8000 }).toBeGreaterThanOrEqual(59);
+  // The 7s startup deadline must leave an intentionally paused voice intact.
+  await page.waitForTimeout(7500);
+  expect(await video.evaluate((value) => value.paused)).toBe(true);
+  expect(resolutions.at(-1)?.id).toBe("alloha-eng");
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("streambert_resumeTime"))?.movie_969681);
   await page.reload();
   await page.getByRole("button", { name: "Смотреть", exact: true }).click();
