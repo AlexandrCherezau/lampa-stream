@@ -1,0 +1,185 @@
+{
+  "checkedAt": "2026-10-13T18:10:49.985Z",
+  "runtimeCommit": "3a38dd862eb545806affdd44d8ca2ab31efd508b",
+  "frontend": {
+    "alias": "https://lampa-stream-six.vercel.app",
+    "deployment": "dpl_J7mDD1DFecmy8RJwTz3ASoH8V6t7",
+    "state": "READY"
+  },
+  "backend": {
+    "alias": "https://lampa-source-host.vercel.app",
+    "deployment": "dpl_3FvayDUon5chYWM5W7J3zszskTyP",
+    "state": "READY"
+  },
+  "scope": {
+    "movieTmdbId": 969681,
+    "imdbId": "tt22084616",
+    "kinopoiskId": 5494049,
+    "matchingMetadataAndClientSessionFixtures": true,
+    "playbackMocks": false,
+    "dwellBeforeClickMs": 3000,
+    "initialResumeSeconds": 40
+  },
+  "before": [
+    {
+      "profile": 1,
+      "startedAt": "2026-10-13T17:56:23.868Z",
+      "buttonReadyMs": 469,
+      "clickToFirstFrameMs": 12768,
+      "clickToDiscoveryHeadersMs": 3756,
+      "clickToResolveEndMs": 8700,
+      "habsterCandidateBeforeClick": false,
+      "video": {
+        "paused": false,
+        "currentTime": 40.006353,
+        "duration": 8700.74,
+        "width": 1280,
+        "height": 534,
+        "readyState": 4,
+        "totalVideoFrames": 6
+      },
+      "iframeCount": 0
+    },
+    {
+      "profile": 2,
+      "startedAt": "2026-10-13T17:56:40.203Z",
+      "buttonReadyMs": 356,
+      "clickToFirstFrameMs": 6761,
+      "clickToDiscoveryHeadersMs": 337,
+      "clickToResolveEndMs": 2152,
+      "habsterCandidateBeforeClick": false,
+      "video": {
+        "paused": false,
+        "currentTime": 40.005288,
+        "duration": 8700.74,
+        "width": 1280,
+        "height": 534,
+        "readyState": 4,
+        "totalVideoFrames": 6
+      },
+      "iframeCount": 0
+    }
+  ],
+  "after": [
+    {
+      "profile": 1,
+      "startedAt": "2026-10-13T18:06:13.614Z",
+      "buttonReadyMs": 1315,
+      "clickToFirstFrameMs": 8468,
+      "clickToDiscoveryHeadersMs": 504,
+      "clickToResolveEndMs": 1625,
+      "habsterCandidateBeforeClick": true,
+      "video": {
+        "paused": false,
+        "currentTime": 40.006731,
+        "duration": 8700.74,
+        "width": 1280,
+        "height": 534,
+        "readyState": 4,
+        "totalVideoFrames": 6
+      },
+      "iframeCount": 0
+    },
+    {
+      "profile": 2,
+      "startedAt": "2026-10-13T18:07:26.530Z",
+      "buttonReadyMs": 383,
+      "clickToFirstFrameMs": 9930,
+      "clickToDiscoveryHeadersMs": 356,
+      "clickToResolveEndMs": 4672,
+      "habsterCandidateBeforeClick": false,
+      "video": {
+        "paused": false,
+        "currentTime": 40.015385,
+        "duration": 8700.74,
+        "width": 1280,
+        "height": 534,
+        "readyState": 4,
+        "totalVideoFrames": 6
+      },
+      "iframeCount": 0
+    }
+  ],
+  "separateSmoke": {
+    "startup": {
+      "profile": 1,
+      "startedAt": "2026-10-13T18:08:36.555Z",
+      "buttonReadyMs": 866,
+      "clickToFirstFrameMs": 6309,
+      "clickToDiscoveryHeadersMs": 338,
+      "clickToResolveEndMs": 1239,
+      "habsterCandidateBeforeClick": true,
+      "video": {
+        "paused": false,
+        "currentTime": 40.006272,
+        "duration": 8700.74,
+        "width": 1280,
+        "height": 534,
+        "readyState": 4,
+        "totalVideoFrames": 6
+      },
+      "iframeCount": 0
+    },
+    "quality": {
+      "available": true,
+      "options": [
+        "720p",
+        "4K ⭐",
+        "1440p",
+        "1080p",
+        "480p",
+        "360p"
+      ],
+      "selected": "4K ⭐",
+      "result": {
+        "width": 3832,
+        "height": 1600,
+        "currentTime": 40.824051,
+        "paused": false,
+        "frames": 16
+      },
+      "resumePreserved": true,
+      "uHDDecoded": true
+    },
+    "voice": {
+      "available": true,
+      "options": [
+        "Основная озвучка",
+        "(Ukrainian) Ukrainian | E-AC-3 | 51 | 640 kbps | DUB | Le Doyen",
+        "(English) English | E-AC-3 JOC | 51 | 768 kbps",
+        "(Russian) Dub bMovieDalenB",
+        "(Russian) Dub bMovieDalenB",
+        "(Russian) DUB HDrezka Studio",
+        "(Russian) MVO HDrezka Studio",
+        "(Russian) MVO TVShows"
+      ],
+      "selected": "(Ukrainian) Ukrainian | E-AC-3 | 51 | 640 kbps | DUB | Le Doyen",
+      "result": {
+        "width": 3832,
+        "height": 1600,
+        "currentTime": 40.941307,
+        "paused": false,
+        "frames": 19
+      },
+      "resumePreserved": true,
+      "framesAdvanced": true
+    }
+  },
+  "validation": {
+    "sourceHostTests": "75/75",
+    "sourceHostClient": "PASS",
+    "build": "PASS",
+    "preparePreloadBrowserCase": "PASS",
+    "existingStartupWatchdogCases": "3/3",
+    "nativeFixture": "PASS on repeat; first run transient zero-frame failure",
+    "independentPrepareReview": "No blocking findings",
+    "diffCheck": "PASS"
+  },
+  "conclusion": "Preparation delivers Habster candidates before click and the first paired start improved, but a slower second pair means two trials do not establish consistent first-frame latency improvement.",
+  "limits": [
+    "Server/container/CDN warmth and network variation were not controlled.",
+    "No film bytes are intentionally prefetched before click; real playback still waits for upstream validation and startup bytes.",
+    "Full-film endurance, personal login, other titles, rapid navigation and delayed age-rating browser flows not tested.",
+    "Actual Git root source-development is absent from cloud-context mapping; mapped src belongs to a separate working copy, so no cloud README was replaced."
+  ]
+}
