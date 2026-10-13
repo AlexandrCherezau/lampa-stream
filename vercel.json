@@ -14,6 +14,8 @@
     { "source": "/api/tmdb/(.*)", "destination": "/api/tmdb" },
     { "source": "/api/room", "destination": "/api/room" },
     { "source": "/api/room/(.*)", "destination": "/api/room" },
+    { "source": "/api/profile", "destination": "/api/profile" },
+    { "source": "/api/profile/(.*)", "destination": "/api/profile" },
     { "source": "/api/lampac", "destination": "/api/lampac" },
     { "source": "/api/lampac/(.*)", "destination": "/api/lampac" },
     { "source": "/api/collaps", "destination": "/api/collaps" },
@@ -24,7 +26,7 @@
     { "source": "/api/(.*)", "headers": [
       { "key": "Access-Control-Allow-Origin", "value": "*" },
       { "key": "Access-Control-Allow-Headers", "value": "*" },
-      { "key": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, DELETE, OPTIONS" }
+      { "key": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, PATCH, DELETE, OPTIONS" }
     ]},
     { "source": "/assets/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]},
     { "source": "/vendor/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]},

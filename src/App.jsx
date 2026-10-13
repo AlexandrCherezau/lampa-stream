@@ -19,6 +19,7 @@ import {
 import { collectBackupData } from "./utils/backup";
 import { tmdbFetch, setApiErrorHandlers, setTmdbProxyBase, tmdbApiBase, setWebOnly, withLanguage } from "./utils/api";
 import { clearAppCaches } from "./utils/storage";
+import { startViewingProfileSync } from "./utils/viewingProfile";
 
 import Sidebar from "./components/Sidebar";
 import MobileTopBar from "./components/MobileTopBar";
@@ -26,6 +27,7 @@ import SearchModal from "./components/SearchModal";
 import SetupScreen from "./components/SetupScreen";
 import CloseConfirmModal from "./components/CloseConfirmModal";
 import UpdateModal from "./components/UpdateModal";
+import "./styles/personal-cinema.css";
 
 // Lazy-loaded pages: each chunk is only downloaded when the user first visits
 const HomePage = lazy(() => import("./pages/HomePage"));
@@ -36,8 +38,11 @@ const DiscoverPage = lazy(() => import("./pages/DiscoverPage"));
 const WatchTogetherPage = lazy(() => import("./pages/WatchTogetherPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
+const PersonalDevicesPage = lazy(() => import("./pages/PersonalDevicesPage"));
+const MonthlyRecapPage = lazy(() => import("./pages/MonthlyRecapPage"));
+const TonightPage = lazy(() => import("./pages/TonightPage"));
 
-const ROUTE_PAGES = new Set(["home", "discover", "history", "settings", "together", "downloads", "movie", "tv"]);
+const ROUTE_PAGES = new Set(["home", "discover", "history", "settings", "together", "downloads", "devices", "recap", "tonight", "movie", "tv"]);
 function catalogMetadata(item) {
   if (!["vi3000", "habster", "zona"].includes(item?.catalogSource)) return {};
   const kinopoiskId = [item.kinopoisk_id, item.kinopoiskId]
@@ -68,6 +73,10 @@ function readRoute(url = new URL(window.location.href)) {
     return { page, selected: { id, media_type: page, ...catalog, ...(Number.isSafeInteger(season) ? { season } : {}), ...(Number.isSafeInteger(episode) ? { episode } : {}) } };
   }
   if (parts.length > 1) return { page: "home", selected: null };
+  if (page === "devices") {
+    const pairToken = new URLSearchParams(url.hash.replace(/^#/, "")).get("pair");
+    return { page, selected: pairToken ? { pairToken } : null };
+  }
   const section = url.searchParams.get("section");
   return { page, selected: page === "settings" && section ? { section } : null };
 }
@@ -83,6 +92,10 @@ function routeUrl(page, selected) {
   const slug = page === "history" ? "library" : page === "home" ? "" : page;
   const query = page === "settings" && selected?.section ? `?section=${encodeURIComponent(selected.section)}` : "";
   return `/${slug}${query}`;
+}
+function historyRoute(page, selected) {
+  // Pair tokens are transient capabilities; keep them only in React memory.
+  return { page, selected: page === "devices" && selected?.pairToken ? null : selected };
 }
 import {
   checkForUpdatesWithFallback,
@@ -114,6 +127,16 @@ export default function App() {
   const [navStack, setNavStack] = useState(() => window.history.state?.appStack || []);
   const navStackRef = useRef(navStack);
   useEffect(() => { navStackRef.current = navStack; }, [navStack]);
+
+  // Pair tokens live in the fragment so they are not sent as URL query data.
+  // Capture into React state first, then scrub the address bar immediately.
+  useEffect(() => {
+    if (initialRoute.page !== "devices" || !initialRoute.selected?.pairToken) return;
+    const appStack = (window.history.state?.appStack || []).map((entry) => historyRoute(entry.page, entry.selected));
+    setNavStack(appStack);
+    navStackRef.current = appStack;
+    window.history.replaceState({ ...window.history.state, appRoute: { page: "devices", selected: null }, appStack }, "", "/devices");
+  }, []);
 
   const [saved, setSaved] = useState(() => storage.get("saved") || {});
   // Separate order array for drag-and-drop reordering
@@ -698,7 +721,7 @@ export default function App() {
       } else {
         const route = { page, selected };
         currentRouteRef.current = route;
-        window.history.replaceState({ ...window.history.state, appRoute: route, appIndex: routeIndexRef.current, appStack: window.history.state?.appStack || [] }, "", routeUrl(page, selected));
+        window.history.replaceState({ ...window.history.state, appRoute: historyRoute(page, selected), appIndex: routeIndexRef.current, appStack: (window.history.state?.appStack || []).map((entry) => historyRoute(entry.page, entry.selected)) }, "", routeUrl(page, selected));
       }
     } catch {}
   }, []);
@@ -721,12 +744,12 @@ export default function App() {
 
   const navigate = useCallback((pg, data = null) => {
     const route = { page: pg, selected: data };
-    const stack = [...navStackRef.current, { page: pageRef.current, selected: selectedRef.current }];
+    const stack = [...navStackRef.current.map((entry) => historyRoute(entry.page, entry.selected)), historyRoute(pageRef.current, selectedRef.current)];
     routeIndexRef.current += 1;
     currentRouteRef.current = route;
     pageRef.current = pg;
     selectedRef.current = data;
-    window.history.pushState({ appRoute: route, appIndex: routeIndexRef.current, appStack: stack }, "", routeUrl(pg, data));
+    window.history.pushState({ appRoute: historyRoute(pg, data), appIndex: routeIndexRef.current, appStack: stack }, "", routeUrl(pg, data));
     setNavStack(stack);
     setSelected(data);
     setPage(pg);
@@ -837,6 +860,34 @@ export default function App() {
     secureStorage.set("apikey", key);
     setApiKey(key);
   }, []);
+
+  useEffect(() => {
+    const stop = startViewingProfileSync();
+    const applyRemoteState = (event) => {
+      const data = event.detail || {};
+      if (data.saved && typeof data.saved === "object") {
+        setSaved(data.saved);
+        setSavedOrder((current) => {
+          const order = current || [];
+          const merged = [...order.filter((key) => data.saved[key]), ...Object.keys(data.saved).filter((key) => !order.includes(key))];
+          storage.set("savedOrder", merged);
+          return merged;
+        });
+      }
+      if (Array.isArray(data.history)) setHistory(data.history);
+      if (data.watched && typeof data.watched === "object") setWatched(data.watched);
+      if (data.progress && typeof data.progress === "object") setProgress(data.progress);
+      if (data.resumeTime && typeof data.resumeTime === "object") {
+        for (const [key, value] of Object.entries(data.resumeTime)) storage.set(`dlTime_${key}`, value);
+      }
+      if (typeof data.apiKey === "string" && data.apiKey) saveApiKey(data.apiKey);
+    };
+    window.addEventListener("streambert:profile-remote-applied", applyRemoteState);
+    return () => {
+      if (typeof stop === "function") stop();
+      window.removeEventListener("streambert:profile-remote-applied", applyRemoteState);
+    };
+  }, [saveApiKey]);
 
   const changeApiKey = useCallback(() => {
     secureStorage.set("apikey", "");
@@ -1075,7 +1126,7 @@ export default function App() {
   );
 
   if (!apiKeyLoaded) return null; // wait for secure storage to resolve
-  if (!apiKey && !skipped)
+  if (!apiKey && !skipped && page !== "devices" && page !== "settings")
     return <SetupScreen onSave={saveApiKey} onSkip={() => setSkipped(true)} />;
 
   const hasCustomTitlebar = platform === "win32" || platform === "linux";
@@ -1105,6 +1156,7 @@ export default function App() {
             onBack={navigateBack}
             onSearch={openSearch}
             onSettings={goSettings}
+            onNavigate={navigate}
           />
           {/* ── API key status banner ── */}
           {/* Suspense boundary: lazy page chunks are fetched on first visit */}
@@ -1274,6 +1326,9 @@ export default function App() {
                 }
               />
             )}
+            {page === "devices" && <PersonalDevicesPage initialPairToken={selected?.pairToken} apiKey={apiKey} onApiKeySaved={saveApiKey} onNavigateSettings={() => navigate("settings")} />}
+            {page === "recap" && <MonthlyRecapPage history={history} />}
+            {page === "tonight" && <TonightPage apiKey={apiKey} history={history} watched={watched} onSelect={handleSelectResult} />}
           </Suspense>
         </div>
 

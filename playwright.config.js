@@ -5,6 +5,7 @@ import { defineConfig, devices } from "@playwright/test";
 // contract production has, not a dev server.
 export default defineConfig({
   testDir: "./tests",
+  testMatch: "**/*.spec.js",
   timeout: 60_000,
   retries: 0,
   workers: 1,

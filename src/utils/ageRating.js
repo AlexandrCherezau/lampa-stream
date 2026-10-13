@@ -1,5 +1,5 @@
 // ── Age Rating Backend ────────────────────────────────────────────────────────
-import { tmdbFetch } from "./api";
+import { tmdbFetch } from "./api.js";
 
 export const RATING_COUNTRIES = [
   { code: "US", label: "United States (MPAA / TV Parental)" },

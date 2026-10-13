@@ -437,3 +437,26 @@ export const PiPIcon = ({ size = 20 }) => (
     <rect x="11" y="11" width="8" height="8" rx="1" fill="currentColor" stroke="none" />
   </svg>
 );
+
+export const DevicesIcon = ({ size = 22 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="2.5" y="4" width="13" height="15" rx="2" />
+    <path d="M6.5 16h5M18 8h3.5v12H18a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" />
+  </svg>
+);
+export const RecapIcon = ({ size = 22 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 20V4M4 20h17" /><path d="m7 16 4-5 3 2 5-7" /><path d="M16 6h3v3" />
+  </svg>
+);
+export const TonightIcon = ({ size = 22 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M20.5 15.2A8.5 8.5 0 0 1 8.8 3.5 8.6 8.6 0 1 0 20.5 15.2Z" />
+    <path d="m17 3 .7 1.8 1.8.7-1.8.7L17 8l-.7-1.8-1.8-.7 1.8-.7L17 3Z" />
+  </svg>
+);
+export const MoreIcon = ({ size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
+  </svg>
+);

@@ -78,6 +78,7 @@ import {
   getRatingCountry,
 } from "../utils/ageRating";
 import { prepareMovieSource } from "../utils/source-host-client";
+import PersonalRating from "../components/PersonalRating";
 
 export default function MoviePage({
   item,
@@ -981,6 +982,8 @@ export default function MoviePage({
           </div>
         </div>
       </div>
+
+      <div className="personal-rating-shell"><PersonalRating item={details ? { ...details, media_type: "movie" } : { ...item, media_type: "movie" }} /></div>
 
       {playing && !restricted && !isUnreleased && (
         <div className="section">

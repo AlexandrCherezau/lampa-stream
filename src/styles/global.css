@@ -4785,7 +4785,9 @@ html[data-win-titlebar][data-maximized] .main {
   .sidebar-logo,
   .sidebar-sep,
   .sidebar-saved,
-  .sidebar-bottom { display: none !important; }
+  .sidebar-bottom,
+  .sidebar-feature-nav,
+  .sidebar-feature-sep { display: none !important; }
   .sidebar-context-menu { display: none !important; }
   /* Back/Search live in the mobile top bar — hide them from the bottom dock so
      it shows only the 5 main nav tabs (Home, Discover, Watch Together, Library,
@@ -4995,6 +4997,23 @@ html[data-web] .window-titlebar {
     white-space: nowrap;
     text-wrap: balance;
   }
+
+  .mobile-more { position: relative; flex: 0 0 auto; }
+  .mobile-topbar-btn.is-open,
+  .mobile-topbar-btn:focus-visible { outline: 2px solid var(--red); outline-offset: -2px; background: var(--surface2); }
+  .mobile-more-menu {
+    position: absolute; z-index: 420; top: calc(100% + 7px); right: -38px;
+    width: min(240px, calc(100vw - 20px)); padding: 6px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 16px 42px rgba(0,0,0,.55);
+  }
+  .mobile-more-item {
+    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 46px; padding: 0 12px;
+    border: 0; border-radius: 8px; background: transparent; color: var(--text2); font: inherit;
+    font-size: 14px; text-align: left; cursor: pointer;
+  }
+  .mobile-more-item:hover, .mobile-more-item.active { background: var(--surface2); color: var(--text); }
+  .mobile-more-item.active svg { color: var(--red); }
+  .mobile-more-item:focus-visible { outline: 2px solid var(--red); outline-offset: -2px; }
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -6155,4 +6174,3 @@ h1, h2, h3 {
 .episode-info {
   font-variant-numeric: tabular-nums;
 }
-

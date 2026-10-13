@@ -84,6 +84,7 @@ globalThis.fetch = (input, init = {}) => undiciFetch(input, { dispatcher: tmdbAg
 // this keeps the intent explicit).
 const { default: lampac } = await import("../api/lampac.js");
 const { default: room } = await import("../api/room.js");
+const { default: profile } = await import("../api/profile.js");
 const { default: introdb } = await import("../api/introdb.js");
 const { default: sourceHost } = await import("../api/source-host.js");
 const { default: collaps } = await import("../api/collaps.js");
@@ -141,6 +142,8 @@ app.all("/api/habster", wrap(habster));
 app.all(/^\/api\/tmdb(?:\/.*)?$/, wrap(tmdb));
 // /api/room and /api/room?code=…&op=…
 app.all(/^\/api\/room(?:\/.*)?$/, wrap(room));
+// /api/profile and /api/profile?op=… (private multi-device profile)
+app.all(/^\/api\/profile(?:\/.*)?$/, wrap(profile));
 
 // Static SPA. base:"./" in vite.config → relative asset paths, so serving dist/
 // at the origin root works. index.html is served for "/".
@@ -170,5 +173,6 @@ app.listen(PORT, HOST, () => {
   console.log(`  ▶  http://localhost:${PORT}`);
   console.log(`     /api/tmdb   → api.themoviedb.org (needs your TMDB token in Settings)`);
   console.log(`     /api/lampac → Lampac fleet relay   LAMPAC_PROXY_SECRET: ${secretState}`);
-  console.log(`     /api/room   → Watch Together (dead without Upstash env — expected)\n`);
+  console.log(`     /api/room   → Watch Together (dead without Upstash env — expected)`);
+  console.log(`     /api/profile → Private cross-device profile (needs Upstash + PROFILE_DATA_SECRET)\n`);
 });

@@ -132,6 +132,23 @@ function advertisedHeight(hint) {
     ...[...text.matchAll(/\b(\d{3,4})p?\b/gi)].map((match) => Number(match[1])).filter((height) => knownHeights.includes(height)));
 }
 
+function stableLabel(value) {
+  return String(value || "").normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function matchesSourcePreference(candidate, preference) {
+  if (!preference) return false;
+  const providerId = String(preference.providerId || "");
+  const voiceId = String(preference.voiceId || "");
+  const provider = stableLabel(preference.providerName);
+  const voice = stableLabel(preference.voiceName);
+  const providerMatches = providerId ? candidate.providerId === providerId
+    : !provider || stableLabel(candidate.providerName) === provider;
+  const voiceMatches = voiceId ? candidate.voiceId === voiceId
+    : !voice || stableLabel(candidate.voiceName) === voice;
+  return providerMatches && voiceMatches;
+}
+
 function resolvedStream(result) {
   const url = result.selected?.url;
   if (!url) throw new Error("Источник не предоставил видео");
@@ -154,6 +171,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   let preparedCandidate = null;
   let preparedFallbackCandidate = null;
   let preparedFallbackQueued = false;
+  let sourcePreference = null;
   let state = { stream: null, switching: false, sourceError: null, meta: "Ищем источники…", qualities: [], subtitles: [], audioNames: [], skip: null };
   const emit = (patch = {}) => {
     state = { ...state, ...patch };
@@ -171,6 +189,11 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     publish({ ...state, balansers: providers, balanser: active?.candidate.providerId,
       voices: candidates.filter((value) => value.providerId === active?.candidate.providerId).map((value) => ({ id: value.id, name: value.voiceName })),
       voice: active?.candidate.id, quality: active?.result.selected?.label,
+      sourcePreference: active ? {
+        providerId: active.candidate.providerId,
+        voiceId: active.candidate.voiceId || "",
+        voiceName: active.candidate.voiceName || "",
+      } : null,
     });
   };
   const settle = () => {
@@ -183,9 +206,16 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       if (failed.has(value.id)) failures.set(value.providerId, (failures.get(value.providerId) || 0) + 1);
     }
     // Try every available provider before exhausting its alternate voices.
-    const candidate = candidates.filter((value) => !failed.has(value.id))
+    const available = candidates.filter((value) => !failed.has(value.id));
+    const preferred = sourcePreference && available.find((value) => matchesSourcePreference(value, sourcePreference));
+    // A cloud-restored source choice is useful only if it is restored before the
+    // first frame. Give discovery time to surface that stable provider/voice
+    // label instead of briefly starting a different dub. Once discovery ends,
+    // the ordinary failover order remains available if the saved voice is gone.
+    if (sourcePreference && !preferred && !finished) return true;
+    const candidate = (preferred ? [preferred] : available)
       .sort((a, b) => (failures.get(a.providerId) || 0) - (failures.get(b.providerId) || 0))[0];
-    if (candidate) { choose(candidate, undefined, false); return true; }
+    if (candidate) { choose(candidate, preferred ? sourcePreference?.quality : undefined, false); return true; }
     settle();
     return !finished;
   };
@@ -240,9 +270,16 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     pending = false;
   }
   let titleForSession;
-  async function start(title) {
+  async function start(title, preference = null) {
     stop();
     titleForSession = title;
+    const stableSource = preference && typeof preference === "object"
+      ? { providerId: String(preference.providerId || ""), voiceId: String(preference.voiceId || ""),
+        providerName: String(preference.providerName || ""), voiceName: String(preference.voiceName || ""),
+        quality: String(preference.quality || "") }
+      : null;
+    sourcePreference = stableSource && (stableSource.providerId || stableSource.voiceId || stableSource.providerName || stableSource.voiceName)
+      ? stableSource : null;
     preparedCandidate = preparedCandidateFor(title);
     preparedFallbackCandidate = null;
     preparedFallbackQueued = false;
@@ -252,7 +289,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     const token = generation;
     discovery = new AbortController();
     const controller = discovery;
-    if (preparedCandidate) {
+    if (preparedCandidate && (!sourcePreference || matchesSourcePreference(preparedCandidate, sourcePreference))) {
       candidates.push(preparedCandidate);
       emit();
       next();
@@ -277,7 +314,11 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       if (token !== generation || controller.signal.aborted) return;
       if (!active && !pending) emit({ sourceError: { message: error.message }, meta: "" });
     } finally {
-      if (token === generation && !controller.signal.aborted) { finished = true; settle(); }
+      if (token === generation && !controller.signal.aborted) {
+        finished = true;
+        if (!active && !pending) next();
+        settle();
+      }
     }
   }
   return {
@@ -307,7 +348,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
         const result = active.result;
         emit({ stream: resolvedStream(result), switching: false,
           qualities: (result.qualities || []).map((value) => ({ id: value.label, label: value.height >= 2160 ? "4K" : value.label === "auto" ? "Авто" : value.label, height: value.height })),
-          subtitles: (result.subtitles || []).map((value) => ({ name: value.label, url: value.url })),
+          subtitles: (result.subtitles || []).map((value) => ({ name: value.label, language: value.language, url: value.url })),
           audioNames: result.audioNames || [],
           meta: `${active.candidate.providerName} · ${active.candidate.voiceName}`,
           skip: result.skip || null,

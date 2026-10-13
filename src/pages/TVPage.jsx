@@ -73,6 +73,7 @@ import {
 } from "../utils/storage";
 import { useAutoplay } from "../utils/useAutoplay";
 import { fetchAniSkipTimings } from "../utils/aniSkip";
+import PersonalRating from "../components/PersonalRating";
 import {
   fetchTVRating,
   isRestricted,
@@ -1775,6 +1776,8 @@ export default function TVPage({
               </div>
             </div>
           </div>
+
+          <div className="personal-rating-shell"><PersonalRating item={{ ...(d || item), media_type: "tv" }} /></div>
 
           {playing && selectedEp && (
             <div className="section">

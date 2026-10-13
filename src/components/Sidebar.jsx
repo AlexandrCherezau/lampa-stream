@@ -9,6 +9,9 @@ import {
   UsersIcon,
   SettingsIcon,
   DownloadsQueueIcon,
+  DevicesIcon,
+  RecapIcon,
+  TonightIcon,
   QuitIcon,
   BackIcon,
   HelpIcon,
@@ -150,6 +153,11 @@ const Sidebar = memo(function Sidebar({
         label="Загрузки"
         badge={activeDownloads > 0 ? activeDownloads : null}
       />
+
+      <div className="sidebar-sep sidebar-feature-sep" />
+      <SideBtn className="sidebar-feature-nav" active={page === "tonight"} onClick={() => onNavigate("tonight")} icon={<TonightIcon />} label="На вечер" />
+      <SideBtn className="sidebar-feature-nav" active={page === "recap"} onClick={() => onNavigate("recap")} icon={<RecapIcon />} label="Итоги месяца" />
+      <SideBtn className="sidebar-feature-nav" active={page === "devices"} onClick={() => onNavigate("devices")} icon={<DevicesIcon />} label="Устройства" />
 
       <div className="sidebar-sep" />
 

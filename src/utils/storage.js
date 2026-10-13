@@ -14,11 +14,13 @@ export const storage = {
   set(key, value) {
     try {
       localStorage.setItem(PREFIX + key, JSON.stringify(value));
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("streambert:storage-write", { detail: { key, value } }));
     } catch {}
   },
   remove(key) {
     try {
       localStorage.removeItem(PREFIX + key);
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("streambert:storage-write", { detail: { key, value: null } }));
     } catch {}
   },
   // Remove all streambert_ keys (used by reset)

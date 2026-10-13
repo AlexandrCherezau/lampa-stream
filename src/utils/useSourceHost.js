@@ -5,10 +5,15 @@ import { createSourceSession } from "./source-host-client";
 
 export const SWITCH_WATCHDOG_MS = 14_000;
 
-export default function useSourceHost({ enabled, apiKey, item, details, type, season, episode }) {
+export default function useSourceHost({ enabled, apiKey, item, details, type, season, episode, sourcePreference }) {
   const [value, setValue] = useState({ balansers: [], voices: [], qualities: [], subtitles: [], stream: null });
   const session = useRef(null);
   if (!session.current) session.current = createSourceSession({ publish: setValue });
+  const sourcePreferenceRef = useRef(sourcePreference);
+  // Keep the latest checkpoint-derived preference while resolution is gated.
+  // Once discovery starts, its own first candidate write must not restart the
+  // session and cancel discovery of alternate voices.
+  if (!enabled) sourcePreferenceRef.current = sourcePreference;
   const title = details?.title || details?.name || item?.title || item?.name;
   const imdbId = details?.imdb_id || details?.external_ids?.imdb_id || item?.imdb_id;
   const existingKinopoiskId = [details?.kinopoisk_id, details?.kinopoiskId, item?.kinopoisk_id, item?.kinopoiskId]
@@ -44,7 +49,7 @@ export default function useSourceHost({ enabled, apiKey, item, details, type, se
         ...(validRuntimeMinutes != null ? { runtimeMinutes: validRuntimeMinutes } : {}),
         ...(type === "tv" ? { season: Number(season), episode: Number(episode) } : {}),
       };
-      session.current.start(params);
+      session.current.start(params, sourcePreferenceRef.current);
     })();
     return () => { alive = false; controller.abort(); session.current.stop(); };
   }, [enabled, apiKey, item?.id, title, originalTitle, language, anime, year, imdbId, existingKinopoiskId, validRuntimeMinutes, catalogSource, type, season, episode]);

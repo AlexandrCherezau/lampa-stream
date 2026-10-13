@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import UpdateModal from "../components/UpdateModal";
+import { clearViewingHistory, getViewingProfileSnapshot } from "../utils/viewingProfile";
 import {
   storage,
   STORAGE_KEYS,
@@ -3492,6 +3493,7 @@ export default function SettingsPage({
   };
 
   const handleClearWatchProgress = async () => {
+    await clearViewingHistory();
     storage.remove(STORAGE_KEYS.WATCH_PROGRESS);
     storage.remove(STORAGE_KEYS.HISTORY);
     storage.remove(STORAGE_KEYS.WATCHED);
@@ -3532,7 +3534,7 @@ export default function SettingsPage({
       {showProgressConfirm && (
         <ConfirmDialog
           title="ОЧИСТИТЬ ИСТОРИЮ ПРОСМОТРОВ?"
-          description="Будут удалены история, прогресс просмотра и отметки о просмотре всех фильмов и сериалов."
+          description={`Будут удалены история, прогресс, отметки о просмотре и время для киноитогов${getViewingProfileSnapshot().profileId ? " на всех подключённых устройствах" : " на этом устройстве"}. Избранное и личные оценки сохранятся.`}
           confirmLabel="Да, очистить всё"
           onConfirm={async () => {
             setShowProgressConfirm(false);

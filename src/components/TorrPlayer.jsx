@@ -39,6 +39,8 @@ import {
   hashFromResult,
 } from "../utils/torrserver-client";
 import { storage, formatBytes, STORAGE_KEYS, setCappedMap } from "../utils/storage";
+import { getPlaybackCheckpoint, waitForViewingProfile, savePlaybackCheckpoint, flushViewingProfile, recordViewingSession } from "../utils/viewingProfile";
+import { crossedPlaybackPosition, crossedWatchedThreshold, hasGenuinePlaybackForEnd, shouldApplyResumePosition } from "../utils/playbackCompletion";
 import { fetchAniSkipTimings } from "../utils/aniSkip";
 import { fallbackTimings, mergeTimings } from "../utils/introDetect";
 import { fetchAnilistData, isAnimeContent } from "../utils/api";
@@ -50,6 +52,33 @@ const fmt = (s) => {
   const ss = Math.floor(s % 60);
   return `${m}:${ss < 10 ? "0" : ""}${ss}`;
 };
+
+const stableTrackText = (value) => String(value || "").normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+function newPlaybackSessionId() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  globalThis.crypto?.getRandomValues?.(bytes);
+  if (!bytes.some(Boolean)) for (let i = 0; i < bytes.length; i++) bytes[i] = Math.random() * 256;
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function applySavedEmbeddedSubtitle(video, preference) {
+  if (!video?.textTracks) return;
+  const external = new Set(Array.from(video.querySelectorAll("track[data-cc]"), (element) => element.track));
+  const tracks = Array.from(video.textTracks).filter((track) => !external.has(track));
+  const lang = stableTrackText(preference?.lang);
+  const name = stableTrackText(preference?.name);
+  const selected = preference?.enabled && preference.kind === "embedded"
+    ? tracks.find((track) => stableTrackText(track.language) === lang && stableTrackText(track.label) === name)
+      || (lang ? tracks.find((track) => stableTrackText(track.language) === lang) : null)
+      || (name ? tracks.find((track) => stableTrackText(track.label) === name) : null)
+    : null;
+  for (const track of tracks) track.mode = track === selected ? "showing" : "disabled";
+}
 
 // Small inline icons
 const PlayI = () => (
@@ -130,6 +159,26 @@ export default function TorrPlayer({
   onNext = null,
 }) {
   const videoRef = useRef(null);
+  const resumeTargetRef = useRef(null);
+  const resumeTargetTimerRef = useRef(null);
+  const [checkpoint, setCheckpoint] = useState(() => {
+    try { return progressKey ? getPlaybackCheckpoint(progressKey) : null; } catch { return null; }
+  });
+  const checkpointRef = useRef(checkpoint); checkpointRef.current = checkpoint;
+  const [profileReadyKey, setProfileReadyKey] = useState(null);
+  const profileReady = profileReadyKey === progressKey;
+  const viewingItem = useMemo(() => ({
+    type: isTv ? "tv" : "movie", id: String(item?.id || /^(?:movie|tv)_(\d+)/.exec(progressKey || "")?.[1] || ""),
+    title: String(details?.title || details?.name || item?.title || item?.name || title || queryTitle || ""),
+    ...(item?.poster_path ? { poster_path: item.poster_path } : {}),
+    ...(isTv ? { season: Number(season), episode: Number(episode) } : {}),
+    genres: (Array.isArray(details?.genres) ? details.genres : [])
+      .filter((genre) => Number.isSafeInteger(Number(genre?.id)) && genre?.name)
+      .map((genre) => ({ id: Number(genre.id), name: String(genre.name) })),
+    ...(details?.imdb_id || item?.imdb_id ? { imdb_id: details?.imdb_id || item?.imdb_id } : {}),
+  }), [isTv, item, details, title, queryTitle, season, episode, progressKey]);
+  const viewingItemRef = useRef(viewingItem); viewingItemRef.current = viewingItem;
+  const viewingSessionRef = useRef(null);
   const hlsRef = useRef(null);
   const errCountRef = useRef(0);
   const containerRef = useRef(null);
@@ -138,6 +187,47 @@ export default function TorrPlayer({
   saveRef.current = saveProgress;
   const markWatchedRef = useRef(onMarkWatched);
   markWatchedRef.current = onMarkWatched;
+  const persistCheckpoint = useCallback((position, preferencePatch = null, flush = false, updateState = true) => {
+    if (!progressKey || !viewingItem.id) return;
+    const previous = checkpointRef.current || {};
+    const value = {
+      position: Number.isFinite(position) && position >= 0 ? Math.round(position * 1000) / 1000 : (previous.position || 0),
+      duration: Number.isFinite(videoRef.current?.duration) && videoRef.current.duration > 0 ? videoRef.current.duration : (previous.duration || 0),
+      item: viewingItem,
+      preferences: preferencePatch ? { ...(previous.preferences || {}), ...preferencePatch } : (previous.preferences || {}),
+    };
+    checkpointRef.current = value;
+    if (updateState) setCheckpoint(value);
+    try { savePlaybackCheckpoint(progressKey, value, { flush }); } catch {}
+  }, [progressKey, viewingItem]);
+
+  useEffect(() => {
+    let live = true;
+    const controller = new AbortController();
+    let local = null;
+    try { local = progressKey ? getPlaybackCheckpoint(progressKey) : null; } catch {}
+    checkpointRef.current = local;
+    setCheckpoint(local);
+    (async () => {
+      try { await waitForViewingProfile({ timeoutMs: 8000, signal: controller.signal }); } catch {}
+      if (!live || controller.signal.aborted) return;
+      let latest = local;
+      try { latest = progressKey ? (getPlaybackCheckpoint(progressKey) || local) : null; } catch {}
+      if (latest) {
+        checkpointRef.current = latest;
+        setCheckpoint(latest);
+        if (Number.isFinite(latest.position) && latest.position >= 0) {
+          try {
+            const map = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
+            map[progressKey] = latest.position;
+            setCappedMap(STORAGE_KEYS.RESUME_TIME, map);
+          } catch {}
+        }
+      }
+      setProfileReadyKey(progressKey);
+    })();
+    return () => { live = false; controller.abort(); };
+  }, [progressKey]);
 
   const [cfg, setCfg] = useState(null);
   const [tab, setTab] = useState("search"); // search | db | add
@@ -172,6 +262,8 @@ export default function TorrPlayer({
   // use safe fallback timings (no audio tap → no mute risk). Both default to
   // "manual" so the skip buttons appear out of the box.
   const [skipTimings, setSkipTimings] = useState(null);
+  const skipTimingsRef = useRef(skipTimings);
+  skipTimingsRef.current = skipTimings;
   const [skipPrompt, setSkipPrompt] = useState(null);
   const [introSkipMode] = useState(
     () => storage.get(STORAGE_KEYS.INTRO_SKIP_MODE) || "manual",
@@ -320,7 +412,7 @@ export default function TorrPlayer({
 
   // ── When stream URL changes, attach hls.js or raw src ──────────────────────
   useEffect(() => {
-    if (!stream) return;
+    if (!stream || !profileReady) return;
     const v = videoRef.current;
     if (!v) return;
     destroyHls();
@@ -342,10 +434,19 @@ export default function TorrPlayer({
     try {
       const tMap = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
       const pMap = storage.get(STORAGE_KEYS.WATCH_PROGRESS) || {};
-      const t = tMap[progressKey];
+      const t = checkpointRef.current?.position ?? tMap[progressKey];
       const pct = pMap[progressKey];
-      if (typeof t === "number" && t >= 5 && (typeof pct !== "number" || pct < 95)) resumeStart = t;
+      if (shouldApplyResumePosition({ position: t, progressPercent: pct, hasExplicitCheckpoint: Number.isFinite(checkpointRef.current?.position) })) resumeStart = t;
     } catch {}
+    resumeTargetRef.current = resumeStart >= 0.5 ? resumeStart : null;
+    clearTimeout(resumeTargetTimerRef.current);
+    if (resumeStart >= 0.5) {
+      // Native HLS/raw players can miss `seeked` on some browsers. Never let a
+      // stalled initial resume suppress watch-time sampling indefinitely.
+      resumeTargetTimerRef.current = setTimeout(() => {
+        if (resumeTargetRef.current === resumeStart) resumeTargetRef.current = null;
+      }, 5000);
+    }
 
     const tryExternalOnly = () => {
       // TorrServer reachable but no HLS → raw may still play mp4. Clear any
@@ -353,13 +454,14 @@ export default function TorrPlayer({
       // can wedge the new attach.
       try { v.removeAttribute("src"); v.load(); } catch {}
       v.src = stream.raw;
+      v.addEventListener("loadedmetadata", () => applySavedEmbeddedSubtitle(v, checkpointRef.current?.preferences?.subtitle), { once: true });
       // The native path has no ABR ladder and no retry: a decode failure is
       // terminal, so surface it instead of leaving a dead play button with
       // no message and no recovery path.
       v.addEventListener("error", () => {
         setError("Поток недоступен. Попробуйте другой файл торрента или внешний плеер.");
       }, { once: true });
-      if (resumeStart >= 5) {
+      if (resumeStart >= 0.5) {
         v.addEventListener("loadedmetadata", () => { try { v.currentTime = resumeStart; } catch {} }, { once: true });
       }
       v.play().catch(() => {});
@@ -401,8 +503,15 @@ export default function TorrPlayer({
         });
         hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
           const tracks = hls.audioTracks || [];
-          setAudioTracks(tracks.map((t, i) => ({ id: i, name: t.name || t.lang || `Аудио ${i + 1}`, lang: t.lang || "" })));
-          const pref = preferredAudioTrackIndex(tracks, cfg?.preferAudio);
+          const labeled = tracks.map((t, i) => ({ id: i, name: t.name || t.lang || `Аудио ${i + 1}`, lang: t.lang || "" }));
+          setAudioTracks(labeled);
+          const saved = checkpointRef.current?.preferences?.audio;
+          const savedLang = stableTrackText(saved?.lang), savedName = stableTrackText(saved?.name);
+          let pref = saved ? labeled.findIndex((track) => savedLang && savedName
+            ? stableTrackText(track.lang) === savedLang && stableTrackText(track.name) === savedName : false) : -1;
+          if (pref < 0 && savedLang) pref = labeled.findIndex((track) => stableTrackText(track.lang) === savedLang);
+          if (pref < 0 && savedName) pref = labeled.findIndex((track) => stableTrackText(track.name) === savedName);
+          if (pref < 0) pref = preferredAudioTrackIndex(tracks, cfg?.preferAudio);
           if (pref >= 0) {
             try {
               hls.audioTrack = pref;
@@ -433,9 +542,9 @@ export default function TorrPlayer({
       }
     })();
 
-    return () => { disposed = true; destroyHls(); };
+    return () => { disposed = true; clearTimeout(resumeTargetTimerRef.current); destroyHls(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stream]);
+  }, [stream, profileReady]);
 
   // ── Video element events ────────────────────────────────────────────────────
   useEffect(() => {
@@ -461,13 +570,44 @@ export default function TorrPlayer({
       // Persist the exact position on pause so a reopen resumes here.
       try {
         const map = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
-        map[progressKey] = Math.max(0, Math.round((v.currentTime || 0) * 10) / 10);
+        map[progressKey] = Math.max(0, Math.round((resumeTargetRef.current ?? v.currentTime ?? 0) * 10) / 10);
         setCappedMap(STORAGE_KEYS.RESUME_TIME, map);
       } catch {}
+      persistCheckpoint(resumeTargetRef.current ?? v.currentTime ?? 0, null, false);
+      // Let the session sampler append its final segment before flushing the
+      // shared outbox at the end of this pause event dispatch.
+      Promise.resolve().then(() => flushViewingProfile({ keepalive: true })).catch(() => {});
     };
     const onWaiting = () => setWaiting(true);
     const onPlaying = () => setWaiting(false);
     const onCanPlay = () => setWaiting(false);
+    const onSeeked = () => {
+      if (resumeTargetRef.current != null && Math.abs(v.currentTime - resumeTargetRef.current) <= 1) {
+        resumeTargetRef.current = null;
+        clearTimeout(resumeTargetTimerRef.current);
+      }
+    };
+    const tracks = v.textTracks;
+    const onTrackChange = () => {
+      const selected = Array.from(tracks || []).find((track) => track.mode === "showing");
+      if (selected) persistCheckpoint(v.currentTime || checkpointRef.current?.position || 0, { subtitle: {
+        enabled: true, kind: "embedded", name: String(selected.label || ""), lang: String(selected.language || ""),
+      } });
+      else if (checkpointRef.current?.preferences?.subtitle?.enabled) persistCheckpoint(v.currentTime || checkpointRef.current?.position || 0, {
+        subtitle: { enabled: false, kind: "embedded", name: "", lang: "" },
+      });
+    };
+    tracks?.addEventListener?.("change", onTrackChange);
+    const onPageHide = () => {
+      try {
+        const map = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
+        map[progressKey] = Math.max(0, Math.round((resumeTargetRef.current ?? v.currentTime ?? 0) * 1000) / 1000);
+        setCappedMap(STORAGE_KEYS.RESUME_TIME, map);
+      } catch {}
+      persistCheckpoint(resumeTargetRef.current ?? v.currentTime ?? 0, null, false, false);
+      Promise.resolve().then(() => flushViewingProfile({ keepalive: true })).catch(() => {});
+    };
+    window.addEventListener("pagehide", onPageHide);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("durationchange", onDur);
     v.addEventListener("play", onPlay);
@@ -475,6 +615,7 @@ export default function TorrPlayer({
     v.addEventListener("waiting", onWaiting);
     v.addEventListener("playing", onPlaying);
     v.addEventListener("canplay", onCanPlay);
+    v.addEventListener("seeked", onSeeked);
     return () => {
       if (timeRaf) { cancelAnimationFrame(timeRaf); timeRaf = 0; }
       v.removeEventListener("timeupdate", onTime);
@@ -484,8 +625,12 @@ export default function TorrPlayer({
       v.removeEventListener("waiting", onWaiting);
       v.removeEventListener("playing", onPlaying);
       v.removeEventListener("canplay", onCanPlay);
+      v.removeEventListener("seeked", onSeeked);
+      tracks?.removeEventListener?.("change", onTrackChange);
+      window.removeEventListener("pagehide", onPageHide);
+      if (v.duration && v.currentTime > 0) persistCheckpoint(resumeTargetRef.current ?? v.currentTime, null, false, false);
     };
-  }, [stream, progressKey]);
+  }, [stream, progressKey, profileReady, persistCheckpoint]);
 
   // ── Auto-hide controls during playback (3s of inactivity) ───────────────────
   const showControls = useCallback(() => {
@@ -509,6 +654,7 @@ export default function TorrPlayer({
     progressTimerRef.current = setInterval(() => {
       const v = videoRef.current;
       if (!v || !v.duration) return;
+      if (resumeTargetRef.current != null) return;
       const pct = Math.min(100, Math.round((v.currentTime / v.duration) * 100));
       // saveProgress(progressKey, pct) — 2-arg signature used by both pages
       saveRef.current?.(progressKey, pct);
@@ -519,14 +665,90 @@ export default function TorrPlayer({
         map[progressKey] = Math.max(0, Math.round(v.currentTime * 10) / 10);
         setCappedMap(STORAGE_KEYS.RESUME_TIME, map);
       } catch {}
-      // watchedThreshold is SECONDS REMAINING (matches OnlinePlayer). The old
-      // `pct >= watchedThreshold` compared a percentage against 20 and marked
-      // the title watched at 20 % of runtime.
-      const remaining = v.duration - v.currentTime;
-      if (remaining >= 0 && remaining <= watchedThreshold) markWatchedRef.current?.(progressKey);
+      if (v.currentTime > 0 && !v.paused && !v.waiting && !v.seeking && resumeTargetRef.current == null) persistCheckpoint(v.currentTime);
     }, 5000);
     return () => clearInterval(progressTimerRef.current);
-  }, [stream, watchedThreshold]);
+  }, [stream, watchedThreshold, persistCheckpoint]);
+
+  const commitViewingSession = useCallback((completedAt = null) => {
+    const session = viewingSessionRef.current;
+    if (!session || session.progressKey !== progressKey || !session.segments.length || !viewingItemRef.current?.id) return;
+    try {
+      Promise.resolve(recordViewingSession({
+        sessionId: session.sessionId, progressKey, item: viewingItemRef.current,
+        segments: session.segments.map((segment) => ({ ...segment })),
+        ...(completedAt || session.completedAt ? { completedAt: completedAt || session.completedAt } : {}),
+      }, { flush: Boolean(completedAt || session.completedAt) })).catch(() => {});
+    } catch {}
+  }, [progressKey]);
+
+  useEffect(() => {
+    const sessionId = newPlaybackSessionId();
+    viewingSessionRef.current = { sessionId, progressKey, segments: [], lastSample: null, playedMediaSeconds: 0, lastFlushAt: 0, completedAt: null };
+    return () => commitViewingSession();
+  }, [progressKey, commitViewingSession]);
+
+  useEffect(() => {
+    if (!stream || !profileReady || !progressKey) return;
+    const video = videoRef.current;
+    const sample = () => {
+      const session = viewingSessionRef.current;
+      if (!video || !session || session.progressKey !== progressKey) return;
+      if (video.paused || video.seeking || video.waiting || video.readyState < 2 || resumeTargetRef.current != null) { session.lastSample = null; return; }
+      const now = Date.now(), currentTime = Number(video.currentTime);
+      if (!Number.isFinite(currentTime)) { session.lastSample = null; return; }
+      const previous = session.lastSample;
+      session.lastSample = { wall: now, media: currentTime };
+      if (!previous) return;
+      const wallElapsed = now - previous.wall, mediaElapsed = currentTime - previous.media;
+      if (wallElapsed <= 0 || wallElapsed > 2200 || mediaElapsed <= 0.08 || mediaElapsed > wallElapsed / 1000 * 2.2 + 0.15) return;
+      const segment = { start: previous.wall, end: now };
+      const last = session.segments.at(-1);
+      if (last && segment.start <= last.end + 1200) last.end = Math.max(last.end, segment.end);
+      else session.segments.push(segment);
+      session.playedMediaSeconds = (session.playedMediaSeconds || 0) + mediaElapsed;
+      const naturallyReachedOutro = crossedPlaybackPosition(previous.media, currentTime, Number(skipTimingsRef.current?.outro?.startTime), wallElapsed);
+      const naturallyReachedWatchedThreshold = crossedWatchedThreshold(previous.media, currentTime, video.duration, watchedThreshold, wallElapsed);
+      if (!session.completedAt && (naturallyReachedWatchedThreshold || naturallyReachedOutro)) {
+        session.completedAt = now;
+        markWatchedRef.current?.(progressKey);
+        commitViewingSession(now);
+      }
+      if (now - session.lastFlushAt >= 12_000) { session.lastFlushAt = now; commitViewingSession(); }
+    };
+    const timer = setInterval(sample, 1000);
+    const reset = () => { if (viewingSessionRef.current) viewingSessionRef.current.lastSample = null; };
+    const onPause = () => {
+      reset();
+      commitViewingSession();
+      Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {});
+    };
+    const ended = () => {
+      reset();
+      const session = viewingSessionRef.current;
+      if (session && !session.completedAt && session.segments.length && hasGenuinePlaybackForEnd(session.playedMediaSeconds, video?.duration)) {
+        session.completedAt = Date.now();
+        markWatchedRef.current?.(progressKey);
+      }
+      commitViewingSession(session?.completedAt || null);
+    };
+    const onPageHide = () => { reset(); commitViewingSession(); Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {}); };
+    video?.addEventListener("seeking", reset);
+    video?.addEventListener("waiting", reset);
+    video?.addEventListener("pause", onPause);
+    video?.addEventListener("ended", ended);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      clearInterval(timer);
+      video?.removeEventListener("seeking", reset);
+      video?.removeEventListener("waiting", reset);
+      video?.removeEventListener("pause", onPause);
+      video?.removeEventListener("ended", ended);
+      window.removeEventListener("pagehide", onPageHide);
+      reset(); commitViewingSession();
+      Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {});
+    };
+  }, [stream, profileReady, progressKey, watchedThreshold, commitViewingSession]);
 
   // ── AniList + AniSkip (intro/outro/recap) for anime ─────────────────────────
   // Same source as OnlinePlayer: resolve TMDB → AniList idMal → AniSkip exact
@@ -704,6 +926,10 @@ export default function TorrPlayer({
       setAudioId(id);
     } catch {}
     setShowTracks(false);
+    const track = audioTracks.find((value) => value.id === id);
+    if (track) persistCheckpoint(videoRef.current?.currentTime || checkpointRef.current?.position || 0, { audio: {
+      name: String(track.name || ""), lang: String(track.lang || ""),
+    } });
   };
   const doSkip = () => {
     if (!skipPrompt || !skipTimings?.[skipPrompt]) return;

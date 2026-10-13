@@ -65,6 +65,99 @@ function applyExternalSubtitle(video, selectedId) {
   elements.forEach((element) => { element.track.mode = element === selectedElement ? "showing" : "disabled"; });
   if (selectedElement) selectedElement.track.mode = "showing";
 }
+
+function normalizedTrackValue(value) {
+  return String(value || "").normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function newPlaybackSessionId() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  globalThis.crypto?.getRandomValues?.(bytes);
+  if (!bytes.some(Boolean)) for (let i = 0; i < bytes.length; i++) bytes[i] = Math.random() * 256;
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function findPreferredAudioTrack(tracks, preference) {
+  if (!preference || !tracks?.length) return -1;
+  const lang = normalizedTrackValue(preference.lang);
+  const name = normalizedTrackValue(preference.name);
+  const matches = tracks.map((track, index) => ({ index,
+    trackLang: normalizedTrackValue(track.lang || track.language),
+    trackName: normalizedTrackValue(track.name || track.label || track.labels?.[0]?.text),
+  }));
+  if (lang && name) {
+    const exact = matches.find(({ trackLang, trackName }) => trackLang === lang && trackName === name);
+    if (exact) return exact.index;
+  }
+  if (lang) {
+    const byLang = matches.find(({ trackLang }) => trackLang === lang);
+    if (byLang) return byLang.index;
+  }
+  if (name) return matches.find(({ trackName }) => trackName === name)?.index ?? -1;
+  return -1;
+}
+
+function findPreferredSubtitle(subtitles, preference) {
+  if (!preference?.enabled || !subtitles?.length) return -1;
+  const lang = normalizedTrackValue(preference.lang || preference.language);
+  const name = normalizedTrackValue(preference.name);
+  const rows = subtitles.map((value, index) => ({ index,
+    lang: normalizedTrackValue(value.lang || value.language), name: normalizedTrackValue(value.name || value.label),
+  }));
+  if (lang && name) {
+    const exact = rows.find((row) => row.lang === lang && row.name === name);
+    if (exact) return exact.index;
+  }
+  if (lang) {
+    const byLang = rows.find((row) => row.lang === lang);
+    if (byLang) return byLang.index;
+  }
+  return name ? rows.find((row) => row.name === name)?.index ?? -1 : -1;
+}
+
+function applyEmbeddedSubtitle(video, preference) {
+  if (!video?.textTracks) return false;
+  const externalTracks = new Set(Array.from(video.querySelectorAll("track[data-cc]"), (element) => element.track));
+  const tracks = Array.from(video.textTracks);
+  const embedded = tracks.map((track, index) => ({ track, index }))
+    .filter(({ track }) => !externalTracks.has(track));
+  const lang = normalizedTrackValue(preference?.lang);
+  const name = normalizedTrackValue(preference?.name);
+  let selected = null;
+  if (preference?.enabled && preference.kind === "embedded") {
+    selected = embedded.find(({ track }) => normalizedTrackValue(track.language) === lang && normalizedTrackValue(track.label) === name)
+      || (lang ? embedded.find(({ track }) => normalizedTrackValue(track.language) === lang) : null)
+      || (name ? embedded.find(({ track }) => normalizedTrackValue(track.label) === name) : null);
+  }
+  for (const { track } of embedded) track.mode = selected?.track === track ? "showing" : "disabled";
+  return Boolean(selected);
+}
+
+function makeViewingItem(item, details, type, season, episode, progressKey) {
+  const source = details || item || {};
+  const yearValue = source.release_date?.slice?.(0, 4) || source.first_air_date?.slice?.(0, 4)
+    || item?.release_date?.slice?.(0, 4) || item?.first_air_date?.slice?.(0, 4);
+  const genres = Array.isArray(source.genres) ? source.genres
+    : Array.isArray(item?.genre_ids) ? item.genre_ids.map((id) => ({ id, name: "" })) : [];
+  return {
+    type: type === "tv" ? "tv" : "movie",
+    id: String(item?.id ?? source.id ?? /^(?:movie|tv)_(\d+)/.exec(progressKey || "")?.[1] ?? ""),
+    title: String(source.title || source.name || item?.title || item?.name || ""),
+    ...(Number(yearValue) > 0 ? { year: Number(yearValue) } : {}),
+    ...(source.poster_path || item?.poster_path ? { poster_path: source.poster_path || item.poster_path } : {}),
+    ...(type === "tv" ? { season: Number(season), episode: Number(episode) } : {}),
+    genres: genres.filter((genre) => Number.isSafeInteger(Number(genre?.id)) && genre?.name)
+      .map((genre) => ({ id: Number(genre.id), name: String(genre.name) })),
+    ...(source.imdb_id || item?.imdb_id ? { imdb_id: source.imdb_id || item.imdb_id } : {}),
+    ...((source.kinopoisk_id || source.kinopoiskId || item?.kinopoisk_id || item?.kinopoiskId)
+      ? { kinopoisk_id: source.kinopoisk_id || source.kinopoiskId || item.kinopoisk_id || item.kinopoiskId } : {}),
+    ...(item?.catalogSource ? { catalogSource: String(item.catalogSource) } : {}),
+  };
+}
 // dash.js is loaded lazily (only on desktop) to avoid shipping its 779KB
 // bundle to mobile, where HLS (ABR) is preferred for faster startup.
 import {
@@ -77,6 +170,8 @@ import { fetchAniSkipTimings, resolveAnimeEpisode } from "../utils/aniSkip";
 import { fetchIntroDbTimings, mergeTimings, providerSkipRanges } from "../utils/introDetect";
 import { applySync as applyWatchSync } from "../utils/watchParty";
 import { storage, STORAGE_KEYS, getStoredVolume, getStoredMuted, setStoredVolume, setStoredMuted, setCappedMap } from "../utils/storage";
+import { getPlaybackCheckpoint, waitForViewingProfile, savePlaybackCheckpoint, flushViewingProfile, recordViewingSession } from "../utils/viewingProfile";
+import { crossedPlaybackPosition, crossedWatchedThreshold, hasGenuinePlaybackForEnd, shouldApplyResumePosition } from "../utils/playbackCompletion";
 import {
   collapsResolve,
   collapsFindKp,
@@ -191,6 +286,15 @@ export default function OnlinePlayer({
   onPlaybackState = null, // host: cb({ playing, position }) on local control changes
 }) {
   const videoRef = useRef(null);
+  const [checkpoint, setCheckpoint] = useState(() => {
+    try { return progressKey ? getPlaybackCheckpoint(progressKey) : null; } catch { return null; }
+  });
+  const checkpointRef = useRef(checkpoint); checkpointRef.current = checkpoint;
+  const [profileReadyKey, setProfileReadyKey] = useState(null);
+  const profileReady = profileReadyKey === progressKey;
+  const checkpointItem = useMemo(() => makeViewingItem(item, details, type, season, episode, progressKey), [item, details, type, season, episode, progressKey]);
+  const checkpointItemRef = useRef(checkpointItem); checkpointItemRef.current = checkpointItem;
+  const viewingSessionRef = useRef(null);
   const hlsRef = useRef(null);
   const dashRef = useRef(null);
   const engineRef = useRef(null); // "dash" | "hls"
@@ -274,6 +378,8 @@ export default function OnlinePlayer({
   const [cast, setCast] = useState([]); // [{ id, name, character, profile }]
 
   const [skipTimings, setSkipTimings] = useState(null);
+  const skipTimingsRef = useRef(skipTimings);
+  skipTimingsRef.current = skipTimings;
   const [skipPrompt, setSkipPrompt] = useState(null);
   const [introSkipMode] = useState(() => storage.get(STORAGE_KEYS.INTRO_SKIP_MODE) || "manual");
   // Confirmed IntroDB timings for movies/series; users can choose manual or auto.
@@ -316,7 +422,8 @@ export default function OnlinePlayer({
   // Always called (React hook rules); it no-ops internally when !enabled.
   const isLampac = provider === "lampac";
   const lampac = useSourceHost({
-    enabled: isLampac, apiKey, item, details, type, season, episode,
+    enabled: isLampac && profileReady, apiKey, item, details, type, season, episode,
+    sourcePreference: checkpoint?.preferences,
   });
   // Fleet pickers (empty for Collaps → their menus don't render).
   const balansers = isLampac ? lampac.balansers : [];
@@ -350,6 +457,45 @@ export default function OnlinePlayer({
       setCappedMap(STORAGE_KEYS.RESUME_TIME, map);
     } catch {}
   }, [progressKey]);
+  const persistCheckpoint = useCallback((position, preferencePatch = null, flush = false, updateState = true) => {
+    if (!progressKey || !checkpointItem.id) return;
+    const previous = checkpointRef.current || {};
+    const preferences = preferencePatch ? { ...(previous.preferences || {}), ...preferencePatch } : (previous.preferences || {});
+    const value = {
+      position: Number.isFinite(position) && position >= 0 ? Math.round(position * 1000) / 1000 : (previous.position || 0),
+      duration: Number.isFinite(videoRef.current?.duration) && videoRef.current.duration > 0 ? videoRef.current.duration : (previous.duration || 0),
+      item: checkpointItem,
+      preferences,
+    };
+    checkpointRef.current = value;
+    if (updateState) setCheckpoint(value);
+    try { savePlaybackCheckpoint(progressKey, value, { flush }); } catch {}
+  }, [progressKey, checkpointItem]);
+
+  // A linked account refreshes its shared checkpoint before the first source
+  // resolves. Unlinked/offline use returns immediately from this helper and
+  // continues from the local snapshot already available above.
+  useEffect(() => {
+    let live = true;
+    const controller = new AbortController();
+    let local = null;
+    try { local = progressKey ? getPlaybackCheckpoint(progressKey) : null; } catch {}
+    checkpointRef.current = local;
+    setCheckpoint(local);
+    (async () => {
+      try { await waitForViewingProfile({ timeoutMs: 8000, signal: controller.signal }); } catch {}
+      if (!live || controller.signal.aborted) return;
+      let latest = local;
+      try { latest = progressKey ? (getPlaybackCheckpoint(progressKey) || local) : null; } catch {}
+      if (latest) {
+        checkpointRef.current = latest;
+        setCheckpoint(latest);
+        if (Number.isFinite(latest.position) && latest.position >= 0) saveResumeTime(latest.position);
+      }
+      setProfileReadyKey(progressKey);
+    })();
+    return () => { live = false; controller.abort(); };
+  }, [progressKey, saveResumeTime]);
   // Advance to the next fleet balancer when a stream that resolved fine won't
   // actually play. Returns true if it jumped (→ keep the player in loading), false
   // when the fleet is exhausted (→ let the caller settle into the error screen).
@@ -425,12 +571,13 @@ export default function OnlinePlayer({
     try {
       const tMap = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
       const pMap = storage.get(STORAGE_KEYS.WATCH_PROGRESS) || {};
-      let t = resumeTargetRef.current ?? tMap[progressKey];
+      let t = resumeTargetRef.current ?? checkpointRef.current?.position ?? tMap[progressKey];
       if (typeof t !== "number") {
         const pct = pMap[progressKey];
         t = typeof pct === "number" ? (pct / 100) * dur : null; // legacy fallback
       }
-      if (typeof t !== "number" || t < 5 || (resumeTargetRef.current == null && t > dur - 10)) return;
+      const explicitCheckpoint = Number.isFinite(checkpointRef.current?.position) || resumeTargetRef.current != null;
+      if (!shouldApplyResumePosition({ position: t, progressPercent: pMap[progressKey], hasExplicitCheckpoint: explicitCheckpoint, duration: dur })) return;
       t = Math.min(t, dur - 0.1);
       // Mark a resume-seek in flight so the progress interval doesn't overwrite
       // the saved position with a stale 0 while the seek settles. Cleared on
@@ -453,7 +600,7 @@ export default function OnlinePlayer({
 
   // ── Resolve the Collaps stream (provider === "online") ──────────────────────
   useEffect(() => {
-    if (isLampac) return; // the Lampac fleet resolves via useLampacSource below
+    if (isLampac || !profileReady) return; // wait for a linked cross-device checkpoint before resolving
     let cancelled = false;
     const controller = new AbortController();
     (async () => {
@@ -500,7 +647,7 @@ export default function OnlinePlayer({
     })();
     return () => { cancelled = true; controller.abort(); destroyAll(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item?.id, type, season, episode, apiKey, isLampac]);
+  }, [item?.id, type, season, episode, apiKey, isLampac, profileReady]);
 
   // ── Reflect the Lampac fleet's resolved stream into the engine (provider ===
   // "lampac"). The hook owns the whole descent (balancer → dub → quality → a
@@ -572,6 +719,24 @@ export default function OnlinePlayer({
     if (!isLampac) { setNotice(null); return; }
     setNotice(lampac.sourceError && fleetPlayedRef.current ? lampac.sourceError.message : null);
   }, [isLampac, lampac.sourceError]);
+
+  useEffect(() => {
+    if (!isLampac || !lampac.sourcePreference) return;
+    const currentTime = videoRef.current?.currentTime || 0;
+    let legacyPosition = 0;
+    try { legacyPosition = Number((storage.get(STORAGE_KEYS.RESUME_TIME) || {})[progressKey]) || 0; } catch {}
+    // Discovery may select a voice before HLS applies its startPosition. Saving
+    // the preference at that instant must not replace a legacy resume point
+    // with zero; an explicit checkpoint at zero remains authoritative.
+    const position = currentTime > 0 ? currentTime
+      : (resumeTargetRef.current ?? (checkpointRef.current ? checkpointRef.current.position : legacyPosition));
+    persistCheckpoint(position, {
+      providerId: lampac.sourcePreference.providerId,
+      voiceId: lampac.sourcePreference.voiceId,
+      voiceName: lampac.sourcePreference.voiceName,
+      ...(lampac.quality ? { quality: lampac.quality } : {}),
+    });
+  }, [isLampac, lampac.sourcePreference?.providerId, lampac.sourcePreference?.voiceId, lampac.sourcePreference?.voiceName, lampac.quality, progressKey, persistCheckpoint]);
 
   // ── Switching watchdog: the overlay can NEVER outlive a switch ────────────────
   // The `switching` freeze is cleared by the hook (aborted/stale/error descents) or
@@ -917,12 +1082,14 @@ export default function OnlinePlayer({
               _track: t,
             }));
             setAudioTracks(labeled);
+            const stored = checkpointRef.current?.preferences?.audio;
+            const savedIdx = findPreferredAudioTrack(labeled, stored);
             const ruIdx = preferredRuTrackIndex(
-              tracks.map((t, i) => ({ id: i, name: audioNames[i] || t.lang || "", lang: t.lang || "" })),
-              audioNames,
+              tracks.map((t, i) => ({ id: i, name: audioNames[i] || t.lang || "", lang: t.lang || "" })), audioNames,
             );
-            if (ruIdx >= 0 && tracks[ruIdx]) {
-              try { player.setCurrentTrack(tracks[ruIdx]); setAudioId(ruIdx); } catch {}
+            const targetIdx = savedIdx >= 0 ? savedIdx : ruIdx;
+            if (targetIdx >= 0 && tracks[targetIdx]) {
+              try { player.setCurrentTrack(tracks[targetIdx]); setAudioId(targetIdx); } catch {}
             }
           } catch {}
         };
@@ -1023,9 +1190,10 @@ export default function OnlinePlayer({
       try {
         const tMap = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
         const pMap = storage.get(STORAGE_KEYS.WATCH_PROGRESS) || {};
-        const t = resumeTargetRef.current ?? tMap[progressKey];
+        const t = resumeTargetRef.current ?? checkpointRef.current?.position ?? tMap[progressKey];
         const pct = pMap[progressKey];
-        if (typeof t === "number" && t >= 5 && (resumeTargetRef.current != null || typeof pct !== "number" || pct < 95)) startPosition = t;
+        const explicitCheckpoint = Number.isFinite(checkpointRef.current?.position) || resumeTargetRef.current != null;
+        if (shouldApplyResumePosition({ position: t, progressPercent: pct, hasExplicitCheckpoint: explicitCheckpoint })) startPosition = t;
       } catch {}
       // Buffer config (defaults were maxBufferLength 30 s / maxMaxBufferLength
       // 600 s / maxBufferSize 60 MB): a 30 s forward buffer leaves the playhead
@@ -1104,7 +1272,8 @@ export default function OnlinePlayer({
         const tracks = hls.audioTracks || [];
         const labeled = labelAudioTracks(tracks, audioNames);
         setAudioTracks(labeled);
-        const pref = preferredRuTrackIndex(tracks, audioNames);
+        const savedIdx = findPreferredAudioTrack(labeled, checkpointRef.current?.preferences?.audio);
+        const pref = savedIdx >= 0 ? savedIdx : preferredRuTrackIndex(tracks, audioNames);
         if (pref >= 0) { try { hls.audioTrack = pref; setAudioId(pref); } catch {} }
       });
       hls.on(Hls.Events.ERROR, (_e, data) => {
@@ -1206,6 +1375,26 @@ export default function OnlinePlayer({
     // disabled, so `mode = disabled` alone is not a reliable lazy-load guard.
   }, [state, subtitles, stream]);
 
+  // Restore subtitles by language/name rather than array position, which changes
+  // between providers and on a different device. OFF is a real preference too.
+  useEffect(() => {
+    if (state !== "ready") return;
+    const preference = checkpointRef.current?.preferences?.subtitle;
+    if (!preference) return;
+    if (!preference.enabled) {
+      setSubId(-1);
+      applyExternalSubtitle(videoRef.current, -1);
+      applyEmbeddedSubtitle(videoRef.current, preference);
+      return;
+    }
+    if (preference.kind === "external" && subtitles.length) {
+      const index = findPreferredSubtitle(subtitles, preference);
+      if (index >= 0) setSubId(index);
+    } else if (preference.kind === "embedded") {
+      applyEmbeddedSubtitle(videoRef.current, preference);
+    }
+  }, [state, stream, subtitles]);
+
   // A source/quality/voice re-attach replaces the external <track> nodes. Keep
   // the viewer's selected subtitle and load only that one on the replacement.
   useEffect(() => {
@@ -1213,6 +1402,33 @@ export default function OnlinePlayer({
     const v = videoRef.current;
     if (v) applyExternalSubtitle(v, subId);
   }, [state, stream, subtitles, subId]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    const tracks = video?.textTracks;
+    if (!tracks) return;
+    const onTrackChange = () => {
+      const showing = Array.from(tracks).find((track) => track.mode === "showing");
+      if (!showing) {
+        const previous = checkpointRef.current?.preferences?.subtitle;
+        if (previous?.enabled) persistCheckpoint(video.currentTime || 0, { subtitle: { enabled: false, kind: "embedded", name: "", lang: "" } });
+        return;
+      }
+      const external = Array.from(video.querySelectorAll("track[data-cc]"))
+        .some((candidate) => candidate.track === showing);
+      if (external) return;
+      persistCheckpoint(video.currentTime || 0, { subtitle: {
+        enabled: true, kind: "embedded", name: String(showing.label || ""), lang: String(showing.language || ""),
+      } });
+    };
+    const onTrackAdded = () => applyEmbeddedSubtitle(video, checkpointRef.current?.preferences?.subtitle);
+    tracks.addEventListener?.("change", onTrackChange);
+    tracks.addEventListener?.("addtrack", onTrackAdded);
+    return () => {
+      tracks.removeEventListener?.("change", onTrackChange);
+      tracks.removeEventListener?.("addtrack", onTrackAdded);
+    };
+  }, [stream, state, persistCheckpoint]);
 
   // ── Video element events ────────────────────────────────────────────────────
   useEffect(() => {
@@ -1255,7 +1471,17 @@ export default function OnlinePlayer({
     };
     const onDur = () => setDuration(v.duration || 0);
     const onPlay = () => { setPlaying(true); hadPlayedRef.current = true; };
-    const onPause = () => { setPlaying(false); if (v.currentTime > 0 && resumeTargetRef.current == null) saveResumeTime(v.currentTime); };
+    const onPause = () => {
+      setPlaying(false);
+      const position = resumeTargetRef.current ?? v.currentTime;
+      if (Number.isFinite(position) && v.duration > 0) {
+        saveResumeTime(position);
+        persistCheckpoint(position, null, false);
+        // Let the watch-session pause listener append its final interval before
+        // the shared flush snapshots the outbox.
+        Promise.resolve().then(() => flushViewingProfile({ keepalive: true })).catch(() => {});
+      }
+    };
     // resume-seek settled → safe to save again. Also the moment a post-switch
     // seek lands, so drop the fleet's `switching` freeze here (the new media has
     // attached and is at the right position — the UI can unfreeze).
@@ -1294,6 +1520,7 @@ export default function OnlinePlayer({
       // before our STREAM_INITIALIZED/MANIFEST_PARSED re-apply runs, or resets
       // it afterwards on internal re-init. Cheap no-op if already correct.
       try { v.volume = volumeRef.current; v.muted = mutedRef.current; } catch {}
+      applyEmbeddedSubtitle(v, checkpointRef.current?.preferences?.subtitle);
       resumeAt(v);
       // F4 (native path): covers the mp4 / Safari native HLS / progressive file
       // attach (no dash/hls engine callbacks). loadedmetadata is the universal
@@ -1321,7 +1548,7 @@ export default function OnlinePlayer({
       v.removeEventListener("loadedmetadata", onLoadedMeta);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stream, progressKey]);
+  }, [stream, progressKey, persistCheckpoint]);
 
   // ── Watch Together sync ─────────────────────────────────────────────────────
   // Follower: enforce the host's playback state (drift-correct + play/pause)
@@ -1385,16 +1612,104 @@ export default function OnlinePlayer({
       const pct = Math.min(100, Math.round((v.currentTime / v.duration) * 100));
       saveRef.current?.(progressKey, pct);
       saveResumeTime(v.currentTime);
-      // Auto-mark watched when only `watchedThreshold` seconds remain (matches
-      // the desktop player's semantics — NOT a percentage, so reopening at 80%
-      // doesn't instantly mark it watched). Default 20s before the end.
-      const remaining = v.duration - v.currentTime;
-      if (remaining >= 0 && remaining <= watchedThreshold) {
-        markWatchedRef.current?.(progressKey);
-      }
     }, 5000);
     return () => clearInterval(progressTimerRef.current);
   }, [stream, watchedThreshold, progressKey]);
+
+  const commitViewingSession = useCallback((completedAt = null) => {
+    const session = viewingSessionRef.current;
+    if (!session || session.progressKey !== progressKey || !session.segments.length || !checkpointItemRef.current?.id) return;
+    try {
+      const result = recordViewingSession({
+        sessionId: session.sessionId,
+        progressKey,
+        item: checkpointItemRef.current,
+        segments: session.segments.map((segment) => ({ ...segment })),
+        ...(completedAt || session.completedAt ? { completedAt: completedAt || session.completedAt } : {}),
+      }, { flush: Boolean(completedAt || session.completedAt) });
+      Promise.resolve(result).catch(() => {});
+    } catch {}
+  }, [progressKey]);
+
+  useEffect(() => {
+    const sessionId = newPlaybackSessionId();
+    viewingSessionRef.current = { sessionId, progressKey, segments: [], lastSample: null, playedMediaSeconds: 0, lastFlushAt: 0, completedAt: null };
+    return () => commitViewingSession();
+  }, [progressKey, commitViewingSession]);
+
+  // Count only wall-clock intervals where the video is actively playing and its
+  // media clock advances at a plausible rate. Seeks, initial resume, intro skips,
+  // pauses, and buffering reset the baseline, so those gaps never enter stats.
+  useEffect(() => {
+    if (!stream || !progressKey) return;
+    const timer = setInterval(() => {
+      const video = videoRef.current;
+      const session = viewingSessionRef.current;
+      if (!video || !session || session.progressKey !== progressKey) return;
+      if (video.paused || video.seeking || video.waiting || video.readyState < 2 || resumeTargetRef.current != null) {
+        session.lastSample = null;
+        return;
+      }
+      const now = Date.now();
+      const currentTime = Number(video.currentTime);
+      if (!Number.isFinite(currentTime)) { session.lastSample = null; return; }
+      const previous = session.lastSample;
+      session.lastSample = { wall: now, media: currentTime };
+      if (!previous) return;
+      const wallElapsed = now - previous.wall;
+      const mediaElapsed = currentTime - previous.media;
+      if (wallElapsed <= 0 || wallElapsed > 2200 || mediaElapsed <= 0.08 || mediaElapsed > wallElapsed / 1000 * 2.2 + 0.15) return;
+      const segment = { start: previous.wall, end: now };
+      const last = session.segments[session.segments.length - 1];
+      if (last && segment.start <= last.end + 1200) last.end = Math.max(last.end, segment.end);
+      else session.segments.push(segment);
+      session.playedMediaSeconds = (session.playedMediaSeconds || 0) + mediaElapsed;
+      const naturallyReachedOutro = crossedPlaybackPosition(previous.media, currentTime, Number(skipTimingsRef.current?.outro?.startTime), wallElapsed);
+      const naturallyReachedWatchedThreshold = crossedWatchedThreshold(previous.media, currentTime, video.duration, watchedThreshold, wallElapsed);
+      if (!session.completedAt && (naturallyReachedWatchedThreshold || naturallyReachedOutro)) {
+        session.completedAt = now;
+        markWatchedRef.current?.(progressKey);
+        commitViewingSession(now);
+      }
+      if (now - session.lastFlushAt >= 12_000) {
+        session.lastFlushAt = now;
+        commitViewingSession();
+      }
+    }, 1000);
+    const reset = () => { if (viewingSessionRef.current) viewingSessionRef.current.lastSample = null; };
+    const onPause = () => {
+      reset();
+      commitViewingSession();
+      Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {});
+    };
+    const ended = () => {
+      reset();
+      const session = viewingSessionRef.current;
+      if (session && !session.completedAt && session.segments.length && hasGenuinePlaybackForEnd(session.playedMediaSeconds, video?.duration)) {
+        session.completedAt = Date.now();
+        markWatchedRef.current?.(progressKey);
+      }
+      commitViewingSession(session?.completedAt || null);
+    };
+    const video = videoRef.current;
+    video?.addEventListener("seeking", reset);
+    video?.addEventListener("waiting", reset);
+    video?.addEventListener("pause", onPause);
+    video?.addEventListener("ended", ended);
+    const onPageHide = () => { reset(); commitViewingSession(); Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {}); };
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      clearInterval(timer);
+      video?.removeEventListener("seeking", reset);
+      video?.removeEventListener("waiting", reset);
+      video?.removeEventListener("pause", onPause);
+      video?.removeEventListener("ended", ended);
+      window.removeEventListener("pagehide", onPageHide);
+      reset();
+      commitViewingSession();
+      Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {});
+    };
+  }, [stream, progressKey, watchedThreshold, commitViewingSession]);
 
   // ── Persist the exact resume timecode on hide / unmount ─────────────────────
   // The 5s timer + pause save cover normal playback; this captures the precise
@@ -1404,7 +1719,12 @@ export default function OnlinePlayer({
     if (!stream) return;
     const flush = () => {
       const v = videoRef.current;
-      if (v && v.duration && v.currentTime > 0) saveResumeTime(v.currentTime);
+      if (v && v.duration && v.currentTime >= 0) {
+        const position = resumeTargetRef.current ?? v.currentTime;
+        saveResumeTime(position);
+        persistCheckpoint(position, null, false, false);
+        Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {});
+      }
     };
     const onVis = () => { if (document.visibilityState === "hidden") flush(); };
     document.addEventListener("visibilitychange", onVis);
@@ -1414,7 +1734,7 @@ export default function OnlinePlayer({
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("pagehide", flush);
     };
-  }, [stream, saveResumeTime]);
+  }, [stream, saveResumeTime, persistCheckpoint]);
 
   // ── Skip intro/outro/recap + next-episode-when-ending detection ───────────────
   // The active mode depends on the content: anime series use introSkipMode
@@ -1719,6 +2039,9 @@ export default function OnlinePlayer({
       try { if (hlsRef.current) hlsRef.current.audioTrack = track.id; } catch {}
     }
     setAudioId(idx); setShowTracks(false);
+    persistCheckpoint(videoRef.current?.currentTime || resumeTargetRef.current || checkpointRef.current?.position || 0, { audio: {
+      name: String(track.name || ""), lang: String(track.lang || ""),
+    } });
   };
 
   const selectQuality = (idx) => {
@@ -1750,6 +2073,7 @@ export default function OnlinePlayer({
         if (origIdx >= 0) { hls.currentLevel = origIdx; setCurrentLevel(idx); }
       }
     }
+    persistCheckpoint(videoRef.current?.currentTime || resumeTargetRef.current || checkpointRef.current?.position || 0, { quality: idx < 0 ? "auto" : String(levels[idx]?.label || "") });
     setShowQuality(false);
   };
 
@@ -1799,6 +2123,11 @@ export default function OnlinePlayer({
     const v = videoRef.current; if (!v) return;
     applyExternalSubtitle(v, id);
     setSubId(id); setShowSubs(false);
+    const selected = id >= 0 ? subtitles[id] : null;
+    persistCheckpoint(v.currentTime || resumeTargetRef.current || checkpointRef.current?.position || 0, { subtitle: selected ? {
+      enabled: true, kind: "external", name: String(selected.name || selected.label || ""),
+      lang: String(selected.language || selected.lang || ""),
+    } : { enabled: false, kind: "external", name: "", lang: "" } });
   };
   const doSkip = () => {
     if (syncRole === "follower" || state !== "ready" || switching || !skipPrompt) return;
