@@ -253,17 +253,65 @@ async function preparedMovieResolveIsBoundedAndExact() {
 
   let state;
   const playbackCalls = [];
+  const discoveryGate = deferred();
+  const streamReady = deferred();
+  let discoveryFinished = false;
   const session = createSourceSession({
-    publish: (value) => { state = value; },
-    discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "fresh-signed-id" }),
+    publish: (value) => { state = value; if (value.stream) streamReady.resolve(); },
+    discover: async (_title, { onEvent }) => {
+      await discoveryGate.promise;
+      onEvent("candidate", { ...habster, id: "fresh-signed-id" });
+      onEvent("candidate", { ...habster, id: "alternate-signed-id", voiceId: "voice-2", voiceName: "Dub" });
+      discoveryFinished = true;
+    },
     resolve: async (...args) => { playbackCalls.push(args); return result("https://media.test/fresh.m3u8"); },
   });
-  await session.start(title);
+  const playbackDiscovery = session.start(title);
+  await streamReady.promise;
+  assert.equal(discoveryFinished, false, "the cached stream is selected before ordinary Habster discovery finishes");
   assert.equal(state.stream.hls, "https://media.test/warm.m3u8");
+  discoveryGate.resolve();
+  await playbackDiscovery;
+  assert.equal(discoveryFinished, true, "normal discovery continues in the background");
+  assert.deepEqual(state.voices.map((voice) => voice.name), ["Original", "Dub"],
+    "fresh discovery deduplicates only the prepared default voice and keeps alternate dubs");
   assert.equal(playbackCalls.length, 0, "first automatic choice reuses the early resolve");
   await session.selectQuality("2160p");
   assert.equal(playbackCalls.length, 1, "explicit quality selection always performs a fresh resolve");
   session.stop();
+
+  const lateFallbackTitle = { ...title, tmdbId: 47 };
+  await prepareMovieSource(lateFallbackTitle, {
+    discover: async (_title, options) => options.onEvent("candidate", habster),
+    resolve: async () => result("https://media.test/prepared-failover.m3u8"),
+  });
+  let lateEvent;
+  const lateFallbackCalls = [];
+  const lateWarmReady = deferred();
+  const lateStreamReady = deferred();
+  const lateFallbackSession = createSourceSession({
+    publish: (value) => {
+      if (value.stream?.hls === "https://media.test/prepared-failover.m3u8") lateWarmReady.resolve();
+      if (value.stream?.hls === "https://media.test/fresh-failover.m3u8") lateStreamReady.resolve();
+    },
+    discover: async (_title, { onEvent }) => { lateEvent = onEvent; await deferredDiscovery.promise; },
+    resolve: async (id) => {
+      lateFallbackCalls.push(id);
+      return result("https://media.test/fresh-failover.m3u8");
+    },
+  });
+  const deferredDiscovery = deferred();
+  const lateStart = lateFallbackSession.start(lateFallbackTitle);
+  // The cached candidate is active while ordinary discovery is still held.
+  await lateWarmReady.promise;
+  assert.equal(lateFallbackCalls.length, 0);
+  lateFallbackSession.reportPlaybackFailure();
+  lateEvent("candidate", { ...habster, id: "late-fresh-signed-id" });
+  await lateStreamReady.promise;
+  assert.deepEqual(lateFallbackCalls, ["late-fresh-signed-id"]);
+  deferredDiscovery.resolve();
+  await lateStart;
+  lateFallbackSession.stop();
 
   const pendingTitle = { ...title, tmdbId: 45 };
   const pendingResult = deferred();
@@ -276,7 +324,9 @@ async function preparedMovieResolveIsBoundedAndExact() {
   let duplicateResolveCalls = 0;
   const pendingSession = createSourceSession({
     publish: (value) => { pendingState = value; if (value.stream) pendingPlaybackReady.resolve(); },
-    discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "pending-playback-id" }),
+    discover: async (_title, { onEvent }) => {
+      onEvent("candidate", { ...habster, id: "pending-playback-id" });
+    },
     resolve: async () => { duplicateResolveCalls++; return result("https://media.test/duplicate.m3u8"); },
   });
   const pendingStart = pendingSession.start(pendingTitle);
@@ -335,18 +385,28 @@ async function preparedMovieResolveIsBoundedAndExact() {
   afterAbort.stop();
 
   const failedTitle = { ...title, tmdbId: 44 };
+  const failedWarmResult = deferred();
   await prepareMovieSource(failedTitle, {
     discover: async (_title, options) => options.onEvent("candidate", habster),
-    resolve: async () => { throw new Error("prepared resolve failed"); },
+    resolve: () => failedWarmResult.promise,
   });
-  let fallbackCalls = 0;
+  const fallbackCalls = [];
+  const fallbackReady = deferred();
   const failedWarmSession = createSourceSession({
-    publish: () => {},
+    publish: (value) => { if (value.stream) fallbackReady.resolve(); },
     discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "failed-warm-fallback" }),
-    resolve: async () => { fallbackCalls++; return result("https://media.test/fallback.m3u8"); },
+    resolve: async (id) => {
+      fallbackCalls.push(id);
+      if (id !== "failed-warm-fallback") throw new Error("prepared resolve failed");
+      return result("https://media.test/fallback.m3u8");
+    },
   });
-  await failedWarmSession.start(failedTitle);
-  assert.equal(fallbackCalls, 1, "a failed prepared resolve falls back to a fresh playback resolve");
+  const failedWarmPlayback = failedWarmSession.start(failedTitle);
+  failedWarmResult.reject(new Error("prepared resolve failed"));
+  await fallbackReady.promise;
+  await failedWarmPlayback;
+  assert.deepEqual(fallbackCalls, ["failed-warm-fallback"],
+    "if the prepared resolve fails, ordinary discovery's fresh signed candidate is still attempted");
   failedWarmSession.stop();
 
   const malformedTitle = { ...title, tmdbId: 46 };

@@ -67,7 +67,7 @@ export async function prepareMovieSource(title, { signal, discover = discoverSou
         if (name !== "candidate" || candidate.providerId !== "habster:alloha" || signal?.aborted) return;
         const current = preparedSources.get(key);
         if (current) return;
-        const entry = { expires, voiceId: candidate.voiceId, voiceName: candidate.voiceName, result: null, claimed: false };
+        const entry = { expires, candidate, voiceId: candidate.voiceId, voiceName: candidate.voiceName, result: null, claimed: false };
         signal?.addEventListener("abort", () => {
           if (preparedSources.get(key) === entry) preparedSources.delete(key);
         }, { once: true });
@@ -87,6 +87,26 @@ export async function prepareMovieSource(title, { signal, discover = discoverSou
   } catch {
     // Warming is opportunistic; ordinary playback discovery remains the fallback.
   }
+}
+
+function preparedCandidateFor(title) {
+  const key = titleKey(title);
+  const entry = preparedSources.get(key);
+  if (!entry) return null;
+  if (Date.now() >= entry.expires) {
+    preparedSources.delete(key);
+    return null;
+  }
+  return entry.claimed || !entry.result ? null : entry.candidate;
+}
+
+function samePreparedVoice(candidate, prepared) {
+  if (!candidate || !prepared || candidate.providerId !== "habster:alloha" || prepared.providerId !== candidate.providerId) return false;
+  const sameVoice = candidate.voiceId && prepared.voiceId
+    ? candidate.voiceId === prepared.voiceId && candidate.voiceName === prepared.voiceName
+    : candidate.voiceName === prepared.voiceName;
+  return sameVoice && (candidate.season ?? null) === (prepared.season ?? null)
+    && (candidate.episode ?? null) === (prepared.episode ?? null);
 }
 
 async function takePreparedResult(title, candidate) {
@@ -131,6 +151,9 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   let active = null;
   let previous = null;
   let confirmed = false;
+  let preparedCandidate = null;
+  let preparedFallbackCandidate = null;
+  let preparedFallbackQueued = false;
   let state = { stream: null, switching: false, sourceError: null, meta: "Ищем источники…", qualities: [], subtitles: [], audioNames: [], skip: null };
   const emit = (patch = {}) => {
     state = { ...state, ...patch };
@@ -166,6 +189,12 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     settle();
     return !finished;
   };
+  const queuePreparedFallback = () => {
+    if (!preparedFallbackCandidate || preparedFallbackQueued || !preparedCandidate) return;
+    candidates = candidates.filter((candidate) => candidate.id !== preparedCandidate.id);
+    if (!candidates.some((candidate) => candidate.id === preparedFallbackCandidate.id)) candidates.push(preparedFallbackCandidate);
+    preparedFallbackQueued = true;
+  };
   async function choose(candidate, quality, manual) {
     resolving?.abort();
     const controller = new AbortController();
@@ -195,6 +224,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
         return false;
       }
       failed.add(candidate.id);
+      if (candidate.id === preparedCandidate?.id) queuePreparedFallback();
       return false;
     } finally {
       if (resolving === controller && token === generation) {
@@ -213,15 +243,32 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   async function start(title) {
     stop();
     titleForSession = title;
+    preparedCandidate = preparedCandidateFor(title);
+    preparedFallbackCandidate = null;
+    preparedFallbackQueued = false;
     candidates = []; failed = new Set(); active = previous = null; confirmed = false; finished = false;
     state = { stream: null, switching: false, sourceError: null, meta: "Ищем источники…", qualities: [], subtitles: [], audioNames: [], skip: null };
     emit();
     const token = generation;
     discovery = new AbortController();
     const controller = discovery;
+    if (preparedCandidate) {
+      candidates.push(preparedCandidate);
+      emit();
+      next();
+    }
     try {
       await discover(title, { signal: controller.signal, onEvent: (name, value) => {
         if (token !== generation || controller.signal.aborted) return;
+        if (name === "candidate" && samePreparedVoice(value, preparedCandidate)) {
+          preparedFallbackCandidate = value;
+          if (failed.has(preparedCandidate.id)) {
+            queuePreparedFallback();
+            emit();
+            next();
+          }
+          return;
+        }
         if (name === "candidate" && !candidates.some((candidate) => candidate.id === value.id)) {
           candidates.push(value); emit(); next();
         }
@@ -268,6 +315,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
         });
         return true;
       }
+      if (active.candidate.id === preparedCandidate?.id) queuePreparedFallback();
       active = null; confirmed = false;
       emit({ stream: null, switching: false, sourceError: null, audioNames: [], skip: null });
       return next();
