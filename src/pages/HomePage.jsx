@@ -1,20 +1,13 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import MediaCard from "../components/MediaCard";
 import ProgressiveGrid from "../utils/useProgressiveList.jsx";
 import TrendingCarousel from "../components/TrendingCarousel";
-import CubFeedSection from "../components/CubFeedSection";
-import { habsterFeed, zonaFeed } from "../utils/habster-client";
-import { PlayIcon, StarIcon } from "../components/Icons";
 import {
-  imgUrl,
   tmdbFetch,
   filterAnime,
-  backdropSize,
-  contentWidth,
 } from "../utils/api";
 import { useRatings, getRatingForItem } from "../utils/useRatings";
 import { isRestricted } from "../utils/ageRating";
-import { storage } from "../utils/storage";
 import { loadHomeLayout, loadHomeViewMode } from "../utils/homeLayout";
 
 /**
@@ -46,8 +39,6 @@ export default function HomePage({
   trendingTV,
   loading,
   onSelect,
-  progress,
-  inProgress,
   offline,
   onRetry,
   watched,
@@ -56,34 +47,9 @@ export default function HomePage({
   history,
   apiKey,
 }) {
-  const loadHabster = useCallback((feed, page, options) => habsterFeed(feed, page, { ...options, apiKey }), [apiKey]);
-  const loadZona = useCallback((feed, page, options) => zonaFeed(feed, page, { ...options, apiKey }), [apiKey]);
   // Drop anime from every discovery surface when the "Hide anime" setting is on.
-  // The user's own continue-watching (inProgress) is intentionally left alone.
   const trendingMoviesRaw = useMemo(() => filterAnime(trending), [trending]);
   const trendingTVRaw = useMemo(() => filterAnime(trendingTV), [trendingTV]);
-  const hero = trendingMoviesRaw[0];
-
-  // .main's measured width, kept in state via a ResizeObserver. The hero
-  // backdrop's TMDB rung used to call contentWidth() inside render — a
-  // synchronous layout read on every render (and the ratings waterfall makes
-  // that dozens per cold load), i.e. layout thrash in the render phase.
-  const [mainWidth, setMainWidth] = useState(0);
-  const mainRef = useRef(null);
-  useEffect(() => {
-    const el = mainRef.current;
-    if (!el) return;
-    if (typeof ResizeObserver === "undefined") {
-      setMainWidth(el.clientWidth || 0);
-      return;
-    }
-    const ro = new ResizeObserver(([entry]) => {
-      const w = Math.round(entry.contentRect?.width || el.clientWidth || 0);
-      setMainWidth((prev) => (Math.abs(prev - w) > 1 ? w : prev));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   const [recommendedItems, setRecommendedItems] = useState([]);
   const [topRatedItems, setTopRatedItems] = useState([]);
@@ -97,21 +63,16 @@ export default function HomePage({
   // All items for batch ratings fetch
   const allItems = useMemo(
     () => [
-      ...inProgress,
       ...trending.map((i) => ({ ...i, media_type: "movie" })),
       ...trendingTV.map((i) => ({ ...i, media_type: "tv" })),
       ...recommendedItems,
       ...topRatedItems,
     ],
-    [inProgress, trending, trendingTV, recommendedItems, topRatedItems],
+    [trending, trendingTV, recommendedItems, topRatedItems],
   );
 
   const { ratingsMap, ageLimitSetting } = useRatings(allItems);
 
-  const getRating = useCallback(
-    (item) => getRatingForItem(item, ratingsMap),
-    [ratingsMap],
-  );
   const itemRestricted = useCallback(
     (item) =>
       isRestricted(getRatingForItem(item, ratingsMap).minAge, ageLimitSetting),
@@ -244,7 +205,7 @@ export default function HomePage({
   const visibleTopRated = useMemo(() => filterAnime(topRatedItems), [topRatedItems]);
 
   return (
-    <div className="fade-in" ref={mainRef}>
+    <div className="fade-in">
       {/* ── Offline ── */}
       {offline && (
         <div
@@ -281,7 +242,7 @@ export default function HomePage({
            the wait reads as "content arriving" instead of "app working". The
            real rows swap in underneath the same grid geometry — no layout jump. */
         <div className="home-skeletons">
-          {[0, 1].map((row) => (
+          {[0, 1, 2, 3].map((row) => (
             <div key={row} className="section">
               <div className="section-title skeleton-text" />
               <div className="cards-grid">
@@ -297,82 +258,9 @@ export default function HomePage({
         </div>
       )}
 
-      {/* ── Hero (always first) ── */}
-      {!loading && hero && (
-        <div className="hero">
-          <div
-            className="hero-bg"
-            style={{
-              backgroundImage: `url(${imgUrl(
-                hero.backdrop_path,
-                backdropSize(mainWidth || 1280),
-              )})`,
-            }}
-          />
-          <div className="hero-gradient" />
-          <div className="hero-content">
-            <div className="hero-type">В тренде · фильм</div>
-            <div className="hero-title">{hero.title || hero.name}</div>
-            <div className="hero-meta">
-              <span className="hero-rating">
-                <StarIcon /> {hero.vote_average?.toFixed(1)}
-              </span>
-              <span>{hero.release_date?.slice(0, 4)}</span>
-            </div>
-            <div className="hero-overview">{hero.overview}</div>
-            <div className="hero-actions">
-              <button
-                className="btn btn-primary"
-                onClick={() => onSelect(hero)}
-              >
-                <PlayIcon /> Watch Now
-              </button>
-              <button
-                className="btn btn-secondary"
-                onClick={() => onSelect(hero)}
-              >
-                More Info
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Rows in user-configured order ── */}
       {rowOrder.map((id) => {
         if (!rowVisible[id]) return null;
-
-        if (id === "continue") {
-          if (inProgress.length === 0) return null;
-          return (
-            <div key="continue" className="section">
-              <div className="section-title">Продолжить просмотр</div>
-              <ProgressiveGrid items={inProgress}>
-                {(visible) => visible.map((item) => {
-                  const pk =
-                    item.media_type === "movie"
-                      ? `movie_${item.id}`
-                      : `tv_${item.id}_s${item.season}e${item.episode}`;
-                  const r = getRating(item);
-                  const restr = itemRestricted(item);
-                  return (
-                    <MediaCard
-                      key={`${item.media_type}_${item.id}`}
-                      item={item}
-                      onClick={onSelect}
-                      progress={progress[pk] || 0}
-                      watched={watched}
-                      onMarkWatched={onMarkWatched}
-                      onMarkUnwatched={onMarkUnwatched}
-                      ageRating={r.cert}
-                      restricted={restr}
-                    />
-                  );
-                })}
-              </ProgressiveGrid>
-            </div>
-          );
-        }
 
         // Render a section as a flat cards-grid (list view)
         const renderList = (key, title, titleHighlight, items) => {
@@ -492,21 +380,6 @@ export default function HomePage({
 
         return null;
       })}
-      {[
-        ["now_playing", "Сейчас смотрят"],
-        ["latest", "Новинки"],
-        ["fire", "Популярное"],
-        ["hundred", "Лучшие фильмы"],
-      ].map(([feed, title]) => (
-        <CubFeedSection key={feed} feed={feed} title={title} offline={offline} viewMode={viewMode}
-          onSelect={onSelect} watched={watched} onMarkWatched={onMarkWatched} onMarkUnwatched={onMarkUnwatched} />
-      ))}
-      <CubFeedSection feed="popular" title="Популярное" sourceLabel="Habster" loadFeed={loadHabster}
-        offline={offline} viewMode={viewMode} onSelect={onSelect} watched={watched}
-        onMarkWatched={onMarkWatched} onMarkUnwatched={onMarkUnwatched} />
-      <CubFeedSection feed="popular" title="Популярное" sourceLabel="Zona" loadFeed={loadZona}
-        offline={offline} viewMode={viewMode} onSelect={onSelect} watched={watched}
-        onMarkWatched={onMarkWatched} onMarkUnwatched={onMarkUnwatched} />
     </div>
   );
 }

@@ -29,6 +29,7 @@ import {
   HOME_ROWS,
   loadHomeLayout,
   loadHomeViewMode,
+  saveHomeLayout,
   saveHomeViewMode,
 } from "../utils/homeLayout";
 import { collectBackupData, restoreBackupData } from "../utils/backup";
@@ -851,8 +852,7 @@ function HomeLayoutSection() {
   };
 
   const handleSave = () => {
-    storage.set(STORAGE_KEYS.HOME_ROW_ORDER, order);
-    storage.set(STORAGE_KEYS.HOME_ROW_VISIBLE, visible);
+    saveHomeLayout(order, visible);
     saveHomeViewMode(viewMode);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -872,7 +872,6 @@ function HomeLayoutSection() {
         }}
       >
         Выберите блоки для главной страницы и перетащите их, чтобы изменить порядок.
-        Главный баннер всегда остаётся наверху.
       </div>
 
       {/* ── View mode selector ── */}
