@@ -841,6 +841,54 @@ test("automatic movie quality skips a short VOD without rejecting the full-lengt
   assert.deepEqual(probes, ["720p", "1080p"]);
 });
 
+test("resolve reports only the last safe upstream HTTP failure when every quality is unavailable", async (t) => {
+  const adapter = {
+    async *discover() { yield candidate(); },
+    async resolve() { return { qualities: [
+      { label: "720p", height: 720, url: "https://cdn.test/private-signed-720.m3u8" },
+      { label: "1080p", height: 1080, url: "https://cdn.test/private-signed-1080.m3u8" },
+    ] }; },
+  };
+  const media = makeMedia();
+  let results = [
+    { ok: false, reason: "UPSTREAM_HTTP_ERROR", upstreamStatus: 403 },
+    { ok: false, reason: "UPSTREAM_HTTP_ERROR", upstreamStatus: 404 },
+  ];
+  media.probe = async () => results.shift();
+  const app = await start(adapter, media);
+  t.after(() => app.close());
+  const discovery = await post(app.base, "/v1/discover", { type: "movie", title: "Movie", runtimeMinutes: 120 });
+  const stream = sseReader(discovery.body);
+  const { data: { id } } = await stream.until("candidate");
+  await stream.drain();
+
+  const upstreamFailure = await post(app.base, "/v1/resolve", { id });
+  const upstreamPayload = await upstreamFailure.json();
+  assert.equal(upstreamFailure.status, 502);
+  assert.equal(upstreamPayload.error, "MEDIA_UNAVAILABLE");
+  assert.equal(upstreamPayload.sourceMediaCode, "UPSTREAM_HTTP_ERROR");
+  assert.equal(upstreamPayload.sourceUpstreamStatus, 404, "the final attempted quality's status is reported");
+  assert.equal(JSON.stringify(upstreamPayload).includes("private-signed"), false);
+  assert.equal(Object.hasOwn(upstreamPayload, "url"), false);
+
+  results = [{ ok: false, reason: "UPSTREAM_TIMEOUT", upstreamStatus: 403 }];
+  const unrelatedFailure = await post(app.base, "/v1/resolve", { id, quality: "720p" });
+  const unrelatedPayload = await unrelatedFailure.json();
+  assert.equal(unrelatedFailure.status, 502);
+  assert.equal(unrelatedPayload.error, "MEDIA_UNAVAILABLE");
+  assert.equal(Object.hasOwn(unrelatedPayload, "sourceMediaCode"), false, "non-HTTP failures do not forward upstream diagnostics");
+
+  results = [{ ok: true, kind: "hls", duration: 1 }];
+  const shortVod = await post(app.base, "/v1/resolve", { id, quality: "720p" });
+  const shortPayload = await shortVod.json();
+  assert.equal(shortPayload.error, "MEDIA_DURATION_MISMATCH");
+  assert.equal(Object.hasOwn(shortPayload, "sourceMediaCode"), false, "duration mismatch keeps its own response without upstream diagnostics");
+
+  results = [{ ok: false, reason: "UPSTREAM_HTTP_ERROR", upstreamStatus: 600 }];
+  const invalidStatus = await post(app.base, "/v1/resolve", { id, quality: "720p" });
+  assert.equal(Object.hasOwn(await invalidStatus.json(), "sourceUpstreamStatus"), false, "invalid status values are not forwarded");
+});
+
 test("movie runtime rejects grossly short HLS and accepts full length across sealed candidate resolves", async (t) => {
   let duration = 3652;
   let kind = "hls";

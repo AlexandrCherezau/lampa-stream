@@ -893,6 +893,29 @@ test("media diagnostic headers use fixed codes and never alter an already-starte
   assert.equal(outcome.headers["x-source-upstream-status"], undefined);
 });
 
+test("media probe preserves only safe upstream HTTP status diagnostics", async () => {
+  for (const [status, expectedStatus] of [[403, 403], [404, 404], [502, 502], [null, null]]) {
+    const transport = { async request() {
+      const error = Object.assign(new Error("provider response details"), { code: status == null ? "UPSTREAM_CONNECT_ERROR" : "UPSTREAM_HTTP_ERROR" });
+      if (status != null) error.status = status;
+      throw error;
+    } };
+    const media = createMedia({ transport, secret: SECRET });
+    const result = await media.probe({ url: "https://cdn.example.test/private-signed-path", publicOnly: true });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, status == null ? "UPSTREAM_CONNECT_ERROR" : "UPSTREAM_HTTP_ERROR");
+    assert.equal(result.upstreamStatus ?? null, expectedStatus);
+    assert.equal(Object.hasOwn(result, "message"), false);
+    assert.equal(JSON.stringify(result).includes("private-signed-path"), false);
+  }
+  for (const status of [399, 600, "403"]) {
+    const transport = { async request() { throw Object.assign(new Error("private"), { code: "UPSTREAM_HTTP_ERROR", status }); } };
+    const result = await createMedia({ transport, secret: SECRET }).probe({ url: "https://cdn.example.test/movie.m3u8" });
+    assert.equal(result.reason, "UPSTREAM_HTTP_ERROR");
+    assert.equal(Object.hasOwn(result, "upstreamStatus"), false);
+  }
+});
+
 test("validated VOD playlists are reused briefly without sharing grant, origin or public-only privileges", async (t) => {
   const fixture = await startServer();
   t.after(() => closeServer(fixture.server));

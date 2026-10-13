@@ -629,7 +629,10 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
       };
     } catch (error) {
       console.warn("Media probe failed", error.code || error.name, error.status || 502, error.targetHost || new URL(resource.url).host, error.dnsCode || "");
-      return { ok: false, kind: null, reason: error.status === 504 ? "timeout" : error.name === "AbortError" ? "aborted" : error.code || "probe-failed" };
+      const upstreamStatus = error.code === "UPSTREAM_HTTP_ERROR" && Number.isInteger(error.status) && error.status >= 400 && error.status <= 599
+        ? error.status : null;
+      return { ok: false, kind: null, reason: error.status === 504 ? "timeout" : error.name === "AbortError" ? "aborted" : error.code || "probe-failed",
+        ...(upstreamStatus == null ? {} : { upstreamStatus }) };
     } finally { pending.abort(); }
   }
 

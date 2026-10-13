@@ -284,6 +284,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
           let shortVod = false;
           for (const quality of order) {
             if (controller.signal.aborted) break;
+            probe = null;
             try {
               probe = await media.probe(quality, { signal: controller.signal });
               if (probe.ok && candidate.runtimeMinutes && probe.kind === "hls" && Number.isFinite(probe.duration)
@@ -299,7 +300,13 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
           if (controller.signal.aborted) throw controller.signal.reason || failure("Истекло время проверки", 504, "TIMEOUT");
           if (!selected) {
             if (shortVod) throw failure("Источник вернул слишком короткое видео", 502, "MEDIA_DURATION_MISMATCH");
-            throw failure("Видео не загружается, выберите другой источник", 502, "MEDIA_UNAVAILABLE");
+            const unavailable = failure("Видео не загружается, выберите другой источник", 502, "MEDIA_UNAVAILABLE");
+            if (probe?.reason === "UPSTREAM_HTTP_ERROR" && Number.isInteger(probe.upstreamStatus)
+              && probe.upstreamStatus >= 400 && probe.upstreamStatus <= 599) {
+              unavailable.sourceMediaCode = "UPSTREAM_HTTP_ERROR";
+              unavailable.sourceUpstreamStatus = probe.upstreamStatus;
+            }
+            throw unavailable;
           }
           record(candidate.providerId, { providerName: candidate.providerName, status: "verified", verifiedAt: new Date().toISOString() });
           // Keep the verified redirect target; dynamic engine manifests need a browser again.
@@ -333,7 +340,13 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         } finally { resolutions--; }
       }
     } catch (error) {
-      json(res, error.status || 502, { error: error.code || (controller.signal.aborted ? "TIMEOUT" : "SOURCE_FAILED"), message: error.status ? error.message : "Источник временно недоступен" });
+      const payload = { error: error.code || (controller.signal.aborted ? "TIMEOUT" : "SOURCE_FAILED"), message: error.status ? error.message : "Источник временно недоступен" };
+      if (error.code === "MEDIA_UNAVAILABLE" && error.sourceMediaCode === "UPSTREAM_HTTP_ERROR"
+        && Number.isInteger(error.sourceUpstreamStatus) && error.sourceUpstreamStatus >= 400 && error.sourceUpstreamStatus <= 599) {
+        payload.sourceMediaCode = "UPSTREAM_HTTP_ERROR";
+        payload.sourceUpstreamStatus = error.sourceUpstreamStatus;
+      }
+      json(res, error.status || 502, payload);
     } finally {
       clearTimeout(deadline);
       res.off("close", onClose);
