@@ -6,8 +6,6 @@ import { TransportError } from "./transport.mjs";
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 const PLAYLIST_MAX = 16 * 1024 * 1024;
 const RANGE_DEFAULT_MAX = 8 * 1024 * 1024;
-// Batch large MP4 metadata to reduce repeated CDN range requests.
-const RANGE_PUBLIC_NODE_MAX = 32 * 1024 * 1024;
 const RANGE_LIMIT = 96 * 1024 * 1024;
 const PROBE_PREFIX = 64 * 1024;
 const HEADER_ALLOWLIST = new Set(["referer", "origin", "user-agent", "accept", "accept-language", "cookie"]);
@@ -103,7 +101,7 @@ function rewritePlaylist(text, baseUrl, makeUrl) {
   }).join("\n");
 }
 
-function parseRange(value, openEndedMax = RANGE_DEFAULT_MAX) {
+function parseRange(value) {
   if (!value) return null;
   const match = /^bytes=(\d*)-(\d*)$/.exec(value.trim());
   if (!match || (!match[1] && !match[2])) return false;
@@ -114,7 +112,7 @@ function parseRange(value, openEndedMax = RANGE_DEFAULT_MAX) {
   }
   const start = Number(match[1]);
   if (!Number.isSafeInteger(start) || start < 0 || start > Number.MAX_SAFE_INTEGER - RANGE_LIMIT) return false;
-  if (!match[2]) return { start, end: start + Math.min(openEndedMax, RANGE_LIMIT) - 1 };
+  if (!match[2]) return { start, end: start + RANGE_DEFAULT_MAX - 1 };
   const end = Number(match[2]);
   if (!Number.isSafeInteger(end) || end < start) return false;
   return { start, end: Math.min(end, start + RANGE_LIMIT - 1) };
@@ -313,7 +311,7 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
     let resource;
     try { resource = parseToken(token, key); }
     catch (error) { responseError(res, error.status || 404, "Media token is invalid or expired"); return; }
-    const range = parseRange(req.headers.range, resource.publicOnly === true && resource.nodeOnly === true ? RANGE_PUBLIC_NODE_MAX : RANGE_DEFAULT_MAX);
+    const range = parseRange(req.headers.range);
     if (range === false) { responseError(res, 416, "Invalid range"); return; }
     const abort = new AbortController();
     const onClose = () => { if (!res.writableEnded) abort.abort(); };
