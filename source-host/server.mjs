@@ -277,8 +277,12 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
           // shortcut: keep these failing Worker paths on Node until relay playback is verified.
           const providerId = candidate.catalogSource === "vi3000"
             ? /^vi3000:([a-z0-9_-]{1,64})$/.exec(candidate.providerId)?.[1] : candidate.providerId;
+          // shortcut: vi3000 Filmix files return Worker 429, restore relay routing after verified playback.
+          const nodeOnly = ["zetflixdb", "cdnvideohub"].includes(providerId)
+            || (providerId === "zetflix" && candidate.season == null && candidate.episode == null)
+            || (candidate.catalogSource === "vi3000" && providerId === "filmix" && probe.kind === "file");
           const variants = qualities.map((quality) => ({ label: quality.label, height: quality.height,
-            url: media.url({ ...(quality === selected && probe.url ? { ...quality, url: String(probe.url), headers: probe.headers || quality.headers, headerOrigin: probe.headerOrigin } : quality), nodeOnly: ["zetflixdb", "cdnvideohub"].includes(providerId) || (providerId === "zetflix" && candidate.season == null && candidate.episode == null) }),
+            url: media.url({ ...(quality === selected && probe.url ? { ...quality, url: String(probe.url), headers: probe.headers || quality.headers, headerOrigin: probe.headerOrigin } : quality), nodeOnly }),
           }));
           const subtitles = (resolved.subtitles || []).map((subtitle) => ({ label: subtitle.label, language: subtitle.language, url: media.url(subtitle) }));
           json(res, 200, {

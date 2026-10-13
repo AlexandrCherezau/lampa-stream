@@ -367,20 +367,26 @@ test("sealed native and vi provider namespaces preserve Node quality routing and
   })));
   scenarios.push({ providerId: "vi3000:cdnvideohub", expected: false },
     { providerId: "vi3000:cdnvideohub:extra", catalogSource: "vi3000", expected: false });
-  for (const { providerId, catalogSource, expected } of scenarios) {
+  scenarios.push(...[undefined, "vi3000"].flatMap((catalogSource) => ["file", "hls"].map((kind) => ({
+    providerId: catalogSource ? "vi3000:filmix" : "filmix", catalogSource, kind, expected: catalogSource === "vi3000" && kind === "file",
+  }))));
+  scenarios.push({ providerId: "vi3000:filmix", kind: "file", expected: false },
+    { providerId: "vi3000:filmix:extra", catalogSource: "vi3000", kind: "file", expected: false });
+  for (const { providerId, catalogSource, expected, kind = "hls" } of scenarios) {
     const signed = [];
+    const extension = kind === "file" ? "mp4" : "m3u8";
     const adapter = {
       async *discover() { yield candidate({ providerId, providerName: providerId, catalogSource }); },
       async resolve() { return { qualities: [
-        { label: "1080p", height: 1080, url: "https://cdn.test/master.m3u8", publicOnly: catalogSource === "vi3000" },
-        { label: "720p", height: 720, url: "https://cdn.test/lower.m3u8", publicOnly: catalogSource === "vi3000" },
+        { label: "1080p", height: 1080, url: `https://cdn.test/master.${extension}`, publicOnly: catalogSource === "vi3000" },
+        { label: "720p", height: 720, url: `https://cdn.test/lower.${extension}`, publicOnly: catalogSource === "vi3000" },
       ] }; },
     };
     const media = createMedia({ transport: { async request() { throw new Error("unused"); } },
       secret: "test-secret-that-is-long-enough-for-this-suite", publicOrigin: "https://media.test" });
     media.probe = async (quality) => {
       assert.equal(quality.publicOnly, catalogSource === "vi3000");
-      return { ok: true, kind: "hls", url: "https://cdn.test/verified.m3u8", publicOnly: false, nodeOnly: false };
+      return { ok: true, kind, url: `https://cdn.test/verified.${extension}`, publicOnly: false, nodeOnly: false };
     };
     const sign = media.url;
     media.url = (resource) => {
@@ -393,9 +399,11 @@ test("sealed native and vi provider namespaces preserve Node quality routing and
     const reader = sseReader(discovery.body);
     const { data: { id } } = await reader.until("candidate");
     await reader.drain();
-    const resolved = await post(app.base, "/v1/resolve", { id, catalogSource: catalogSource ? "native" : "vi3000", providerId: "vi3000:zetflixdb", nodeOnly: !expected });
+    const resolved = await post(app.base, "/v1/resolve", { id, catalogSource: catalogSource ? "native" : "vi3000", providerId: "vi3000:filmix", nodeOnly: !expected,
+      kind: kind === "file" ? "hls" : "file" });
     assert.equal(resolved.status, 200);
     const result = await resolved.json();
+    assert.equal(result.kind, kind, "routing uses the actual probe kind rather than client input");
     assert.equal(signed.length, 2);
     assert.deepEqual(signed.map((resource) => resource.nodeOnly), [expected, expected], providerId);
     for (const quality of result.qualities) {
@@ -403,8 +411,8 @@ test("sealed native and vi provider namespaces preserve Node quality routing and
       assert.equal(resource.nodeOnly, expected, `${providerId} retains routing in every sealed quality`);
       assert.equal(resource.publicOnly, catalogSource === "vi3000", `${providerId} keeps its public DNS restriction`);
     }
-    assert.equal(signed[1].url, "https://cdn.test/verified.m3u8", "the selected redirected quality keeps both flags");
-    assert.equal(signed[0].url, "https://cdn.test/master.m3u8", "unselected qualities inherit the same routing policy");
+    assert.equal(signed[1].url, `https://cdn.test/verified.${extension}`, "the selected redirected quality keeps both flags");
+    assert.equal(signed[0].url, `https://cdn.test/master.${extension}`, "unselected qualities inherit the same routing policy");
   }
 });
 
