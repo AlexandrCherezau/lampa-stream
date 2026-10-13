@@ -205,3 +205,140 @@ test("multilevel Habster HLS decodes its first fragment while the next fragment 
     releaseSecondFragment();
   }
 });
+
+test("initial Lampac HLS limits 502 retries before failing over to a playable source", async ({ page }) => {
+  test.setTimeout(30_000);
+  const candidates = [
+    { id: "alloha-bad-cdn", providerId: "habster:alloha", providerName: "Habster · Alloha", voiceName: "Broken CDN", qualityHint: "720p" },
+    { id: "alloha-good-cdn", providerId: "habster:alloha", providerName: "Habster · Alloha", voiceName: "Healthy CDN", qualityHint: "720p" },
+  ];
+  await page.addInitScript((candidates) => {
+    localStorage.setItem("lampa_stream_tmdb_token", "startup-retry-fixture");
+    localStorage.removeItem("streambert_resumeTime");
+    localStorage.removeItem("streambert_progress");
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (String(input).includes("/api/source-host?op=discover")) {
+        return Promise.resolve(new Response(new ReadableStream({ start(controller) {
+          for (const candidate of candidates) controller.enqueue(new TextEncoder().encode(`event: candidate\ndata: ${JSON.stringify(candidate)}\n\n`));
+          controller.close();
+        } }), { headers: { "content-type": "text/event-stream" } }));
+      }
+      return originalFetch(input, init);
+    };
+  }, candidates);
+  await page.route("**/api/tmdb/**", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({
+    id: 969681, title: "Человек-паук: Новый день", original_title: "Spider-Man: Brand New Day", release_date: "2026-07-31",
+    runtime: 145, imdb_id: "tt22084616", kinopoisk_id: 5494049, genres: [], credits: { cast: [] }, results: [], images: {},
+  }) }));
+  const resolvedIds = [];
+  await page.route("**/api/source-host?op=resolve", (route) => {
+    const request = route.request().postDataJSON();
+    resolvedIds.push(request.id);
+    const selected = { label: "720p", height: 720, url: `https://retry-media.example/${request.id}/master.m3u8` };
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+      kind: "hls", selected, qualities: [selected], subtitles: [], audioNames: [],
+    }) });
+  });
+  let failedSegmentRequests = 0;
+  let healthySegmentRequests = 0;
+  await page.route("https://retry-media.example/**", (route) => {
+    const url = new URL(route.request().url());
+    const pathname = url.pathname;
+    if (pathname.endsWith("master.m3u8")) return route.fulfill({
+      contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" },
+      body: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=160x90\nfixture.m3u8\n",
+    });
+    if (pathname.endsWith("fixture.m3u8")) return route.fulfill({
+      contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" },
+      body: readFileSync(join(fixtureDir, "fixture.m3u8")),
+    });
+    if (pathname.includes("alloha-bad-cdn")) {
+      failedSegmentRequests += 1;
+      return route.fulfill({ status: 502, contentType: "text/plain", body: "fixture upstream failure" });
+    }
+    healthySegmentRequests += 1;
+    return route.fulfill({ contentType: "video/mp2t", headers: { "access-control-allow-origin": "*" },
+      body: readFileSync(join(fixtureDir, pathname.split("/").pop())) });
+  });
+
+  await page.goto("/movie/969681");
+  const startedAt = Date.now();
+  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  const video = page.locator(".torrplayer > video");
+  await expect(video).toBeVisible();
+  await expect.poll(() => video.evaluate((value) => value.getVideoPlaybackQuality().totalVideoFrames), { timeout: 7000 }).toBeGreaterThan(0);
+  const startupMs = Date.now() - startedAt;
+  expect(resolvedIds[0]).toBe("alloha-bad-cdn");
+  expect(resolvedIds).toContain("alloha-good-cdn");
+  expect(failedSegmentRequests).toBeGreaterThanOrEqual(1);
+  expect(failedSegmentRequests).toBeLessThanOrEqual(2);
+  expect(healthySegmentRequests).toBeGreaterThan(0);
+  expect(startupMs).toBeLessThan(6000);
+});
+
+test("a confirmed Lampac session keeps the normal HLS retry budget on quality reattach", async ({ page }) => {
+  const candidate = { id: "alloha-late-retry", providerId: "habster:alloha", providerName: "Habster · Alloha", voiceName: "Fixture", qualityHint: "720p" };
+  await page.addInitScript((candidate) => {
+    localStorage.setItem("lampa_stream_tmdb_token", "late-retry-fixture");
+    localStorage.removeItem("streambert_resumeTime");
+    localStorage.removeItem("streambert_progress");
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (String(input).includes("/api/source-host?op=discover")) {
+        return Promise.resolve(new Response(new ReadableStream({ start(controller) {
+          controller.enqueue(new TextEncoder().encode(`event: candidate\ndata: ${JSON.stringify(candidate)}\n\n`));
+          controller.close();
+        } }), { headers: { "content-type": "text/event-stream" } }));
+      }
+      return originalFetch(input, init);
+    };
+  }, candidate);
+  await page.route("**/api/tmdb/**", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({
+    id: 969681, title: "Человек-паук: Новый день", original_title: "Spider-Man: Brand New Day", release_date: "2026-07-31",
+    runtime: 145, imdb_id: "tt22084616", kinopoisk_id: 5494049, genres: [], credits: { cast: [] }, results: [], images: {},
+  }) }));
+  const resolvedQualities = [];
+  await page.route("**/api/source-host?op=resolve", (route) => {
+    const request = route.request().postDataJSON();
+    resolvedQualities.push(request.quality || "720p");
+    const qualities = ["720p", "1080p"].map((label) => ({ label, height: Number(label.slice(0, -1)),
+      url: `https://late-retry.example/${label}/master.m3u8` }));
+    const selected = qualities.find((quality) => quality.label === request.quality) || qualities[0];
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ kind: "hls", selected, qualities, subtitles: [], audioNames: [] }) });
+  });
+  let quality502s = 0;
+  let qualityHealthySegments = 0;
+  await page.route("https://late-retry.example/**", (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname.endsWith("master.m3u8")) return route.fulfill({
+      contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" },
+      body: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=160x90\nfixture.m3u8\n",
+    });
+    if (pathname.endsWith("fixture.m3u8")) return route.fulfill({
+      contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" },
+      body: readFileSync(join(fixtureDir, "fixture.m3u8")),
+    });
+    if (pathname.includes("1080p") && pathname.endsWith(".ts") && quality502s < 2) {
+      quality502s += 1;
+      return route.fulfill({ status: 502, contentType: "text/plain", body: "transient quality-switch CDN error" });
+    }
+    if (pathname.includes("1080p") && pathname.endsWith(".ts")) qualityHealthySegments += 1;
+    return route.fulfill({ contentType: "video/mp2t", headers: { "access-control-allow-origin": "*" },
+      body: readFileSync(join(fixtureDir, pathname.split("/").pop())) });
+  });
+
+  await page.goto("/movie/969681");
+  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  const video = page.locator(".torrplayer > video");
+  await expect.poll(() => video.evaluate((value) => value.currentTime)).toBeGreaterThan(0.5);
+  // Let the normal time-advance latch confirm real playback before reattaching.
+  await page.waitForTimeout(400);
+  await page.locator(".torrplayer").hover();
+  await page.getByTitle("Качество (Q)").click();
+  await page.locator(".torrplayer-audio-menu").getByRole("button", { name: "1080p", exact: true }).click();
+  await expect.poll(() => qualityHealthySegments).toBeGreaterThan(0);
+  await expect.poll(() => video.evaluate((value) => value.getVideoPlaybackQuality().totalVideoFrames)).toBeGreaterThan(0);
+  expect(resolvedQualities.at(-1)).toBe("1080p");
+  expect(quality502s).toBe(2);
+});

@@ -33,6 +33,14 @@ function loadHls() {
 }
 export function preloadOnlinePlayer() { return loadHls(); }
 
+function setHlsFragmentErrorRetryBudget(hls, maxNumRetry) {
+  // hls.js 1.6's loader/error controller read this modern policy. Keep the
+  // legacy fragLoadingMaxRetry constructor option as well: mergeConfig maps it
+  // to both errorRetry and timeoutRetry, preserving the existing timeout budget.
+  const retry = hls?.config?.fragLoadPolicy?.default?.errorRetry;
+  if (retry) retry.maxNumRetry = maxNumRetry;
+}
+
 function applyExternalSubtitle(video, selectedId) {
   const elements = Array.from(video.querySelectorAll("track[data-cc]"));
   let selectedElement = selectedId >= 0 ? elements.find((element) => Number(element.dataset.ccIndex) === selectedId) : null;
@@ -213,6 +221,9 @@ export default function OnlinePlayer({
   // per stream, so a post-playback quality/dub switch stays protected. Mirrors the
   // hook's confirmedRef (set via notePlaying).
   const fleetPlayedRef = useRef(false);
+  // Persists across source/quality reattaches, unlike fleetPlayedRef which is
+  // deliberately reset per stream so a failed replacement can still fail over.
+  const fleetHasPlayedRef = useRef(false);
   const lastFleetTimeRef = useRef(null);
   const hoverRafRef = useRef(null); // rAF throttle for seek-hover tooltip
   const loadingEnteredAtRef = useRef(0); // when the loading overlay was raised
@@ -751,6 +762,7 @@ export default function OnlinePlayer({
     setSkipTimings(null);
     setSkipPrompt(null);
     fleetPlayedRef.current = false;
+    fleetHasPlayedRef.current = false;
     lastFleetTimeRef.current = null;
   }, [item?.id, item?.imdb_id, details?.imdb_id, details?.external_ids?.imdb_id, season, episode]);
 
@@ -1035,6 +1047,10 @@ export default function OnlinePlayer({
         fragLoadingTimeOut: 20000,
         startPosition,
       });
+      // The fleet is already prepared before playback. Keep only one 5xx retry
+      // per initial source attempt; restore the normal six-retry budget once a
+      // decoded time advance proves this source can play.
+      if (isLampac && !fleetHasPlayedRef.current) setHlsFragmentErrorRetryBudget(hls, 1);
       hlsRef.current = hls; engineRef.current = "hls";
       hls.loadSource(stream.hls); hls.attachMedia(v);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -1110,8 +1126,8 @@ export default function OnlinePlayer({
         // Fleet, nothing decoded yet: the byte-probe let this balancer through but
         // its segments won't append (classic Zetflix bufferAppendError) or its CDN
         // is down. The two fatal classes need OPPOSITE responses here:
-        //   • NETWORK_ERROR can be a one-off segment/relay blip → allow ONE cheap
-        //     startLoad() retry (re-fetching often clears a transient 5xx/timeout).
+        //   • NETWORK_ERROR has already used the single startup fragment retry
+        //     configured on this HLS instance; move to the next prepared source.
         //   • MEDIA_ERROR means the bytes ARRIVED but won't DECODE. recoverMediaError()
         //     just flushes the MediaSource and re-appends the SAME undecodable
         //     segments — on the bad Scarface run that flush-and-retry churned ~8 s
@@ -1124,9 +1140,8 @@ export default function OnlinePlayer({
         // latches we're in the branch below, where recoverMediaError IS the right
         // call (mid-film there is no pool to jump to).
         if (isLampac && !fleetPlayedRef.current) {
-          try {
-            if (attempts <= 1 && data.type === Hls.ErrorTypes.NETWORK_ERROR) { hls.startLoad(); return; }
-          } catch {}
+          // The loader already made its one allowed initial retry. Calling
+          // startLoad() here would restart that retry budget and delay failover.
           giveUp(data.details || data.type);
           return;
         }
@@ -1231,6 +1246,8 @@ export default function OnlinePlayer({
         const prev = lastFleetTimeRef.current;
         if (prev != null && t > prev + 0.1 && t < prev + 2) {
           fleetPlayedRef.current = true;
+          fleetHasPlayedRef.current = true;
+          setHlsFragmentErrorRetryBudget(hlsRef.current, 6);
           noteFleetPlayingRef.current?.();
         }
         lastFleetTimeRef.current = t;
