@@ -1,9 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
 import { createProfileHandler, mergeProfileSnapshot, validateCheckpoint } from "../api/_lib/_profile.mjs";
 
 const SECRET = "a".repeat(64);
+const require = createRequire(import.meta.url);
+
+test("Vercel profile entrypoint is CommonJS-callable and lazily imports its ESM handler", async () => {
+  const handler = require("../api/profile.js");
+  assert.equal(typeof handler, "function");
+  let status;
+  let ended = false;
+  await handler(
+    { method: "OPTIONS", url: "/api/profile", headers: {} },
+    { setHeader() {}, status(code) { status = code; return this; }, end() { ended = true; return this; } },
+  );
+  assert.equal(status, 204);
+  assert.equal(ended, true);
+});
 
 function memoryUpstash() {
   const values = new Map();
