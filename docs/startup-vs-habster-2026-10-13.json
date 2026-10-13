@@ -1,0 +1,104 @@
+{
+  "date": "2026-10-13",
+  "filmKinopoiskId": 5494049,
+  "production": {
+    "frontend": {
+      "url": "https://lampa-stream-six.vercel.app",
+      "deployment": "dpl_D71fEZwFqaD7SNjMu1oFobWwgqPU",
+      "commit": "a53a91f2b37e816e0f457db546ae230fb548f70f"
+    },
+    "backend": {
+      "url": "https://lampa-source-host.vercel.app",
+      "deployment": "dpl_9kNrjHaDQ14XFmCagiQ6tiH5fMai",
+      "commit": "13001aecd17c5b859f6851a8507feb1eae6ee1a5"
+    }
+  },
+  "method": {
+    "dwellBeforeClickMs": 3000,
+    "metadataAndSessionFixtures": true,
+    "mediaMocked": false,
+    "measurement": "click to first decoded movie frame",
+    "directHabsterExactTimingEstablished": false
+  },
+  "pairedMeasurements": [
+    {
+      "resumeTargetSeconds": 0,
+      "beforeClickToFrameMs": 6560,
+      "afterClickToFrameMs": 3293,
+      "provider": "Habster Alloha",
+      "qualityLabel": "720p",
+      "decodedWidth": 1280,
+      "decodedHeight": 534,
+      "currentTimeSeconds": 0.089433,
+      "durationSeconds": 8700.74,
+      "preparedResolveCompletedBeforeClick": true
+    },
+    {
+      "resumeTargetSeconds": 40,
+      "beforeClickToFrameMs": 10000,
+      "afterClickToFrameMs": 3549,
+      "provider": "Habster Alloha",
+      "qualityLabel": "720p",
+      "decodedWidth": 1280,
+      "decodedHeight": 534,
+      "currentTimeSeconds": 40.039653,
+      "durationSeconds": 8700.74,
+      "preparedResolveCompletedBeforeClick": false
+    }
+  ],
+  "wire": {
+    "priorAllohaPlaylistEncodedBytesApprox": 3060000,
+    "afterAllohaPlaylistContentLength": 174747,
+    "segments": 1450,
+    "eagerExternalSubtitleRequestsBefore": 11,
+    "eagerExternalSubtitleRequestsAfter": 0,
+    "decodedPlaylistStillSeveralMegabytes": true
+  },
+  "intermediateNegativeMeasurements": {
+    "frontendCommit": "52477d3",
+    "startClickToFrameMs": 10420,
+    "resume40ClickToFrameMs": 15340,
+    "reason": "Alloha media returned502; Collaps fallback was used"
+  },
+  "verification": {
+    "sourceHostTestsPassed": 80,
+    "nativeAndPlayerBrowserTestsPassed": 17,
+    "clientRegressionCheck": "passed",
+    "viteBuild": "passed",
+    "independentReview": "passed",
+    "startup502FixtureClickToFrameMsApprox": 2800,
+    "postPlaybackQualityReattachToleratesTwo502": true
+  },
+  "limits": [
+    "Two final samples show a reduction, not a guarantee for every CDN/session.",
+    "Direct Habster movie playback was verified, but ad/helper videos prevented trustworthy exact click timing and resume40 comparison.",
+    "The complete movie, real login and other titles were not tested."
+  ],
+  "playbackSmoke": {
+    "status": "passed",
+    "mediaMocked": false,
+    "manual4K": {
+      "width": 3832,
+      "height": 1600,
+      "positionSeconds": 41.967019,
+      "frames": 43,
+      "playing": true,
+      "frameGrowthOver1s": true,
+      "resumePreserved": true
+    },
+    "manualVoice": {
+      "name": "(Ukrainian) Ukrainian | E-AC-3 | 51 | 640 kbps | DUB | Le Doyen",
+      "freshResolveStatus": 200,
+      "freshMediaPlaylistStatus": 200,
+      "freshPostResolveAttachment": "loadstart",
+      "width": 3832,
+      "height": 1600,
+      "firstPostMetadataFramePositionSeconds": 42.266277,
+      "laterPositionSeconds": 43.378052,
+      "observationSpanMs": 1100,
+      "playing": true,
+      "proof": "New resolve, new media playlist, new loadedmetadata and post-metadata decoded frame; playback time then advanced over1s.",
+      "helperBooleanLimitation": "The counter-based convenience booleans do not survive source resets and were not used as proof."
+    }
+  }
+}
