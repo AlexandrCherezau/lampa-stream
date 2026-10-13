@@ -26,6 +26,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const DIST = path.join(ROOT, "dist");
 const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || "127.0.0.1";
 
 // ── DoH resolver (LOCAL-ONLY) ────────────────────────────────────────────────
 // This dev machine is inside Russia and its system resolver POISONS TMDB
@@ -86,6 +87,7 @@ const { default: room } = await import("../api/room.js");
 const { default: introdb } = await import("../api/introdb.js");
 const { default: sourceHost } = await import("../api/source-host.js");
 const { default: collaps } = await import("../api/collaps.js");
+const { default: cub } = await import("../api/cub.js");
 // TMDB: use the canned mock so the local dev server can drive the full flow
 // without a real token. Set MOCK_TMDB=1 to use the offline /tmp/tmdb-mock.mjs stub.
 const tmdbModule = await (process.env.MOCK_TMDB === "1" ? import("/tmp/tmdb-mock.mjs") : import("../api/tmdb.js"));
@@ -132,6 +134,7 @@ app.all("/api/lampac", wrap(lampac));
 app.all("/api/introdb", wrap(introdb));
 app.all("/api/source-host", wrap(sourceHost));
 app.all("/api/collaps", wrap(collaps));
+app.all("/api/cub", wrap(cub));
 // /api/tmdb, /api/tmdb/3/…, /api/tmdb/img/… — handler re-derives the sub-path.
 app.all(/^\/api\/tmdb(?:\/.*)?$/, wrap(tmdb));
 // /api/room and /api/room?code=…&op=…
@@ -159,7 +162,7 @@ app.get(/^\/(?!api\/).*/, (_req, res) => {
   res.sendFile(path.join(DIST, "index.html"));
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
   const secretState = process.env.LAMPAC_PROXY_SECRET ? "set (third-party balancers signable)" : "NOT set";
   console.log(`\n  lampa-stream local test server`);
   console.log(`  ▶  http://localhost:${PORT}`);

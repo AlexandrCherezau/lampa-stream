@@ -38,6 +38,15 @@ const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
 
 const ROUTE_PAGES = new Set(["home", "discover", "history", "settings", "together", "downloads", "movie", "tv"]);
+function catalogMetadata(item) {
+  if (item?.catalogSource !== "vi3000") return {};
+  const kinopoiskId = [item.kinopoisk_id, item.kinopoiskId]
+    .filter((value) => typeof value === "number" || typeof value === "string")
+    .map(Number).find((value) => Number.isSafeInteger(value) && value > 0);
+  const imdbId = item.imdb_id || item.external_ids?.imdb_id;
+  return { catalogSource: "vi3000", ...(kinopoiskId ? { kinopoisk_id: kinopoiskId } : {}),
+    ...(typeof imdbId === "string" && /^tt\d{5,12}$/.test(imdbId) ? { imdb_id: imdbId } : {}) };
+}
 function readRoute(url = new URL(window.location.href)) {
   const parts = url.pathname.split("/").filter(Boolean);
   const slug = parts[0] || "home";
@@ -51,7 +60,11 @@ function readRoute(url = new URL(window.location.href)) {
     const episodeValue = url.searchParams.get("episode");
     const season = seasonValue !== null && /^(0|[1-9]\d*)$/.test(seasonValue) ? Number(seasonValue) : undefined;
     const episode = episodeValue && /^[1-9]\d*$/.test(episodeValue) ? Number(episodeValue) : undefined;
-    return { page, selected: { id, media_type: page, ...(Number.isSafeInteger(season) ? { season } : {}), ...(Number.isSafeInteger(episode) ? { episode } : {}) } };
+    const remembered = window.history.state?.appRoute;
+    const catalog = url.searchParams.get("catalogSource") === "vi3000"
+      ? { ...catalogMetadata(remembered?.page === page && remembered.selected?.id === id ? remembered.selected : null), catalogSource: "vi3000" }
+      : {};
+    return { page, selected: { id, media_type: page, ...catalog, ...(Number.isSafeInteger(season) ? { season } : {}), ...(Number.isSafeInteger(episode) ? { episode } : {}) } };
   }
   if (parts.length > 1) return { page: "home", selected: null };
   const section = url.searchParams.get("section");
@@ -63,6 +76,7 @@ function routeUrl(page, selected) {
     const query = new URLSearchParams();
     if (page === "tv" && selected.season != null && Number.isSafeInteger(Number(selected.season)) && Number(selected.season) >= 0) query.set("season", selected.season);
     if (page === "tv" && Number(selected.episode) > 0) query.set("episode", selected.episode);
+    if (selected.catalogSource === "vi3000") query.set("catalogSource", "vi3000");
     return url + (query.size ? `?${query}` : "");
   }
   const slug = page === "history" ? "library" : page === "home" ? "" : page;
@@ -861,6 +875,7 @@ export default function App() {
           media_type: mt,
           vote_average: item.vote_average,
           year: (item.release_date || item.first_air_date || "").slice(0, 4),
+          ...catalogMetadata(item),
         };
         showToast("Добавлено в избранное");
         setSavedOrder((prev) => {
@@ -888,11 +903,16 @@ export default function App() {
     // Respect the "disable watch history" setting
     const historyEnabled = storage.get(STORAGE_KEYS.HISTORY_ENABLED);
     if (historyEnabled === 0 || historyEnabled === false) return;
+    // TMDB details omit catalog provenance; retain the matching selected card.
+    const selectedItem = selectedRef.current;
+    const catalog = selectedItem?.id === item.id && getMediaType(selectedItem) === getMediaType(item)
+      ? catalogMetadata(selectedItem) : catalogMetadata(item);
     const entry = {
       id: item.id,
       title: item.title || item.name,
       poster_path: item.poster_path,
       media_type: getMediaType(item),
+      ...catalog,
       watchedAt: Date.now(),
       // Store as numbers so the progress key always matches exactly
       season: item.season != null ? Number(item.season) : null,

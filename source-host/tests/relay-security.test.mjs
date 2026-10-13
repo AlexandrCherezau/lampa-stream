@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createCipheriv } from "node:crypto";
+import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import http from "node:http";
 import { EventEmitter, once } from "node:events";
 import { Readable } from "node:stream";
@@ -230,4 +230,139 @@ test("sealed node-only HLS media stays on Node through child resources while ord
   const tampered = ordinaryToken.slice(0, -1) + (ordinaryToken.endsWith("A") ? "B" : "A");
   const rejected = await fetch(`${app.base}/v1/media?token=${encodeURIComponent(tampered)}&nodeOnly=true`, { redirect: "manual" });
   assert.equal(rejected.status, 404, "tampered tokens cannot bypass the Worker redirect or crash the handler");
+});
+
+test("public-only resources never inherit native engine DNS, AES or readiness privileges", async () => {
+  let readiness = 0;
+  const requests = [];
+  const transport = createTransport({
+    engineUrl: "http://lampac.internal:9118", engineKey: ENGINE_KEY,
+    beforeEngineRequest: async () => { readiness++; },
+    lookup: async (host) => [{ address: host === "lampac.internal" ? "127.0.0.1" : "93.184.216.34", family: 4 }],
+    requestOnceImpl: async (url, options) => {
+      requests.push({ url: String(url), options });
+      const response = Readable.from([Buffer.from("video")]);
+      response.statusCode = url.hostname === "lampac.internal" ? 200 : 302;
+      response.headers = { location: "http://lampac.internal:9118/lite/video" };
+      return response;
+    },
+  });
+  for (const path of ["/lite/video", proxyLink("https://cdn.example.test/video")]) {
+    const url = `http://lampac.internal:9118${path}`;
+    await assert.rejects(transport.request(url, { publicOnly: true }), { code: "SSRF_BLOCKED" });
+    await assert.rejects(transport.route({ url, publicOnly: true }), { code: "SSRF_BLOCKED" });
+  }
+  await assert.rejects(transport.request("https://cdn.example.test/start", { publicOnly: true }), { code: "SSRF_BLOCKED" });
+  assert.equal(readiness, 0);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0].options.addresses, [{ address: "93.184.216.34", family: 4 }]);
+  const native = await transport.request("http://lampac.internal:9118/lite/video");
+  native.response.resume();
+  assert.equal(readiness, 1);
+});
+
+test("transport without an engine allows public absolute URLs only and respects cancellation", async () => {
+  const transport = createTransport({ lookup: async () => [{ address: "93.184.216.34", family: 4 }] });
+  assert.equal((await transport.route({ url: "https://cdn.example.test/video" })).kind, "direct");
+  await assert.rejects(transport.route({ url: "/lite/video" }));
+  await assert.rejects(transport.route({ url: "file:///etc/passwd" }), { code: "BAD_URL" });
+  await assert.rejects(transport.request("http://127.0.0.1/lite/video"), { code: "SSRF_BLOCKED" });
+  await assert.rejects(transport.request("https://cdn.example.test/video", { signal: AbortSignal.abort() }), { name: "AbortError" });
+});
+
+test("public-only media seals and propagates the restriction through every HLS URI and rejects malformed tokens", async (t) => {
+  const seen = [];
+  const transport = {
+    async request(rawUrl, options) {
+      seen.push(options.publicOnly);
+      const url = new URL(rawUrl);
+      const body = '#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,URI="sub.vtt"\n#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXTINF:2,\nsegment.ts\n#EXT-X-ENDLIST\n';
+      const response = Readable.from([Buffer.from(body)]);
+      response.statusCode = 200;
+      response.headers = { "content-type": "application/vnd.apple.mpegurl" };
+      return { response, url, headers: {}, headerOrigin: url.origin };
+    },
+  };
+  const media = createMedia({ transport, secret: SECRET });
+  const app = await serve({ media, transport });
+  t.after(app.close);
+  const token = new URL(media.url({ url: "https://cdn.example.test/master.m3u8", publicOnly: true }), app.base).searchParams.get("token");
+  assert.equal(media.resource(token).publicOnly, true);
+  const root = await fetch(`${app.base}/v1/media?token=${encodeURIComponent(token)}&publicOnly=false`);
+  assert.equal(root.status, 200);
+  const body = await root.text();
+  const children = [...body.matchAll(/\/v1\/media\?token=([^"\s]+)/g)];
+  assert.equal(children.length, 4);
+  for (const [, child] of children) assert.equal(media.resource(decodeURIComponent(child)).publicOnly, true);
+  assert.deepEqual(seen, [true]);
+  assert.throws(() => media.resource(token.slice(0, -1) + (token.endsWith("A") ? "B" : "A")), /Invalid or expired/);
+  const seal = (value) => {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", createHash("sha256").update(SECRET).digest(), iv);
+    const bytes = Buffer.concat([cipher.update(JSON.stringify(value)), cipher.final()]);
+    return `v1.${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${bytes.toString("base64url")}`;
+  };
+  const legacy = { url: "https://cdn.example.test/movie", exp: Date.now() + 60_000 };
+  assert.equal(media.resource(seal(legacy)).publicOnly, false, "pre-existing tokens remain native-compatible");
+  for (const publicOnly of [null, "true", 0, {}]) assert.throws(() => media.resource(seal({ ...legacy, publicOnly })), /Invalid or expired/);
+});
+
+test("public-only probes reject private engine references at root, variant, map, key and segment", async () => {
+  for (const stage of ["root", "variant", "map", "key", "segment"]) {
+    const engine = "http://lampac.internal:9118/lite/resource";
+    const fetched = [];
+    let readiness = 0;
+    const transport = createTransport({
+      engineUrl: "http://lampac.internal:9118", engineKey: ENGINE_KEY,
+      beforeEngineRequest: async () => { readiness++; },
+      lookup: async (host) => [{ address: host === "lampac.internal" ? "127.0.0.1" : "93.184.216.34", family: 4 }],
+      requestOnceImpl: async (url) => {
+        fetched.push(url.hostname);
+        const body = stage === "variant" ? `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\n${engine}\n`
+          : `#EXTM3U\n${stage === "map" ? `#EXT-X-MAP:URI="${engine}"\n` : ""}${stage === "key" ? `#EXT-X-KEY:METHOD=AES-128,URI="${engine}"\n` : ""}#EXTINF:2,\n${stage === "segment" ? engine : "segment.ts"}\n#EXT-X-ENDLIST\n`;
+        const response = Readable.from([Buffer.from(body)]);
+        response.statusCode = 200;
+        response.headers = { "content-type": "application/vnd.apple.mpegurl" };
+        return response;
+      },
+    });
+    const media = createMedia({ transport, secret: SECRET });
+    const result = await media.probe({ url: stage === "root" ? engine : "https://cdn.example.test/master.m3u8", publicOnly: true });
+    assert.equal(result.ok, false, stage);
+    assert.equal(result.reason, "SSRF_BLOCKED", stage);
+    assert.equal(readiness, 0, stage);
+    assert(fetched.every((host) => host === "cdn.example.test"), stage);
+  }
+});
+
+test("public-only public engine URLs remain ordinary pinned HTTP and cancelled probes do not request", async () => {
+  let readiness = 0;
+  const calls = [];
+  const transport = createTransport({
+    engineUrl: "https://engine.example.test", engineKey: ENGINE_KEY,
+    beforeEngineRequest: async () => { readiness++; },
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      const response = Readable.from([Buffer.from([0x47, 0, 0, 0])]);
+      response.statusCode = 200;
+      response.headers = { "content-type": "video/mp2t" };
+      return response;
+    },
+  });
+  const url = `https://engine.example.test${proxyLink("https://cdn.example.test/video")}`;
+  const routed = await transport.route({ url, publicOnly: true });
+  assert.equal(routed.kind, "direct");
+  assert.equal(routed.url, url);
+  assert.equal(routed.headers.cookie, undefined, "engine AES headers are not trusted");
+  const media = createMedia({ transport, secret: SECRET });
+  const result = await media.probe({ url, publicOnly: true });
+  assert.equal(result.ok, true);
+  assert.equal(result.publicOnly, true);
+  assert.equal(calls[0].url, url);
+  assert.deepEqual(calls[0].options.addresses, [{ address: "93.184.216.34", family: 4 }]);
+  assert.equal(readiness, 0);
+  const cancelled = await media.probe({ url, publicOnly: true }, { signal: AbortSignal.abort() });
+  assert.equal(cancelled.reason, "aborted");
+  assert.equal(calls.length, 1);
 });

@@ -654,3 +654,64 @@ test("Haikyuu season 3 uses mapped AniSkip episode and skips its opening", async
   await expect.poll(() => resolved.at(-1)?.quality, { timeout: 5_000 }).toBe("1080p");
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 15_000 }).toBeGreaterThan(210);
 });
+
+for (const { kind, recovers } of [{ kind: "file", recovers: true }, { kind: "file", recovers: false }, { kind: "hls", recovers: false }]) test(`source startup watchdog ${kind}: ${recovers ? "keeps delayed healthy playback" : "expires for a stalled stream"}`, async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
+    localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
+  });
+  const tmdb = (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ id: 550, title: "Movie 550", original_title: "Movie 550", imdb_id: "tt0111161", kinopoisk_id: 361, runtime: 100, genres: [], credits: { cast: [] } }),
+  });
+  await page.route("**/api/tmdb/**", tmdb);
+  await page.route("https://api.themoviedb.org/**", tmdb);
+  await page.route(/\/api\/source-host\?op=discover(?:&|$)/, (route) => route.fulfill({
+    status: 200, contentType: "text/event-stream",
+    body: ["delayed", "fallback"].map((id) => `event: candidate\ndata: ${JSON.stringify({ id, providerId: id, providerName: id, voiceName: "Dub" })}\n\n`).join("") + "event: done\ndata: {}\n\n",
+  }));
+  const resolutions = [];
+  await page.route(/\/api\/source-host\?op=resolve(?:&|$)/, (route) => {
+    const { id } = route.request().postDataJSON();
+    resolutions.push(id);
+    const quality = { label: "720p", height: 720, url: `https://media.example/${id}.mp4` };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind, selected: quality, qualities: [quality] }) });
+  });
+  let releaseMedia;
+  const mediaGate = new Promise((resolve) => { releaseMedia = resolve; });
+  let mediaRequested;
+  const requested = new Promise((resolve) => { mediaRequested = resolve; });
+  const mp4 = join(fixtureDir, `metadata-grace-${kind}-${recovers}.mp4`);
+  execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-i", join(fixtureDir, "fixture.m3u8"), "-c", "copy", "-movflags", "+faststart", mp4]);
+  await page.route("**/delayed.mp4", async (route) => {
+    mediaRequested();
+    await mediaGate;
+    await route.fulfill({ status: 200, contentType: "video/mp4", body: readFileSync(mp4) }).catch(() => {});
+  });
+  await page.route("**/fallback.mp4", (route) => route.fulfill({ status: 200, contentType: "video/mp4", body: readFileSync(mp4) }));
+  await page.clock.install();
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  const video = page.locator("video");
+  await expect(video).toBeVisible();
+  await requested;
+  try {
+    if (kind === "hls") {
+      await page.clock.fastForward(8000);
+      await expect.poll(() => resolutions).toEqual(["delayed", "fallback"]);
+      return;
+    }
+    await page.clock.fastForward(9000);
+    expect(resolutions).toEqual(["delayed"]);
+    if (recovers) {
+      releaseMedia();
+      await expect.poll(() => video.evaluate((v) => v.getVideoPlaybackQuality().totalVideoFrames)).toBeGreaterThan(3);
+      await expect.poll(() => video.evaluate((v) => v.currentTime)).toBeGreaterThan(0.5);
+      await page.clock.fastForward(15000);
+      expect(resolutions).toEqual(["delayed"]);
+    } else {
+      await page.clock.fastForward(6000);
+      await expect.poll(() => resolutions).toEqual(["delayed", "fallback"]);
+    }
+  } finally { releaseMedia(); }
+});

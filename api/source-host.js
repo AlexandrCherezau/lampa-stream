@@ -27,6 +27,7 @@ export default async function handler(req, res) {
     res.status(upstream.status);
     res.setHeader("Cache-Control", "no-store");
     if (op === "discover" && upstream.ok && /text\/event-stream/i.test(upstream.headers.get("content-type") || "")) {
+      res.setHeader("Cache-Control", "no-store, no-transform");
       res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
       res.setHeader("X-Accel-Buffering", "no");
       res.flushHeaders?.();

@@ -153,7 +153,8 @@ function parseToken(token, key) {
     decipher.setAuthTag(tag);
     const value = JSON.parse(Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8"));
     if (!value || !Number.isFinite(value.exp) || value.exp <= Date.now() || typeof value.url !== "string") throw new Error("expired");
-    return { ...value, nodeOnly: value.nodeOnly === true };
+    if (value.publicOnly !== undefined && typeof value.publicOnly !== "boolean") throw new Error("invalid");
+    return { ...value, publicOnly: value.publicOnly === true, nodeOnly: value.nodeOnly === true };
   } catch {
     throw mediaError("Invalid or expired media token", 404);
   }
@@ -167,6 +168,7 @@ function makeToken(resource, key) {
     headers: headersFor(resource),
     headerOrigin: resource.headerOrigin || new URL(resource.url).origin,
     nodeOnly: resource.nodeOnly === true,
+    publicOnly: resource.publicOnly === true,
     exp: Date.now() + TOKEN_TTL_MS,
   }));
   const encrypted = Buffer.concat([cipher.update(value), cipher.final()]);
@@ -174,7 +176,7 @@ function makeToken(resource, key) {
 }
 
 async function readPlaylist(transport, resource, signal) {
-  const { response, url, headers, headerOrigin } = await transport.request(resource.url, { headers: headersFor(resource), signal, timeout: 15_000, retryNotFound: true });
+  const { response, url, headers, headerOrigin } = await transport.request(resource.url, { headers: headersFor(resource), publicOnly: resource.publicOnly, signal, timeout: 15_000, retryNotFound: true });
   const raw = await collect(response, PLAYLIST_MAX, { signal });
   const bytes = decodeBody(raw, response.headers["content-encoding"]);
   const type = response.headers["content-type"] || "";
@@ -182,9 +184,9 @@ async function readPlaylist(transport, resource, signal) {
   return { text: bytes.toString("utf8"), url, headers: headers || headersFor(resource), headerOrigin: headerOrigin || url.origin };
 }
 
-async function readProbeBytes(transport, url, headers, signal, range = true) {
+async function readProbeBytes(transport, url, headers, signal, range = true, publicOnly = false) {
   const requestHeaders = { ...headers, ...(range ? { range: range === true ? `bytes=0-${PROBE_PREFIX - 1}` : range } : {}) };
-  const { response } = await transport.request(url, { headers: requestHeaders, signal, timeout: 15_000, retryNotFound: true });
+  const { response } = await transport.request(url, { headers: requestHeaders, publicOnly, signal, timeout: 15_000, retryNotFound: true });
   if (typeof range === "string" && response.statusCode !== 206) {
     response.resume();
     throw mediaError("Upstream did not honor the HLS byte range");
@@ -262,7 +264,7 @@ function looksLikeFile(contentType, bytes) {
 }
 
 async function inspectRoot(transport, resource, signal) {
-  const { response, url, headers, headerOrigin } = await transport.request(resource.url, { headers: headersFor(resource), signal, timeout: 15_000, retryNotFound: true });
+  const { response, url, headers, headerOrigin } = await transport.request(resource.url, { headers: headersFor(resource), publicOnly: resource.publicOnly, signal, timeout: 15_000, retryNotFound: true });
   const contentType = response.headers["content-type"] || "";
   const iterator = response[Symbol.asyncIterator]();
   const first = await iterator.next();
@@ -319,7 +321,7 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
       const headers = headersFor(resource);
       const requestedRange = rangeHeader(range);
       if (requestedRange) headers.range = requestedRange;
-      const { response, url: finalUrl, headers: upstreamHeaders, headerOrigin } = await transport.request(resource.url, { headers, method: req.method === "HEAD" ? "HEAD" : "GET", signal: abort.signal, timeout: 30_000, retryNotFound: true });
+      const { response, url: finalUrl, headers: upstreamHeaders, headerOrigin } = await transport.request(resource.url, { headers, publicOnly: resource.publicOnly, method: req.method === "HEAD" ? "HEAD" : "GET", signal: abort.signal, timeout: 30_000, retryNotFound: true });
       const type = response.headers["content-type"] || "application/octet-stream";
       const honoredRange = !range || response.statusCode === 206;
       if (req.method === "HEAD" && looksLikeErrorPage(type, Buffer.alloc(0))) {
@@ -393,6 +395,7 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
           headers: upstreamHeaders || resource.headers,
           headerOrigin: headerOrigin || finalUrl.origin,
           nodeOnly: resource.nodeOnly,
+          publicOnly: resource.publicOnly,
         }));
         let payload = Buffer.from(rewritten);
         const output = { "content-type": "application/vnd.apple.mpegurl", "cache-control": response.headers["cache-control"] || "no-store", vary: "Accept-Encoding" };
@@ -459,6 +462,7 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
       let inspected = await inspectRoot(transport, resource, signal);
       if (inspected.kind === "file") return {
         ok: true,
+        ...(resource.publicOnly === true ? { publicOnly: true } : {}),
         kind: "file",
         url: inspected.url.toString(),
         headers: inspected.headers,
@@ -483,17 +487,18 @@ export function createMedia({ transport, secret, publicOrigin = "" } = {}) {
       if (!parts.segment) throw mediaError("HLS playlist has no media segment");
       if (parts.map) {
         const mapUrl = new URL(parts.map, playlist.url).toString();
-        await readProbeBytes(transport, mapUrl, headersFor({ ...resource, url: mapUrl, headers: playlist.headers, headerOrigin: playlist.headerOrigin }), signal, rangeForProbe(parts.mapRange));
+        await readProbeBytes(transport, mapUrl, headersFor({ ...resource, url: mapUrl, headers: playlist.headers, headerOrigin: playlist.headerOrigin }), signal, rangeForProbe(parts.mapRange), resource.publicOnly);
       }
       if (parts.key) {
         const keyUrl = new URL(parts.key, playlist.url).toString();
-        const keyBytes = await readProbeBytes(transport, keyUrl, headersFor({ ...resource, url: keyUrl, headers: playlist.headers, headerOrigin: playlist.headerOrigin }), signal, false);
+        const keyBytes = await readProbeBytes(transport, keyUrl, headersFor({ ...resource, url: keyUrl, headers: playlist.headers, headerOrigin: playlist.headerOrigin }), signal, false, resource.publicOnly);
         if (keyBytes.length !== 16) throw mediaError("Invalid AES-128 HLS key");
       }
       const segmentUrl = new URL(parts.segment, playlist.url).toString();
-      const segment = await readProbeBytes(transport, segmentUrl, headersFor({ ...resource, url: segmentUrl, headers: playlist.headers, headerOrigin: playlist.headerOrigin }), signal, rangeForProbe(parts.segmentRange));
+      const segment = await readProbeBytes(transport, segmentUrl, headersFor({ ...resource, url: segmentUrl, headers: playlist.headers, headerOrigin: playlist.headerOrigin }), signal, rangeForProbe(parts.segmentRange), resource.publicOnly);
       return {
         ok: true,
+        ...(resource.publicOnly === true ? { publicOnly: true } : {}),
         kind: "hls",
         url: inspected.url.toString(),
         headers: inspected.headers,

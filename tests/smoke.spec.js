@@ -52,6 +52,9 @@ async function mockTmdb(page, anime = false) {
   await page.route("**/api/tmdb/**", respond);
   await page.route("https://api.themoviedb.org/**", respond);
   await page.route("**/api/source-host?**", (route) => route.fulfill({ status: 503, body: "Offline test" }));
+  await page.route("**/api/cub?**", (route) => route.fulfill({
+    contentType: "application/json", body: JSON.stringify({ page: 1, total_pages: 1, results: [] }),
+  }));
   await page.route("**/*.jpg", (route) =>
     route.fulfill({ status: 200, contentType: "image/gif", body: PIXEL }),
   );
@@ -189,6 +192,7 @@ for (const anime of [false, true]) test(`Own source discovery carries ${anime ? 
   expect(query.type).toBe(anime ? "tv" : "movie");
   expect(query.anime).toBe(anime);
   expect(query.tmdbId).toBe(anime ? 60863 : 123);
+  expect(Object.hasOwn(query, "catalogSource")).toBe(false);
   if (anime) expect(Object.hasOwn(query, "runtimeMinutes")).toBe(false);
   else expect(query.runtimeMinutes).toBe(142);
 });

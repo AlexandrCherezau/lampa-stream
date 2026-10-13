@@ -288,7 +288,7 @@ function assertInput(input) {
   }
 }
 
-export function createLampacProvider({ baseUrl, fetchJson, remember = null, providerOrder = [] } = {}) {
+export function createLampacProvider({ baseUrl, fetchJson, remember = null, providerOrder = [], providerFilter = providerAllowed } = {}) {
   if (typeof fetchJson !== "function") throw new TypeError("fetchJson is required");
   const base = new URL(baseUrl);
   if (base.protocol !== "http:" && base.protocol !== "https:") throw new TypeError("baseUrl must use HTTP(S)");
@@ -316,7 +316,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
     }
 
     if (input.type === "movie") {
-      const items = kindOf(json) === "movie" ? dataItems(json) : (json.method ? [json] : []);
+      const items = kindOf(json) === "movie" && Array.isArray(json.data) ? dataItems(json) : (json.method ? [json] : []);
       for (const candidate of buildCandidates(provider, items, input, null, null, providerJsonUrl)) yield candidate;
       return;
     }
@@ -446,7 +446,7 @@ export function createLampacProvider({ baseUrl, fetchJson, remember = null, prov
     const priorities = new Map(providerOrder.map((id, index) => [String(id).toLowerCase(), index]));
     const events = (Array.isArray(eventsJson) ? eventsJson : Array.isArray(eventsJson.data) ? eventsJson.data : [])
       .slice(0, MAX_PROVIDERS)
-      .filter((provider) => providerAllowed(provider, title) && sameOriginUrl(provider.url, base))
+      .filter((provider) => providerFilter(provider, title) && sameOriginUrl(provider.url, base))
       .map((provider, index) => ({ provider, index }))
       .sort((a, b) => (priorities.get(String(a.provider.balanser).toLowerCase()) ?? Number.MAX_SAFE_INTEGER)
         - (priorities.get(String(b.provider.balanser).toLowerCase()) ?? Number.MAX_SAFE_INTEGER) || a.index - b.index)

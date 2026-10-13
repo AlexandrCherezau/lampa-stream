@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import MediaCard from "../components/MediaCard";
 import ProgressiveGrid from "../utils/useProgressiveList.jsx";
 import TrendingCarousel from "../components/TrendingCarousel";
+import CubFeedSection from "../components/CubFeedSection";
 import { PlayIcon, StarIcon } from "../components/Icons";
 import {
   imgUrl,
@@ -488,6 +489,15 @@ export default function HomePage({
 
         return null;
       })}
+      {[
+        ["now_playing", "Сейчас смотрят"],
+        ["latest", "Новинки"],
+        ["fire", "Популярное"],
+        ["hundred", "Лучшие фильмы"],
+      ].map(([feed, title]) => (
+        <CubFeedSection key={feed} feed={feed} title={title} offline={offline} viewMode={viewMode}
+          onSelect={onSelect} watched={watched} onMarkWatched={onMarkWatched} onMarkUnwatched={onMarkUnwatched} />
+      ))}
     </div>
   );
 }

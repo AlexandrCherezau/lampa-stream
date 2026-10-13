@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { createLampacProvider } from "./providers/lampac.mjs";
+import { createVi3000Provider } from "./providers/vi3000.mjs";
 import { createTransport } from "./transport.mjs";
 import { createMedia } from "./media.mjs";
 
@@ -21,6 +22,10 @@ export function validateTitle(value) {
   const title = {};
   if (!["movie", "tv"].includes(value.type)) throw failure("Неверный тип: movie или tv");
   title.type = value.type;
+  if (value.catalogSource !== undefined) {
+    if (value.catalogSource !== "vi3000") throw failure("Неверный источник каталога");
+    title.catalogSource = value.catalogSource;
+  }
   for (const key of ["title", "originalTitle", "language"]) {
     if (value[key] == null) continue;
     if (typeof value[key] !== "string" || value[key].length > (key === "language" ? 8 : 300)) throw failure(`Неверный параметр ${key}`);
@@ -88,9 +93,10 @@ const publicCandidate = (candidate) => ({
   qualityHint: candidate.qualityHint,
   season: candidate.season,
   episode: candidate.episode,
+  catalogSource: candidate.catalogSource,
 });
 
-export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "", secret, apiKey = "", publicOrigin = "", mediaRelayUrl = "", adapter, media, transport } = {}) {
+export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "", secret, apiKey = "", publicOrigin = "", mediaRelayUrl = "", adapter, viAdapter, media, transport } = {}) {
   if (!engineUrl && !adapter) throw new Error("SOURCE_ENGINE_URL is required");
   if (Buffer.byteLength(secret || "") < 32) throw new Error("SOURCE_HOST_SECRET must contain at least 32 bytes");
   if (mediaRelayUrl && (!apiKey || new URL(mediaRelayUrl).protocol !== "https:" || new URL(mediaRelayUrl).origin === publicOrigin)) throw new Error("Media relay needs a separate HTTPS origin and private API key");
@@ -99,6 +105,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
   transport ||= createTransport({ engineUrl, engineKey, beforeEngineRequest: waitForEngine });
   media ||= createMedia({ transport, secret, publicOrigin });
   adapter ||= createLampacProvider({ baseUrl: engineUrl, fetchJson: transport.json, providerOrder: PROVIDER_ORDER });
+  viAdapter ||= createVi3000Provider({ transport: createTransport() });
   const providers = new Map();
   let discoveries = 0;
   let resolutions = 0;
@@ -193,7 +200,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
       const body = await bodyJson(req);
       if (path.pathname === "/v1/discover") {
         const title = validateTitle(body);
-        await waitForEngine(controller.signal);
+        if (title.catalogSource !== "vi3000") await waitForEngine(controller.signal);
         if (discoveries >= 4) throw failure("Сервер занят, повторите запрос", 429, "BUSY");
         discoveries++;
         deadline = setTimeout(() => controller.abort(failure("Истекло время поиска", 504, "TIMEOUT")), DISCOVERY_MS);
@@ -204,7 +211,8 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         let count = 0;
         try {
           event("start", { type: title.type, season: title.season, episode: title.episode });
-          for await (const candidate of adapter.discover(title, { signal: controller.signal })) {
+          const selectedAdapter = title.catalogSource === "vi3000" ? viAdapter : adapter;
+          for await (const candidate of selectedAdapter.discover(title, { signal: controller.signal })) {
             if (controller.signal.aborted) break;
             if (candidate.error) {
               record(candidate.providerId, { providerName: candidate.providerName, status: "unavailable", error: "Источник не предоставил выбранную запись" });
@@ -228,12 +236,13 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         if (typeof body.id !== "string" || body.id.length > 24 * 1024) throw failure("Неверный источник");
         if (body.quality != null && (typeof body.quality !== "string" || body.quality.length > 40)) throw failure("Неверное качество");
         const candidate = readCandidate(body.id);
-        await waitForEngine(controller.signal);
+        if (candidate.catalogSource !== "vi3000") await waitForEngine(controller.signal);
         if (resolutions >= 8) throw failure("Сервер занят, повторите запрос", 429, "BUSY");
         resolutions++;
         deadline = setTimeout(() => controller.abort(failure("Истекло время проверки", 504, "TIMEOUT")), RESOLVE_MS);
         try {
-          const resolved = await adapter.resolve(candidate, { signal: controller.signal });
+          const selectedAdapter = candidate.catalogSource === "vi3000" ? viAdapter : adapter;
+          const resolved = await selectedAdapter.resolve(candidate, { signal: controller.signal });
           const qualities = resolved.qualities || [];
           if (!qualities.length) throw failure("Источник не предоставил видео", 502, "NO_MEDIA");
           const wanted = body.quality == null ? null : String(body.quality);
@@ -266,8 +275,10 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
           record(candidate.providerId, { providerName: candidate.providerName, status: "verified", verifiedAt: new Date().toISOString() });
           // Keep the verified redirect target; dynamic engine manifests need a browser again.
           // shortcut: keep these failing Worker paths on Node until relay playback is verified.
+          const providerId = candidate.catalogSource === "vi3000"
+            ? /^vi3000:([a-z0-9_-]{1,64})$/.exec(candidate.providerId)?.[1] : candidate.providerId;
           const variants = qualities.map((quality) => ({ label: quality.label, height: quality.height,
-            url: media.url({ ...(quality === selected && probe.url ? { ...quality, url: String(probe.url), headers: probe.headers || quality.headers, headerOrigin: probe.headerOrigin } : quality), nodeOnly: ["zetflixdb", "cdnvideohub"].includes(candidate.providerId) || (candidate.providerId === "zetflix" && candidate.season == null && candidate.episode == null) }),
+            url: media.url({ ...(quality === selected && probe.url ? { ...quality, url: String(probe.url), headers: probe.headers || quality.headers, headerOrigin: probe.headerOrigin } : quality), nodeOnly: ["zetflixdb", "cdnvideohub"].includes(providerId) || (providerId === "zetflix" && candidate.season == null && candidate.episode == null) }),
           }));
           const subtitles = (resolved.subtitles || []).map((subtitle) => ({ label: subtitle.label, language: subtitle.language, url: media.url(subtitle) }));
           json(res, 200, {

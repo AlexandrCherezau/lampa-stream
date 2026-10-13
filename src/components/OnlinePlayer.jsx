@@ -583,7 +583,7 @@ export default function OnlinePlayer({
   //     player will never reach playback. Fail over. This is the "0:00/0:00
   //     forever" symptom that the previous readyState-only watchdog missed.
   //   • no metadata, no data = genuine trickle, fail over.
-  // Legit cold/warm starts reach playback in ~2–3 s, so a 7 s wall is ~2× margin.
+  // Progressive MP4 metadata can take ~9 s; give files a bounded 14 s grace while HLS keeps 7 s.
   useEffect(() => {
     if (!isLampac || !stream) return;
     const v = videoRef.current;
@@ -604,7 +604,7 @@ export default function OnlinePlayer({
       // No forward progress and not enough buffered to advance: a throughput stall
       // the probe couldn't see and no error will report. Jump to the next balancer.
       fleetFailover();
-    }, FLEET_STALL_MS);
+    }, stream.mp4 ? SWITCH_WATCHDOG_MS : FLEET_STALL_MS);
     return () => {
       clearTimeout(t);
       v.removeEventListener("loadedmetadata", onMeta);

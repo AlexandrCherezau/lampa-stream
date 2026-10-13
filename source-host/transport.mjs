@@ -224,19 +224,19 @@ function awaitEnd(response) {
 }
 
 export function createTransport({ engineUrl, engineKey, lookup = dns.lookup, requestOnceImpl = requestOnce, beforeEngineRequest } = {}) {
-  const engine = new URL(engineUrl);
-  if (!['http:', 'https:'].includes(engine.protocol)) throw new TypeError("engineUrl must use HTTP(S)");
+  const engine = engineUrl === undefined ? null : new URL(engineUrl);
+  if (engine && !['http:', 'https:'].includes(engine.protocol)) throw new TypeError("engineUrl must use HTTP(S)");
   if (engineKey !== undefined && (typeof engineKey !== "string" || !/^[0-9a-f]{32}$/i.test(engineKey))) throw new TypeError("engineKey must be a 16-byte hex key");
   if (beforeEngineRequest !== undefined && typeof beforeEngineRequest !== "function") throw new TypeError("beforeEngineRequest must be a function");
   const proxyKey = engineKey ? Buffer.from(engineKey, "hex") : null;
-  const engineOrigin = engine.origin;
+  const engineOrigin = engine?.origin;
 
-  function unwrapResource(rawUrl, headers = {}) {
-    let url = new URL(rawUrl, engine);
+  function unwrapResource(rawUrl, headers = {}, publicOnly = false) {
+    let url = new URL(rawUrl, publicOnly ? undefined : engine || undefined);
     let requestHeaders = { ...headers };
     let providerHeaders = allowedProviderHeaders(headers);
-    let trustedEngine = engineOrigin;
-    if (url.origin === engineOrigin) {
+    let trustedEngine = publicOnly ? undefined : engineOrigin;
+    if (!publicOnly && url.origin === engineOrigin) {
       const payload = decryptProxyPayload(url.pathname, proxyKey);
       if (payload) {
         try { url = new URL(payload.u); }
@@ -250,22 +250,22 @@ export function createTransport({ engineUrl, engineKey, lookup = dns.lookup, req
     return { url, requestHeaders, providerHeaders, trustedEngine };
   }
 
-  async function route(resource, { signal, timeout = 15_000 } = {}) {
+  async function route(resource, { signal, timeout = 15_000, publicOnly = false } = {}) {
     const headers = { ...(resource.headers || {}) };
     if (resource.headerOrigin && new URL(resource.url).origin !== resource.headerOrigin) dropCookie(headers);
-    const { url, providerHeaders, trustedEngine } = unwrapResource(resource.url, headers);
+    const { url, providerHeaders, trustedEngine } = unwrapResource(resource.url, headers, resource.publicOnly === true || publicOnly === true);
     await validateDestination(url, trustedEngine, signal, timeout, lookup);
-    return { kind: url.origin === engineOrigin ? "engine" : "direct", url: url.toString(), headers: providerHeaders, headerOrigin: url.origin };
+    return { kind: url.origin === trustedEngine ? "engine" : "direct", url: url.toString(), headers: providerHeaders, headerOrigin: url.origin };
   }
 
-  async function request(rawUrl, { headers = {}, method = "GET", signal, timeout = 15_000, retryNotFound = false } = {}) {
-    let { url, requestHeaders, providerHeaders, trustedEngine } = unwrapResource(rawUrl, headers);
+  async function request(rawUrl, { headers = {}, method = "GET", signal, timeout = 15_000, retryNotFound = false, publicOnly = false } = {}) {
+    let { url, requestHeaders, providerHeaders, trustedEngine } = unwrapResource(rawUrl, headers, publicOnly);
     let deadline = Date.now() + timeout;
     let redirects = 0;
     let notFoundRetries = 0;
     while (true) {
       if (signal?.aborted) throw abortError(signal);
-      if (url.origin === engineOrigin) {
+      if (!publicOnly && url.origin === engineOrigin) {
         const payload = decryptProxyPayload(url.pathname, proxyKey);
         if (payload) {
           try { url = new URL(payload.u); }

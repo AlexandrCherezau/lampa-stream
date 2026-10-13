@@ -1,0 +1,276 @@
+{
+  "checkedAt": "2026-10-13T07:28:53.669Z",
+  "scope": "Isolated Chromium video and ffprobe for LOTR (TMDB120/KP328), local real vi3000 gateway; no application ordering changes.",
+  "title": {
+    "tmdbId": 120,
+    "kinopoiskId": 328,
+    "imdbId": "tt0120737"
+  },
+  "checks": [
+    {
+      "provider": "vi3000:filmix",
+      "requestedQuality": "720p",
+      "resolveStatus": 200,
+      "resolveMs": 229,
+      "discoverMs": 13261,
+      "selectedQuality": "720p",
+      "kind": "file",
+      "metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "h264",
+            "profile": "High",
+            "codec_type": "video",
+            "width": 1280,
+            "height": 720
+          },
+          {
+            "codec_name": "aac",
+            "profile": "LC",
+            "codec_type": "audio"
+          },
+          {
+            "codec_name": "aac",
+            "profile": "LC",
+            "codec_type": "audio"
+          },
+          {
+            "codec_name": "aac",
+            "profile": "LC",
+            "codec_type": "audio"
+          },
+          {
+            "codec_name": "aac",
+            "profile": "LC",
+            "codec_type": "audio"
+          },
+          {
+            "codec_name": "aac",
+            "profile": "LC",
+            "codec_type": "audio"
+          },
+          {
+            "codec_name": "aac",
+            "profile": "LC",
+            "codec_type": "audio"
+          },
+          {
+            "codec_name": "aac",
+            "profile": "LC",
+            "codec_type": "audio"
+          },
+          {
+            "codec_name": "aac",
+            "profile": "LC",
+            "codec_type": "audio"
+          },
+          {
+            "codec_name": "aac",
+            "profile": "LC",
+            "codec_type": "audio"
+          },
+          {
+            "codec_name": "aac",
+            "profile": "LC",
+            "codec_type": "audio"
+          },
+          {
+            "codec_name": "aac",
+            "profile": "LC",
+            "codec_type": "audio"
+          },
+          {
+            "codec_name": "aac",
+            "profile": "LC",
+            "codec_type": "audio"
+          }
+        ],
+        "format": {
+          "duration": "13686.506167",
+          "size": "7989078414"
+        }
+      },
+      "chromium": {
+        "outcome": "decoded-first-frame",
+        "elapsedMs": 9301,
+        "frames": 4,
+        "currentTime": 0.026171,
+        "duration": 13686.506167,
+        "readyState": 4,
+        "networkState": 2,
+        "mediaErrorCode": null,
+        "events": [
+          {
+            "event": "waiting",
+            "ms": 64,
+            "readyState": 0,
+            "networkState": 2,
+            "errorCode": null
+          },
+          {
+            "event": "loadstart",
+            "ms": 64,
+            "readyState": 0,
+            "networkState": 2,
+            "errorCode": null
+          },
+          {
+            "event": "loadedmetadata",
+            "ms": 9222,
+            "readyState": 1,
+            "networkState": 2,
+            "errorCode": null
+          },
+          {
+            "event": "loadeddata",
+            "ms": 9274,
+            "readyState": 4,
+            "networkState": 2,
+            "errorCode": null
+          },
+          {
+            "event": "canplay",
+            "ms": 9275,
+            "readyState": 4,
+            "networkState": 2,
+            "errorCode": null
+          },
+          {
+            "event": "playing",
+            "ms": 9275,
+            "readyState": 4,
+            "networkState": 2,
+            "errorCode": null
+          }
+        ],
+        "hlsErrors": [],
+        "network": [
+          {
+            "status": 206,
+            "responseMs": 193,
+            "contentType": "video/mp4",
+            "contentLength": "8388608",
+            "contentRange": "bytes 0-8388607/7989078414"
+          },
+          {
+            "status": 206,
+            "responseMs": 40,
+            "contentType": "video/mp4",
+            "contentLength": "100663296",
+            "contentRange": "bytes 8388608-109051903/7989078414"
+          },
+          {
+            "failed": true,
+            "error": "net::ERR_ABORTED",
+            "elapsedMs": 9480
+          }
+        ]
+      }
+    },
+    {
+      "provider": "vi3000:cdnvideohub",
+      "discoverMs": 8894,
+      "resolveStatus": 200,
+      "resolveMs": 483,
+      "selectedQuality": "auto",
+      "kind": "hls",
+      "chromium": {
+        "outcome": "decoded-first-frame",
+        "elapsedMs": 622,
+        "frames": 4,
+        "currentTime": 0.03362,
+        "duration": 10705.359159000049,
+        "readyState": 4,
+        "networkState": 2,
+        "mediaErrorCode": null,
+        "events": [
+          {
+            "event": "waiting",
+            "ms": 45,
+            "readyState": 0,
+            "networkState": 2,
+            "errorCode": null
+          },
+          {
+            "event": "loadstart",
+            "ms": 45,
+            "readyState": 0,
+            "networkState": 2,
+            "errorCode": null
+          },
+          {
+            "event": "loadedmetadata",
+            "ms": 526,
+            "readyState": 1,
+            "networkState": 2,
+            "errorCode": null
+          },
+          {
+            "event": "loadeddata",
+            "ms": 546,
+            "readyState": 4,
+            "networkState": 2,
+            "errorCode": null
+          },
+          {
+            "event": "canplay",
+            "ms": 546,
+            "readyState": 4,
+            "networkState": 2,
+            "errorCode": null
+          },
+          {
+            "event": "playing",
+            "ms": 546,
+            "readyState": 4,
+            "networkState": 2,
+            "errorCode": null
+          }
+        ],
+        "hlsErrors": [],
+        "network": [
+          {
+            "status": 200,
+            "responseMs": 112,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "3728",
+            "contentRange": null
+          },
+          {
+            "status": 200,
+            "responseMs": 226,
+            "contentType": "application/vnd.apple.mpegurl",
+            "contentLength": "635578",
+            "contentRange": null
+          },
+          {
+            "status": 200,
+            "responseMs": 27,
+            "contentType": "video/MP2T",
+            "contentLength": "722672",
+            "contentRange": "bytes 0-722671/722672"
+          },
+          {
+            "failed": true,
+            "error": "net::ERR_ABORTED",
+            "elapsedMs": 919
+          }
+        ]
+      }
+    }
+  ],
+  "limitations": [
+    "Fresh isolated Filmix playback succeeded; the previous actual-player Filmix failure and 66.419s fallback were not reproduced, so their root cause remains unproven.",
+    "Filmix and VideoHUB resolve different durations (228.1 vs178.4 minutes); no visual content or edition identity check was performed.",
+    "These are single local isolated startup measurements with warm upstream/cache possible, not a cold benchmark or a guarantee for the whole catalog.",
+    "Network ERR_ABORTED recorded after first-frame success is intentional diagnostic teardown, not playback failure. Only first-frame startup was checked here, no seek/full playback."
+  ],
+  "observations": [
+    "Filmix selected720p resolves200 in229ms; Chromium decodes4 frames in9301ms with readyState4 and no media error.",
+    "Filmix MP4 contains H264High720p and12 AACLC audio tracks; selected stream is browser-decodable in this run.",
+    "Filmix loadedmetadata arrives9222ms after video assignment although first two media response headers arrive193ms/40ms after their requests; body delivery, MP4 metadata layout and player lifecycle need further evidence to distinguish the delay cause.",
+    "VideoHUB HLS resolves200 in483ms and decodes4 frames in622ms in its isolated follow-up."
+  ]
+}

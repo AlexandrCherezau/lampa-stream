@@ -5,7 +5,7 @@ import test from "node:test";
 import { mkdtemp, writeFile, stat, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSourceServer } from "../server.mjs";
+import { createSourceServer, validateTitle } from "../server.mjs";
 import { createMedia } from "../media.mjs";
 import { createTransport } from "../transport.mjs";
 
@@ -361,35 +361,117 @@ test("resolution preserves the verified target when providers repeat quality lab
   assert.equal(signed.headerOrigin, "https://cdn.test");
 });
 
-test("ZetflixDB and CDNVideoHub quality media tokens are sealed for direct Node serving", async (t) => {
-  for (const providerId of ["zetflixdb", "cdnvideohub", "hdvb"]) {
+test("sealed native and vi provider namespaces preserve Node quality routing and public restrictions", async (t) => {
+  const scenarios = [undefined, "vi3000"].flatMap((catalogSource) => ["zetflixdb", "cdnvideohub", "hdvb"].map((id) => ({
+    providerId: catalogSource ? `vi3000:${id}` : id, catalogSource, expected: id !== "hdvb",
+  })));
+  scenarios.push({ providerId: "vi3000:cdnvideohub", expected: false },
+    { providerId: "vi3000:cdnvideohub:extra", catalogSource: "vi3000", expected: false });
+  for (const { providerId, catalogSource, expected } of scenarios) {
     const signed = [];
     const adapter = {
-      async *discover() { yield candidate({ providerId, providerName: providerId }); },
+      async *discover() { yield candidate({ providerId, providerName: providerId, catalogSource }); },
       async resolve() { return { qualities: [
-        { label: "1080p", height: 1080, url: "https://cdn.test/master.m3u8" },
-        { label: "720p", height: 720, url: "https://cdn.test/lower.m3u8" },
+        { label: "1080p", height: 1080, url: "https://cdn.test/master.m3u8", publicOnly: catalogSource === "vi3000" },
+        { label: "720p", height: 720, url: "https://cdn.test/lower.m3u8", publicOnly: catalogSource === "vi3000" },
       ] }; },
     };
-    const media = makeMedia();
+    const media = createMedia({ transport: { async request() { throw new Error("unused"); } },
+      secret: "test-secret-that-is-long-enough-for-this-suite", publicOrigin: "https://media.test" });
+    media.probe = async (quality) => {
+      assert.equal(quality.publicOnly, catalogSource === "vi3000");
+      return { ok: true, kind: "hls", url: "https://cdn.test/verified.m3u8", publicOnly: false, nodeOnly: false };
+    };
+    const sign = media.url;
     media.url = (resource) => {
       signed.push(resource);
-      return `https://media.test/v1/media?token=${resource.label}`;
+      return sign(resource);
     };
-    const app = await start(adapter, media);
+    const app = await start(adapter, media, "", undefined, { viAdapter: adapter });
     t.after(() => app.close());
-    const discovery = await post(app.base, "/v1/discover", { type: "movie", title: "Movie" });
+    const discovery = await post(app.base, "/v1/discover", { type: "movie", title: "Movie", catalogSource });
     const reader = sseReader(discovery.body);
     const { data: { id } } = await reader.until("candidate");
     await reader.drain();
-    assert.equal((await post(app.base, "/v1/resolve", { id })).status, 200);
+    const resolved = await post(app.base, "/v1/resolve", { id, catalogSource: catalogSource ? "native" : "vi3000", providerId: "vi3000:zetflixdb", nodeOnly: !expected });
+    assert.equal(resolved.status, 200);
+    const result = await resolved.json();
     assert.equal(signed.length, 2);
-    assert.deepEqual(signed.map((resource) => resource.nodeOnly), [providerId !== "hdvb", providerId !== "hdvb"]);
+    assert.deepEqual(signed.map((resource) => resource.nodeOnly), [expected, expected], providerId);
+    for (const quality of result.qualities) {
+      const resource = media.resource(new URL(quality.url).searchParams.get("token"));
+      assert.equal(resource.nodeOnly, expected, `${providerId} retains routing in every sealed quality`);
+      assert.equal(resource.publicOnly, catalogSource === "vi3000", `${providerId} keeps its public DNS restriction`);
+    }
+    assert.equal(signed[1].url, "https://cdn.test/verified.m3u8", "the selected redirected quality keeps both flags");
+    assert.equal(signed[0].url, "https://cdn.test/master.m3u8", "unselected qualities inherit the same routing policy");
   }
 });
 
+test("CUB vi titles and sealed sources use the remote plane after restart without waiting for the native engine", async (t) => {
+  assert.equal(validateTitle({ type: "movie", title: "Movie", catalogSource: "vi3000" }).catalogSource, "vi3000");
+  for (const catalogSource of [null, "native", "https://arbitrary.test", false]) {
+    assert.throws(() => validateTitle({ type: "movie", title: "Movie", catalogSource }), /источник каталога/);
+  }
+  const directory = await mkdtemp(join(tmpdir(), "vi-plane-test-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const ready = join(directory, "ready");
+  let nativeCalls = 0;
+  let viResolutions = 0;
+  const adapter = {
+    async *discover() { nativeCalls++; throw new Error("native adapter must not handle CUB cards"); },
+    async resolve() { nativeCalls++; throw new Error("native adapter must not resolve vi sources"); },
+  };
+  const viAdapter = {
+    async *discover(title) {
+      assert.equal(title.catalogSource, "vi3000");
+      yield candidate({ providerId: "vi3000:filmix", providerName: "vi3000 · Filmix", catalogSource: "vi3000",
+        ref: { origin: "https://api-m.vi3000.top", url: "https://cdn.test/movie.mp4" } });
+    },
+    async resolve(value) {
+      viResolutions++;
+      assert.equal(value.catalogSource, "vi3000");
+      assert.equal(value.providerId, "vi3000:filmix");
+      assert.equal(value.ref.origin, "https://api-m.vi3000.top");
+      return { qualities: [{ label: "720p", height: 720, url: "https://cdn.test/movie.mp4", publicOnly: true }],
+        subtitles: [{ label: "Russian", language: "ru", url: "https://cdn.test/ru.vtt", publicOnly: true }] };
+    },
+  };
+  const media = makeMedia();
+  media.probe = async (quality) => { assert.equal(quality.publicOnly, true); return { ok: true, kind: "file" }; };
+  const signed = [];
+  media.url = (resource) => { signed.push(resource); return "https://media.test/v1/media?token=sealed"; };
+  let id;
+  const first = await start(adapter, media, "", undefined, { viAdapter, engineReadyFile: ready });
+  try {
+    const discovery = await fetch(`${first.base}/v1/discover`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "movie", title: "Movie", tmdbId: 120, catalogSource: "vi3000" }),
+      signal: AbortSignal.timeout(1000),
+    });
+    assert.equal(discovery.status, 200);
+    const reader = sseReader(discovery.body);
+    const frame = await reader.until("candidate");
+    assert.equal(frame.data.catalogSource, "vi3000");
+    id = frame.data.id;
+    await reader.drain();
+  } finally { await first.close(); }
+  const second = await start(adapter, media, "", undefined, { viAdapter, engineReadyFile: ready });
+  t.after(() => second.close());
+  const resolved = await fetch(`${second.base}/v1/resolve`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, catalogSource: "native" }), signal: AbortSignal.timeout(1000),
+  });
+  assert.equal(resolved.status, 200);
+  assert.equal((await resolved.json()).source.catalogSource, "vi3000");
+  assert.equal(viResolutions, 1);
+  assert.equal(nativeCalls, 0);
+  assert.deepEqual(signed.map((resource) => resource.publicOnly), [true, true]);
+  await assert.rejects(stat(`${ready}.start`), { code: "ENOENT" });
+});
+
 test("only sealed Zetflix movie candidates use Node media routing", async (t) => {
-  for (const scenario of [
+  for (const catalogSource of [undefined, "vi3000"]) for (const scenario of [
     { name: "movie", candidateFields: { season: undefined, episode: undefined }, discoverType: "movie", expected: true,
       spoof: { type: "tv", season: 1, episode: 14 } },
     { name: "series", candidateFields: { season: 1, episode: 14 }, discoverType: "tv", expected: false,
@@ -398,12 +480,12 @@ test("only sealed Zetflix movie candidates use Node media routing", async (t) =>
     const signed = [];
     const adapter = {
       async *discover() {
-        yield candidate({ providerId: "zetflix", providerName: "Zetflix", ...scenario.candidateFields });
+        yield candidate({ providerId: catalogSource ? "vi3000:zetflix" : "zetflix", providerName: "Zetflix", catalogSource, ...scenario.candidateFields });
       },
       async resolve() {
         return { qualities: [
-          { label: "1080p", height: 1080, url: "https://cdn.test/master.m3u8" },
-          { label: "720p", height: 720, url: "https://cdn.test/lower.m3u8" },
+          { label: "1080p", height: 1080, url: "https://cdn.test/master.m3u8", publicOnly: catalogSource === "vi3000" },
+          { label: "720p", height: 720, url: "https://cdn.test/lower.m3u8", publicOnly: catalogSource === "vi3000" },
         ] };
       },
     };
@@ -412,20 +494,22 @@ test("only sealed Zetflix movie candidates use Node media routing", async (t) =>
       signed.push(resource);
       return `https://media.test/v1/media?token=${resource.label}`;
     };
-    const app = await start(adapter, media);
+    const app = await start(adapter, media, "", undefined, { viAdapter: adapter });
     t.after(() => app.close());
     const discovery = await post(app.base, "/v1/discover", {
       type: scenario.discoverType,
       title: "Movie or show",
+      catalogSource,
       ...(scenario.discoverType === "tv" ? { season: 1, episode: 14 } : {}),
     });
     const reader = sseReader(discovery.body);
     const { data: { id } } = await reader.until("candidate");
     await reader.drain();
-    const result = await (await post(app.base, "/v1/resolve", { id, ...scenario.spoof })).json();
+    const result = await (await post(app.base, "/v1/resolve", { id, ...scenario.spoof, catalogSource: catalogSource ? "native" : "vi3000", providerId: "vi3000:cdnvideohub" })).json();
     assert.equal(result.qualities.length, 2, `${scenario.name} should retain every quality`);
     assert.deepEqual(signed.map((resource) => resource.nodeOnly), [scenario.expected, scenario.expected],
       `routing must use sealed ${scenario.name} metadata, not resolve request fields`);
+    assert.deepEqual(signed.map((resource) => resource.publicOnly), [catalogSource === "vi3000", catalogSource === "vi3000"]);
   }
 });
 

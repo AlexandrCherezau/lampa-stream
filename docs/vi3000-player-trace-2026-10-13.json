@@ -1,0 +1,681 @@
+{
+  "checkedAt": "2026-10-13T07:37:14.815Z",
+  "origin": "http://127.0.0.1:19130",
+  "scope": "Real CUB feed, real vi3000 source discovery/resolve/media, actual OnlinePlayer; TMDB metadata and poster responses use matching fixtures without a personal key.",
+  "item": {
+    "id": 120,
+    "type": "movie",
+    "title": "Властелин колец: братство кольца",
+    "kinopoiskId": "328",
+    "imdbId": "tt0120737"
+  },
+  "catalogPages": [
+    {
+      "feed": "now_playing",
+      "page": 1,
+      "status": 200
+    },
+    {
+      "feed": "fire",
+      "page": 1,
+      "status": 200
+    },
+    {
+      "feed": "latest",
+      "page": 1,
+      "status": 200
+    },
+    {
+      "feed": "hundred",
+      "page": 1,
+      "status": 200
+    }
+  ],
+  "discovery": {
+    "tmdbId": 120,
+    "kinopoiskId": 328,
+    "imdbId": "tt0120737",
+    "catalogSource": "vi3000"
+  },
+  "playable": false,
+  "trace": [
+    {
+      "type": "discovery-request",
+      "atMs": 1791877036523,
+      "afterClickMs": 411
+    },
+    {
+      "type": "resolve",
+      "sequence": 1,
+      "atMs": 1791877069054,
+      "requestedQuality": null,
+      "responseAtMs": 1791877069301,
+      "status": 200,
+      "doneAtMs": 1791877069302,
+      "elapsedMs": 248,
+      "provider": "vi3000:filmix",
+      "quality": "720p",
+      "kind": "file",
+      "voice": "Дублированный (4K,SDR)",
+      "afterClickMs": 32942,
+      "responseAfterClickMs": 33189,
+      "doneAfterClickMs": 33190
+    },
+    {
+      "atMs": 1791877069058,
+      "type": "discovery",
+      "event": "start",
+      "afterClickMs": 32946
+    },
+    {
+      "atMs": 1791877069059,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:filmix",
+      "voice": "Дублированный (4K,SDR)",
+      "afterClickMs": 32947
+    },
+    {
+      "atMs": 1791877069059,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:phantom",
+      "voice": "Дублированный",
+      "afterClickMs": 32947
+    },
+    {
+      "atMs": 1791877069059,
+      "type": "discovery",
+      "event": "provider",
+      "provider": "vi3000:kinobase",
+      "afterClickMs": 32947
+    },
+    {
+      "atMs": 1791877069059,
+      "type": "discovery",
+      "event": "provider",
+      "provider": "vi3000:zetflixdb",
+      "afterClickMs": 32947
+    },
+    {
+      "atMs": 1791877069059,
+      "type": "discovery",
+      "event": "provider",
+      "provider": "vi3000:pizdatoehd",
+      "afterClickMs": 32947
+    },
+    {
+      "atMs": 1791877069059,
+      "type": "discovery",
+      "event": "provider",
+      "provider": "vi3000:zetflix",
+      "afterClickMs": 32947
+    },
+    {
+      "atMs": 1791877069059,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Дубляж",
+      "afterClickMs": 32947
+    },
+    {
+      "atMs": 1791877069060,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:veoveo",
+      "voice": "Дубляж. Режиссерская версия (РУС)",
+      "afterClickMs": 32948
+    },
+    {
+      "atMs": 1791877069060,
+      "type": "discovery",
+      "event": "provider",
+      "provider": "vi3000:collaps",
+      "afterClickMs": 32948
+    },
+    {
+      "atMs": 1791877069060,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:hdvb",
+      "voice": "Дубляж [Лицензия]",
+      "afterClickMs": 32948
+    },
+    {
+      "atMs": 1791877069063,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:rutubemovie",
+      "voice": "Властелин колец: Братство Кольца (Режиссёрская версия) | The Lord of the Rings (2001,4K)",
+      "afterClickMs": 32951
+    },
+    {
+      "atMs": 1791877069067,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин Колец: Братство Кольца 4K Режиссёрская Версия HDR 2001 UHD",
+      "afterClickMs": 32955
+    },
+    {
+      "atMs": 1791877069067,
+      "type": "discovery",
+      "event": "provider",
+      "provider": "vi3000:leproduction",
+      "afterClickMs": 32955
+    },
+    {
+      "atMs": 1791877069067,
+      "type": "discovery",
+      "event": "provider",
+      "provider": "vi3000:kinogo",
+      "afterClickMs": 32955
+    },
+    {
+      "atMs": 1791877069067,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:kinotochka",
+      "voice": "По умолчанию",
+      "afterClickMs": 32955
+    },
+    {
+      "atMs": 1791877069067,
+      "type": "discovery",
+      "event": "provider",
+      "provider": "vi3000:uafilm",
+      "afterClickMs": 32955
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "provider",
+      "provider": "vi3000:kinoteatrkg",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:phantom",
+      "voice": "Гоблин",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "TVShows",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:hdvb",
+      "voice": "Дубляж [Лицензия]",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:rutubemovie",
+      "voice": "Властелин колец: Братство кольца (2001) ○ The Lord of the Rings: The Fellowship of the Ring",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец: Братство кольца (2001)",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:phantom",
+      "voice": "Гоблин ПП",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "IdeaFilm ",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:rutubemovie",
+      "voice": "Властелин колец: Братство Кольца | The Lord of the Rings: The Fellowship of the Ring (2001)",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец: Братство Кольца (2001) 4к",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:phantom",
+      "voice": "Позитив",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Сергей Визгунов",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:rutubemovie",
+      "voice": "Властелин колец: Братство Кольца (2001) / The Lord of the Rings: The Fellowship of the Ring",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец: Братство кольца (2001)",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069068,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:phantom",
+      "voice": "Украинский",
+      "afterClickMs": 32956
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Киномания",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:rutubemovie",
+      "voice": "Властелин колец: Братство Кольца (2001) / The Lord of the Rings: The Fellowship of the Ring",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец: Братство кольца (фильм, 2001) — 4K (UHD)",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:phantom",
+      "voice": "Субтитры",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Юрий Живов",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:rutubemovie",
+      "voice": "ВЛАСТЕЛИН КОЛЕЦ: БРАТСТВО КОЛЬЦА (2001)",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец: Братство Кольца | фэнтези | 2001 | 4К",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:phantom",
+      "voice": "Укр. Субтитры",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Позитив",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:rutubemovie",
+      "voice": "Властелин колец: Братство Кольца (Фильм, 2001)",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец: Братство кольца (2001) 2160p",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:phantom",
+      "voice": "Оригинальный",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Гланц",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069069,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец. Братство кольца. Расширенная версия. 4К (2001)",
+      "afterClickMs": 32957
+    },
+    {
+      "atMs": 1791877069070,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Дубляж (режиссерская версия)",
+      "afterClickMs": 32958
+    },
+    {
+      "atMs": 1791877069070,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец Братство кольца (2001)",
+      "afterClickMs": 32958
+    },
+    {
+      "atMs": 1791877069070,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "FDV",
+      "afterClickMs": 32958
+    },
+    {
+      "atMs": 1791877069070,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец: Братство кольца | The Lord of the Rings: The Fellowship of the Ring (2001)",
+      "afterClickMs": 32958
+    },
+    {
+      "atMs": 1791877069070,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Юрий Сербин",
+      "afterClickMs": 32958
+    },
+    {
+      "atMs": 1791877069071,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "ВЛАСТЕЛИН КОЛЕЦ: БРАТСТВО КОЛЬЦА (РЕЖИССЁРСКАЯ ВЕРСИЯ) 2001 | ВЫСОКОЕ КАЧЕСТВО | ФИЛЬМ",
+      "afterClickMs": 32959
+    },
+    {
+      "atMs": 1791877069071,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Гоблин",
+      "afterClickMs": 32959
+    },
+    {
+      "atMs": 1791877069071,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец: Братство кольца (2001)",
+      "afterClickMs": 32959
+    },
+    {
+      "atMs": 1791877069071,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Андрей Гаврилов",
+      "afterClickMs": 32959
+    },
+    {
+      "atMs": 1791877069071,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец: Братство кольца | The Lord of the Rings: The Fellowship of the Ring (2001)",
+      "afterClickMs": 32959
+    },
+    {
+      "atMs": 1791877069071,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Андрей Дольский",
+      "afterClickMs": 32959
+    },
+    {
+      "atMs": 1791877069071,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец: Братство кольца (2001) 1080р",
+      "afterClickMs": 32959
+    },
+    {
+      "atMs": 1791877069071,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:cdnvideohub",
+      "voice": "Сергей Рябов",
+      "afterClickMs": 32959
+    },
+    {
+      "atMs": 1791877069071,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец: Братство кольца (2001) 1080p",
+      "afterClickMs": 32959
+    },
+    {
+      "atMs": 1791877069071,
+      "type": "discovery",
+      "event": "candidate",
+      "provider": "vi3000:vkmovie",
+      "voice": "Властелин колец: Братство кольца (2001)",
+      "afterClickMs": 32959
+    },
+    {
+      "atMs": 1791877069071,
+      "type": "discovery",
+      "event": "provider",
+      "provider": "vi3000:kinoflix",
+      "afterClickMs": 32959
+    },
+    {
+      "atMs": 1791877069071,
+      "type": "discovery",
+      "event": "provider",
+      "provider": "vi3000:vibix",
+      "afterClickMs": 32959
+    },
+    {
+      "atMs": 1791877069071,
+      "type": "discovery",
+      "event": "done",
+      "candidates": 51,
+      "complete": true,
+      "afterClickMs": 32959
+    },
+    {
+      "atMs": 1791877069331,
+      "type": "video",
+      "event": "loadstart",
+      "readyState": 0,
+      "networkState": 2,
+      "time": 0,
+      "errorCode": null,
+      "frames": 0,
+      "afterClickMs": 33219
+    },
+    {
+      "type": "resolve",
+      "sequence": 2,
+      "atMs": 1791877076317,
+      "requestedQuality": null,
+      "provider": "vi3000:phantom",
+      "voice": "Дублированный",
+      "afterClickMs": 40205
+    },
+    {
+      "atMs": 1791877077889,
+      "type": "video",
+      "event": "loadedmetadata",
+      "readyState": 1,
+      "networkState": 2,
+      "time": 0,
+      "errorCode": null,
+      "frames": 0,
+      "afterClickMs": 41777
+    },
+    {
+      "atMs": 1791877077889,
+      "type": "video",
+      "event": "waiting",
+      "readyState": 1,
+      "networkState": 2,
+      "time": 0,
+      "errorCode": null,
+      "frames": 0,
+      "afterClickMs": 41777
+    },
+    {
+      "atMs": 1791877078060,
+      "type": "video",
+      "event": "loadeddata",
+      "readyState": 4,
+      "networkState": 1,
+      "time": 0.000606,
+      "errorCode": null,
+      "frames": 4,
+      "afterClickMs": 41948
+    },
+    {
+      "atMs": 1791877078062,
+      "type": "video",
+      "event": "canplay",
+      "readyState": 4,
+      "networkState": 1,
+      "time": 0.000715,
+      "errorCode": null,
+      "frames": 4,
+      "afterClickMs": 41950
+    },
+    {
+      "atMs": 1791877078063,
+      "type": "video",
+      "event": "playing",
+      "readyState": 4,
+      "networkState": 1,
+      "time": 0.000757,
+      "errorCode": null,
+      "frames": 4,
+      "afterClickMs": 41951
+    },
+    {
+      "atMs": 1791877078073,
+      "type": "video",
+      "event": "first-frame",
+      "readyState": 4,
+      "networkState": 2,
+      "time": 0.013783,
+      "errorCode": null,
+      "frames": 4,
+      "afterClickMs": 41961
+    }
+  ],
+  "mediaRequests": [],
+  "scriptStartedAtMs": 1791877035055,
+  "stage": "watch-clicked",
+  "selected": {
+    "provider": "vi3000:filmix",
+    "voice": "Дублированный (4K,SDR)",
+    "quality": "720p",
+    "kind": "file",
+    "qualities": [
+      "2160p",
+      "1440p",
+      "1080p",
+      "720p",
+      "480p"
+    ]
+  },
+  "detail": "page.waitForFunction: Timeout 30000ms exceeded.",
+  "failure": "timeout",
+  "observations": [
+    "The source-host gateway request began411ms after clicking Watch; start,51candidate events and done arrived together at32946–32959ms, although the backend emits start before querying providers. This is evidence of gateway SSE buffering.",
+    "Automatic Filmix resolve selected720p/file, returned200 in248ms; the player assigned media at33219ms.",
+    "Next provider resolve started at40205ms,6986ms after Filmix loadstart, before any video error or metadata. This matches the7s throughput watchdog.",
+    "The same Filmix video loaded metadata at41777ms and decoded its first frame at41961ms,8742ms after attachment, after the player already rejected it. Unsupported codec was not observed.",
+    "The UI diagnostic timed out after waiting30s for1s of clock progress following the premature failover. It proves timing/failover behavior, not successful end-to-end playback."
+  ],
+  "limitations": [
+    "Matching TMDB metadata/poster fixtures only; real CUB/source/provider/media requests.",
+    "One traced run; timings vary with upstream/cache/network. The earlier66.419s startup was not reproduced exactly.",
+    "Media network timing was not captured because media URLs use /v1/media rather than the API gateway; video event timing is captured.",
+    "No quality ordering or provider edition was changed."
+  ]
+}

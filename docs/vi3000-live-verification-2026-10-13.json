@@ -1,0 +1,75 @@
+{
+  "checkedAt": "2026-10-13T07:42:58.533Z",
+  "origin": "http://127.0.0.1:19130",
+  "scope": "Real CUB feed, real vi3000 source discovery/resolve/media, actual OnlinePlayer; TMDB metadata and poster responses use matching fixtures without a personal key.",
+  "item": {
+    "id": 120,
+    "type": "movie",
+    "title": "Властелин колец: братство кольца",
+    "kinopoiskId": "328",
+    "imdbId": "tt0120737"
+  },
+  "catalogPages": [
+    {
+      "feed": "now_playing",
+      "page": 1,
+      "status": 200
+    },
+    {
+      "feed": "fire",
+      "page": 1,
+      "status": 200
+    },
+    {
+      "feed": "hundred",
+      "page": 1,
+      "status": 200
+    },
+    {
+      "feed": "latest",
+      "page": 1,
+      "status": 200
+    }
+  ],
+  "discovery": {
+    "tmdbId": 120,
+    "kinopoiskId": 328,
+    "imdbId": "tt0120737",
+    "catalogSource": "vi3000"
+  },
+  "playable": true,
+  "previousRun": {
+    "checkedAt": "2026-10-13T07:22:18.007Z",
+    "startupMs": 66419,
+    "provider": "vi3000:cdnvideohub",
+    "duration": 10705.359159000049,
+    "playable": true,
+    "comparisonLimit": "Different provider and duration; these individual runs are functional observations, not a controlled speed benchmark."
+  },
+  "stage": "decoded",
+  "selected": {
+    "provider": "vi3000:filmix",
+    "voice": "Дублированный (4K,SDR)",
+    "quality": "720p",
+    "kind": "file",
+    "qualities": [
+      "2160p",
+      "1440p",
+      "1080p",
+      "720p",
+      "480p"
+    ]
+  },
+  "startupMs": 11102,
+  "initial": {
+    "time": 1.020035,
+    "duration": 13686.506167,
+    "frames": 27,
+    "readyState": 4
+  },
+  "afterSeek": {
+    "time": 60.016308,
+    "frames": 75,
+    "readyState": 4
+  }
+}
