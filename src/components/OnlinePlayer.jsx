@@ -510,6 +510,7 @@ export default function OnlinePlayer({
       setStream((previous) => previous?.mp4 === ls.mp4 && previous?.hls === ls.hls && previous?.viaRelay === ls.viaRelay
         ? previous : ls.mp4 ? { mp4: ls.mp4, viaRelay: ls.viaRelay } : { hls: ls.hls, viaRelay: ls.viaRelay });
       setSubtitles(lampac.subtitles || []);
+      setAudioNames(lampac.audioNames || []);
       setMeta(lampac.meta || "");
     };
     const elapsed = loadingEnteredAtRef.current ? Date.now() - loadingEnteredAtRef.current : MIN_DISPLAY_MS;
@@ -519,7 +520,7 @@ export default function OnlinePlayer({
       if (loadingExitRef.current) { clearTimeout(loadingExitRef.current); loadingExitRef.current = null; }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLampac, lampac.stream, lampac.sourceError, lampac.subtitles, lampac.meta]);
+  }, [isLampac, lampac.stream, lampac.sourceError, lampac.subtitles, lampac.audioNames, lampac.meta]);
 
   // Fleet inline notice (non-fatal): show the hook's sourceError as an overlay
   // ONLY once a stream has genuinely played (frames decoded) — before that, a

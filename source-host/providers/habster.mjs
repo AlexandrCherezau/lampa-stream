@@ -57,6 +57,13 @@ function mediaUrl(raw) {
   return url.href;
 }
 
+function audioNames(value = []) {
+  if (!Array.isArray(value) || value.length > 32 || value.some((name) => typeof name !== "string" || !name.trim() || name.length > 200)) {
+    throw new Error("Habster returned invalid audio names");
+  }
+  return value.map((name) => name.trim());
+}
+
 export function parseHabsterPlayer(html, title) {
   const start = html.indexOf("makePlayer({");
   if (start < 0) throw new Error("Habster Collaps player data is unavailable");
@@ -74,10 +81,15 @@ export function parseHabsterPlayer(html, title) {
     if (!match) throw new Error("Habster did not return movie source data");
     const data = balanced(player, match.index + match[0].length - 1);
     const hls = /(?:"hls"|\bhls)\s*:\s*("(?:\\.|[^"\\])*")/.exec(data);
-    source = { hls: hls ? JSON.parse(hls[1]) : null, cc: jsonArray(data, "cc") };
+    const audio = /(?:"audio"|\baudio)\s*:\s*\{/.exec(data);
+    const audioData = audio ? balanced(data, audio.index + audio[0].length - 1) : "";
+    if (/(?:"names"|\bnames)\s*:/.test(audioData) && !/(?:"names"|\bnames)\s*:\s*\[/.test(audioData)) {
+      throw new Error("Habster returned invalid audio names");
+    }
+    source = { hls: hls ? JSON.parse(hls[1]) : null, cc: jsonArray(data, "cc"), audio: { names: jsonArray(audioData, "names") } };
   }
   if (!source.hls) throw new Error("Habster did not return an HLS stream for the requested title");
-  return { hls: mediaUrl(source.hls), subtitles: (Array.isArray(source.cc) ? source.cc : []).map((subtitle, index) => ({
+  return { hls: mediaUrl(source.hls), audioNames: audioNames(source.audio?.names), subtitles: (Array.isArray(source.cc) ? source.cc : []).map((subtitle, index) => ({
     url: mediaUrl(subtitle?.url), label: String(subtitle.name || `Субтитры ${index + 1}`), language: subtitle.language || null,
   })) };
 }
@@ -121,7 +133,7 @@ export function createHabsterProvider({ transport } = {}) {
     const headers = { referer: `${ORIGIN}/`, origin: ORIGIN };
     const resolved = parseHabsterPlayer(await readText(embed, signal, { ...headers, accept: "text/html" }), title);
     const mediaHeaders = { referer: embed, origin: EMBED_ORIGIN };
-    return { qualities: [{ label: "Auto", type: "hls", url: resolved.hls, headers: mediaHeaders, publicOnly: true }],
+    return { qualities: [{ label: "Auto", type: "hls", url: resolved.hls, headers: mediaHeaders, publicOnly: true }], audioNames: resolved.audioNames,
       subtitles: resolved.subtitles.map((subtitle) => ({ ...subtitle, headers: mediaHeaders, publicOnly: true })) };
   }
   async function* discover(title, { signal } = {}) {

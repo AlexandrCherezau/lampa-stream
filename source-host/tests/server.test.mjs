@@ -495,7 +495,7 @@ test("Habster sealed sources survive restart, skip the engine and keep direct pu
     },
     async resolve(value) {
       assert.deepEqual(value.ref, { type: "movie", kinopoiskId: 328 });
-      return { qualities: [{ label: "Auto", url: "https://cdn.test/movie.m3u8", publicOnly: true }],
+      return { audioNames: ["Рус. Дублированный", "English"], qualities: [{ label: "Auto", url: "https://cdn.test/movie.m3u8", publicOnly: true }],
         subtitles: [{ label: "RU", url: "https://cdn.test/ru.vtt", publicOnly: true }] };
     },
   };
@@ -521,7 +521,9 @@ test("Habster sealed sources survive restart, skip the engine and keep direct pu
   t.after(() => second.close());
   const resolved = await post(second.base, "/v1/resolve", { id, catalogSource: "vi3000", nodeOnly: false, publicOnly: false });
   assert.equal(resolved.status, 200);
-  assert.equal((await resolved.json()).source.catalogSource, "habster");
+  const result = await resolved.json();
+  assert.equal(result.source.catalogSource, "habster");
+  assert.deepEqual(result.audioNames, ["Рус. Дублированный", "English"]);
   assert.deepEqual(signed.map((resource) => resource.publicOnly), [true, true]);
   assert.deepEqual(signed.map((resource) => resource.nodeOnly), [true, true]);
   await assert.rejects(stat(`${ready}.start`), { code: "ENOENT" });

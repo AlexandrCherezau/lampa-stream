@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createSourceSession, discoverSources } from "../src/utils/source-host-client.js";
+import { labelAudioTracks } from "../src/utils/collaps-client.js";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const deferred = () => {
@@ -194,6 +195,32 @@ async function skipRangesFollowActiveStream() {
   session.stop();
 }
 
+async function audioNamesFollowActiveStream() {
+  let state;
+  const names = ["Рус. Дублированный", "Рус. Гоблин", "Українська", "English"];
+  const tracks = names.map((_name, id) => ({ id, name: ["rus0", "rus1", "ukr2", "eng3"][id] }));
+  const session = createSourceSession({
+    publish: (value) => { state = value; },
+    discover: async (title, { onEvent }) => {
+      if (title.title === "empty") return;
+      for (const id of ["habster", "native"]) onEvent("candidate", candidate(id));
+    },
+    resolve: async (id) => ({ ...result(`https://media.test/${id}.m3u8`), ...(id === "habster" ? { audioNames: names } : {}) }),
+  });
+  await session.start({ title: "Film" });
+  assert.deepEqual(labelAudioTracks(tracks, state.audioNames).map((track) => track.name), names,
+    "resolved studio labels replace generic HLS audio names");
+  session.notePlaying();
+  await session.selectBalanser("native");
+  assert.deepEqual(state.audioNames, [], "a provider without labels cannot retain Habster studios");
+  assert.deepEqual(labelAudioTracks(tracks, state.audioNames), tracks);
+  session.reportPlaybackFailure();
+  assert.deepEqual(state.audioNames, names, "restoring the playing source restores its own labels");
+  await session.start({ title: "empty" });
+  assert.deepEqual(state.audioNames, [], "a new title clears the prior source's labels");
+  session.stop();
+}
+
 await progressiveRecoveryWithState();
 await decoderFailureUsesSibling();
 await failedVoiceKeepsOtherVoices();
@@ -201,4 +228,5 @@ await fallbackRotatesProvidersAndStops();
 await manualFailureAndStaleRequests();
 await emptyDiscoveryAndSplitSse();
 await skipRangesFollowActiveStream();
-console.log("Source-host client checks passed: progressive fallback, per-voice recovery, provider rotation, exhausted candidates, manual/stale requests, empty discovery, split SSE.");
+await audioNamesFollowActiveStream();
+console.log("Source-host client checks passed: progressive fallback, per-voice recovery, provider rotation, exhausted candidates, manual/stale requests, empty discovery, split SSE, audio labels.");

@@ -26,7 +26,7 @@ test("Habster reads only the exact public embed literal and matching Kinopoisk t
 });
 
 test("Habster extracts HLS/subtitles without executing player JavaScript and selects exact TV episodes", () => {
-  assert.deepEqual(parseHabsterPlayer(player(), movie), { hls: source.hls,
+  assert.deepEqual(parseHabsterPlayer(player(), movie), { hls: source.hls, audioNames: source.audio.names,
     subtitles: [{ url: source.cc[0].url, label: "Русские", language: null }] });
   assert.equal(parseHabsterPlayer(player().replace('"hls":', 'hls:'), movie).hls, source.hls);
   const series = { type: "tv", season: 2, episode: 3 };
@@ -34,12 +34,20 @@ test("Habster extracts HLS/subtitles without executing player JavaScript and sel
     { season: 2, episodes: [{ episode: 1, hls: "https://cdn.test/wrong.m3u8" }, { episode: 3, ...source }] }];
   const html = `makePlayer({playlist:{seasons:${JSON.stringify(seasons)}}});`;
   assert.equal(parseHabsterPlayer(html, series).hls, source.hls);
+  assert.deepEqual(parseHabsterPlayer(html, series).audioNames, source.audio.names);
   assert.throws(() => parseHabsterPlayer(html, { ...series, episode: 4 }), /requested episode/);
   assert.throws(() => parseHabsterPlayer(html, { ...series, season: 3 }), /requested season/);
   assert.throws(() => parseHabsterPlayer(player({ hls: "javascript:alert(1)" }), movie), /unsupported media/);
   assert.throws(() => parseHabsterPlayer(player({ hls: source.hls, cc: [{ url: "http://cdn.test/sub.vtt" }] }), movie), /unsupported media/);
   assert.throws(() => parseHabsterPlayer("makePlayer({source:{hls:evil()}})", movie), /HLS stream/);
   assert.throws(() => parseHabsterPlayer("makePlayer({ source: {", movie), /incomplete/);
+  for (const names of [null, "Русский", [1], [" "], ["x".repeat(201)], Array(33).fill("Русский")]) {
+    assert.throws(() => parseHabsterPlayer(player({ ...source, audio: { names } }), movie), /invalid audio names/);
+    const tv = `makePlayer({playlist:{seasons:${JSON.stringify([{ season: 2, episodes: [{ episode: 3, ...source, audio: { names } }] }])}}});`;
+    assert.throws(() => parseHabsterPlayer(tv, series), /invalid audio names/);
+  }
+  assert.deepEqual(parseHabsterPlayer(player({ hls: source.hls }), movie).audioNames, []);
+  assert.deepEqual(parseHabsterPlayer(player({ ...source, audio: { names: [" Русский "] } }), movie).audioNames, ["Русский"]);
 });
 
 test("Habster discovery and cold resolve refresh page-derived URLs with public-only media provenance", async () => {
@@ -70,6 +78,7 @@ test("Habster discovery and cold resolve refresh page-derived URLs with public-o
   const resolved = await cold.resolve(candidates[0]);
   assert.equal(refreshes, 2);
   assert.equal(resolved.qualities[0].type, "hls");
+  assert.deepEqual(resolved.audioNames, source.audio.names);
   assert(resolved.qualities.every((q) => q.publicOnly === true));
   assert(resolved.subtitles.every((s) => s.publicOnly === true));
   assert.equal(new URL(resolved.qualities[0].headers.referer).searchParams.get("token"), "public-fixture-2");
@@ -108,5 +117,6 @@ test("Habster TV discovery preserves the exact episode in sealed references and 
   const [candidate] = await collect(adapter.discover(title));
   assert.deepEqual(candidate.ref, { type: "tv", kinopoiskId: 328, season: 2, episode: 3 });
   assert.equal((await adapter.resolve(candidate)).qualities[0].url, source.hls);
+  assert.deepEqual((await adapter.resolve(candidate)).audioNames, source.audio.names);
   await assert.rejects(adapter.resolve({ ...candidate, ref: candidate.ref, episode: 4 }), /episode reference/);
 });
