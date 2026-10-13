@@ -1,0 +1,1524 @@
+{
+  "checkedAt": "2026-10-13T10:45:35.505Z",
+  "origin": "https://lampa-stream-six.vercel.app",
+  "mode": "after",
+  "deployments": {
+    "backend": "dpl_BwYgstyuekWrP2v2shJNR2sqCVma",
+    "frontend": "dpl_8AcjLRpFqiUAF6VApytHnUBoVjZA",
+    "commit": "6bc6c1862f586433a45e27fa5be271126f1b5ab7"
+  },
+  "scope": "Ordinary /movie/969681 with persisted legacy online preference, no catalogSource or KP ID. Only matching TMDB metadata and posters fixture; discovery, resolve and video use real production services. Existing client session flag used. Login, actual TMDB credentials, other titles and whole film unverified.",
+  "requests": [
+    {
+      "hostname": "lampa-stream-six.vercel.app",
+      "path": "/api/source-host",
+      "op": "discover",
+      "atMs": 423
+    },
+    {
+      "hostname": "lampa-stream-six.vercel.app",
+      "path": "/api/source-host",
+      "op": "resolve",
+      "atMs": 852
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 1518
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 1528
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 1529
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 1529
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 1529
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 1530
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 1744
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 1744
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 1965
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2042
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2071
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2229
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2352
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2353
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2450
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2452
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2511
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2604
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2604
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2678
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2688
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2934
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 2935
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3089
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3090
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3206
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3206
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3272
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3275
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3353
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3353
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3436
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3436
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3539
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3541
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3693
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3696
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3756
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3783
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3851
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3868
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3913
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3982
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 3982
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4049
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4160
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4248
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4291
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4362
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4383
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4420
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4605
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4607
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4666
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4769
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4769
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4876
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4881
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4957
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 4957
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 5044
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 5044
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 5156
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 5156
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 5262
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 5262
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 5333
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 5333
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 5479
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 5479
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 5588
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 12045
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "atMs": 12045
+    }
+  ],
+  "responses": [
+    {
+      "hostname": "lampa-stream-six.vercel.app",
+      "path": "/api/source-host",
+      "op": "discover",
+      "status": 200,
+      "elapsedMs": 342,
+      "contentType": "text/event-stream; charset=utf-8"
+    },
+    {
+      "hostname": "lampa-stream-six.vercel.app",
+      "path": "/api/source-host",
+      "op": "resolve",
+      "status": 200,
+      "elapsedMs": 657,
+      "contentType": "application/json; charset=utf-8"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 202,
+      "contentType": "text/vtt; charset=utf-8"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 225,
+      "contentType": "application/vnd.apple.mpegurl"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 215,
+      "contentType": "text/vtt; charset=utf-8"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 233,
+      "contentType": "text/vtt; charset=utf-8"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 234,
+      "contentType": "text/vtt; charset=utf-8"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 243,
+      "contentType": "text/vtt; charset=utf-8"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 170,
+      "contentType": "application/vnd.apple.mpegurl"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 71,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 304,
+      "contentType": "application/vnd.apple.mpegurl"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 124,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 174,
+      "contentType": "application/vnd.apple.mpegurl"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 67,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 55,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 79,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 57,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 81,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 66,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 57,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 80,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 61,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 64,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 55,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 64,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 63,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 68,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 63,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 64,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 53,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 62,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 54,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 55,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 56,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 68,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 57,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 83,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 57,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 72,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 66,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 93,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 60,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 76,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 67,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 57,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 64,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 61,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 302,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 63,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 66,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 54,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 64,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 175,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 58,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 73,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 99,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 57,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 108,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 57,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 74,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 56,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 61,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 54,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 70,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 56,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 56,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 55,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 59,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 56,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 57,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 63,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 64,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 58,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 86,
+      "contentType": "video/mp2t"
+    },
+    {
+      "hostname": "lampa-source-host.vercel.app",
+      "path": "/v1/media/[sealed]",
+      "surface": "backend-media",
+      "status": 200,
+      "elapsedMs": 118,
+      "contentType": "video/mp2t"
+    }
+  ],
+  "status": "GREEN",
+  "startupMs": 2793,
+  "initial": {
+    "time": 0.317933,
+    "duration": 8700.628999999988,
+    "frames": 12,
+    "readyState": 4,
+    "width": 1280,
+    "height": 720,
+    "mediaErrorCode": null
+  },
+  "atFirstFrame": {
+    "events": [
+      {
+        "atMs": 850,
+        "event": "candidate",
+        "provider": "habster:collaps"
+      },
+      {
+        "atMs": 1508,
+        "event": "resolved",
+        "status": 200,
+        "provider": "habster:collaps",
+        "kind": "hls",
+        "quality": "Auto"
+      },
+      {
+        "atMs": 1523,
+        "event": "loadstart",
+        "mediaErrorCode": null
+      },
+      {
+        "atMs": 2347,
+        "event": "loadedmetadata",
+        "mediaErrorCode": null
+      },
+      {
+        "atMs": 2390,
+        "event": "playing",
+        "mediaErrorCode": null
+      }
+    ],
+    "requests": [
+      {
+        "atMs": 420,
+        "op": "discover",
+        "query": {
+          "type": "movie",
+          "tmdbId": 969681,
+          "title": "Человек-паук: Новый день",
+          "originalTitle": "Spider-Man: Brand New Day",
+          "year": 2026,
+          "imdbId": "tt22084616"
+        }
+      },
+      {
+        "atMs": 850,
+        "op": "resolve",
+        "provider": "habster:collaps"
+      }
+    ],
+    "watchAt": 392.39999999990687,
+    "loadStarts": 1
+  },
+  "browserLegacyRequestsBeforePlayback": [],
+  "startupBeforeDiscoveryFinished": true,
+  "afterBackground": {
+    "time": 9.434125,
+    "duration": 8700.628999999988,
+    "frames": 231,
+    "readyState": 4,
+    "width": 1280,
+    "height": 720,
+    "mediaErrorCode": null
+  },
+  "displayedProviders": [
+    "Habster · Collaps",
+    "VideoHUB"
+  ],
+  "background": {
+    "newProvidersAfterDecoded": [
+      "cdnvideohub"
+    ],
+    "providers": [
+      "habster:collaps",
+      "cdnvideohub"
+    ],
+    "events": [
+      {
+        "atMs": 850,
+        "event": "candidate",
+        "provider": "habster:collaps"
+      },
+      {
+        "atMs": 1508,
+        "event": "resolved",
+        "status": 200,
+        "provider": "habster:collaps",
+        "kind": "hls",
+        "quality": "Auto"
+      },
+      {
+        "atMs": 1523,
+        "event": "loadstart",
+        "mediaErrorCode": null
+      },
+      {
+        "atMs": 2347,
+        "event": "loadedmetadata",
+        "mediaErrorCode": null
+      },
+      {
+        "atMs": 2390,
+        "event": "playing",
+        "mediaErrorCode": null
+      },
+      {
+        "atMs": 11894,
+        "event": "candidate",
+        "provider": "cdnvideohub"
+      }
+    ],
+    "resolveCount": 1,
+    "loadStarts": 1
+  },
+  "sameSourceAfterBackground": true,
+  "afterSeek": {
+    "time": 60.00682,
+    "duration": 8700.628999999988,
+    "frames": 339,
+    "readyState": 4,
+    "width": 1280,
+    "height": 720,
+    "mediaErrorCode": null
+  },
+  "sameSourceSeek": true,
+  "browserTrace": {
+    "events": [
+      {
+        "atMs": 850,
+        "event": "candidate",
+        "provider": "habster:collaps"
+      },
+      {
+        "atMs": 1508,
+        "event": "resolved",
+        "status": 200,
+        "provider": "habster:collaps",
+        "kind": "hls",
+        "quality": "Auto"
+      },
+      {
+        "atMs": 1523,
+        "event": "loadstart",
+        "mediaErrorCode": null
+      },
+      {
+        "atMs": 2347,
+        "event": "loadedmetadata",
+        "mediaErrorCode": null
+      },
+      {
+        "atMs": 2390,
+        "event": "playing",
+        "mediaErrorCode": null
+      },
+      {
+        "atMs": 11894,
+        "event": "candidate",
+        "provider": "cdnvideohub"
+      },
+      {
+        "atMs": 12175,
+        "event": "playing",
+        "mediaErrorCode": null
+      }
+    ],
+    "requests": [
+      {
+        "atMs": 420,
+        "op": "discover",
+        "query": {
+          "type": "movie",
+          "tmdbId": 969681,
+          "title": "Человек-паук: Новый день",
+          "originalTitle": "Spider-Man: Brand New Day",
+          "year": 2026,
+          "imdbId": "tt22084616"
+        }
+      },
+      {
+        "atMs": 850,
+        "op": "resolve",
+        "provider": "habster:collaps"
+      }
+    ],
+    "watchAt": 392.39999999990687,
+    "loadStarts": 1
+  },
+  "visibleSourceLabel": "Источники▾",
+  "before": {
+    "checkedAt": "2026-10-13T10:27:01.194Z",
+    "origin": "https://lampa-stream-six.vercel.app",
+    "mode": "before",
+    "deployments": {
+      "backend": "dpl_8Yy4hBejwU7mYHks6g96ksGS3vLm",
+      "frontend": "dpl_BrN4mPWeXaxC5oyJHTQMobgeeZyY",
+      "commit": "f444c1f18f6788c1dde5113c4549cb1a3ace371f"
+    },
+    "scope": "Ordinary /movie/969681 with persisted legacy online preference, no catalogSource or KP ID. Only matching TMDB metadata and posters fixture; discovery, resolve and video use real production services. Existing client session flag used. Login, actual TMDB credentials, other titles and whole film unverified.",
+    "requests": [
+      {
+        "hostname": "api.bhcesh.me",
+        "path": "/franchise/details",
+        "surface": "browser-legacy",
+        "atMs": 312
+      },
+      {
+        "hostname": "kinopoiskapiunofficial.tech",
+        "path": "/api/v2.1/films/search-by-keyword",
+        "surface": "browser-legacy",
+        "atMs": 746
+      },
+      {
+        "hostname": "api.bhcesh.me",
+        "path": "/franchise/details",
+        "surface": "browser-legacy",
+        "atMs": 883
+      },
+      {
+        "hostname": "kinopoiskapiunofficial.tech",
+        "path": "/api/v2.1/films/search-by-keyword",
+        "surface": "browser-legacy",
+        "atMs": 980
+      },
+      {
+        "hostname": "lampa-stream-six.vercel.app",
+        "path": "/api/source-host",
+        "op": "discover",
+        "atMs": 1007
+      },
+      {
+        "hostname": "lampa-stream-six.vercel.app",
+        "path": "/api/source-host",
+        "op": "resolve",
+        "atMs": 15205
+      },
+      {
+        "hostname": "lampa-source-host.vercel.app",
+        "path": "/v1/media/[sealed]",
+        "surface": "backend-media",
+        "atMs": 16832
+      },
+      {
+        "hostname": "lampa-source-media.ocr-gemini-proxy.workers.dev",
+        "path": "/v1/media/[sealed]",
+        "surface": "backend-media",
+        "atMs": 17141
+      },
+      {
+        "hostname": "lampa-source-host.vercel.app",
+        "path": "/v1/media/[sealed]",
+        "surface": "backend-media",
+        "atMs": 21749
+      },
+      {
+        "hostname": "lampa-source-media.ocr-gemini-proxy.workers.dev",
+        "path": "/v1/media/[sealed]",
+        "surface": "backend-media",
+        "atMs": 21805
+      },
+      {
+        "hostname": "lampa-stream-six.vercel.app",
+        "path": "/api/source-host",
+        "op": "resolve",
+        "atMs": 23830
+      }
+    ],
+    "responses": [
+      {
+        "hostname": "kinopoiskapiunofficial.tech",
+        "path": "/api/v2.1/films/search-by-keyword",
+        "surface": "browser-legacy",
+        "status": 200,
+        "elapsedMs": 136,
+        "contentType": "application/json"
+      },
+      {
+        "hostname": "kinopoiskapiunofficial.tech",
+        "path": "/api/v2.1/films/search-by-keyword",
+        "surface": "browser-legacy",
+        "status": 200,
+        "elapsedMs": 25,
+        "contentType": "application/json"
+      },
+      {
+        "hostname": "lampa-stream-six.vercel.app",
+        "path": "/api/source-host",
+        "op": "discover",
+        "status": 200,
+        "elapsedMs": 12356,
+        "contentType": "text/event-stream; charset=utf-8"
+      },
+      {
+        "hostname": "lampa-stream-six.vercel.app",
+        "path": "/api/source-host",
+        "op": "resolve",
+        "status": 200,
+        "elapsedMs": 1618,
+        "contentType": "application/json; charset=utf-8"
+      },
+      {
+        "hostname": "lampa-source-host.vercel.app",
+        "path": "/v1/media/[sealed]",
+        "surface": "backend-media",
+        "status": 302,
+        "elapsedMs": 309,
+        "contentType": null
+      },
+      {
+        "hostname": "lampa-source-media.ocr-gemini-proxy.workers.dev",
+        "path": "/v1/media/[sealed]",
+        "surface": "backend-media",
+        "status": 502,
+        "elapsedMs": 3607,
+        "contentType": "text/plain; charset=utf-8"
+      },
+      {
+        "hostname": "lampa-source-host.vercel.app",
+        "path": "/v1/media/[sealed]",
+        "surface": "backend-media",
+        "status": 302,
+        "elapsedMs": 56,
+        "contentType": null
+      },
+      {
+        "hostname": "lampa-source-media.ocr-gemini-proxy.workers.dev",
+        "path": "/v1/media/[sealed]",
+        "surface": "backend-media",
+        "status": 502,
+        "elapsedMs": 254,
+        "contentType": "text/plain; charset=utf-8"
+      }
+    ],
+    "status": "RED",
+    "failure": {
+      "name": "TimeoutError",
+      "stage": "startup",
+      "message": "Timed out before required playback evidence"
+    },
+    "browserTrace": {
+      "events": [
+        {
+          "atMs": 15202,
+          "event": "candidate",
+          "provider": "hdvb"
+        },
+        {
+          "atMs": 15221,
+          "event": "candidate",
+          "provider": "cdnvideohub"
+        },
+        {
+          "atMs": 16095,
+          "event": "candidate",
+          "provider": "rutubemovie"
+        },
+        {
+          "atMs": 16372,
+          "event": "candidate",
+          "provider": "vkmovie"
+        },
+        {
+          "atMs": 16572,
+          "event": "candidate",
+          "provider": "phantom"
+        },
+        {
+          "atMs": 16821,
+          "event": "resolved",
+          "status": 200,
+          "provider": "unknown",
+          "kind": "hls",
+          "quality": "auto"
+        },
+        {
+          "atMs": 16841,
+          "event": "loadstart",
+          "mediaErrorCode": null
+        },
+        {
+          "atMs": 21681,
+          "event": "candidate",
+          "provider": "vibix"
+        }
+      ],
+      "requests": [
+        {
+          "atMs": 1003,
+          "op": "discover",
+          "query": {
+            "type": "movie",
+            "tmdbId": 969681,
+            "title": "Человек-паук: Новый день",
+            "originalTitle": "Spider-Man: Brand New Day",
+            "year": 2026,
+            "imdbId": "tt22084616",
+            "kinopoiskId": 5494049
+          }
+        },
+        {
+          "atMs": 15202,
+          "op": "resolve",
+          "provider": "unknown"
+        },
+        {
+          "atMs": 23823,
+          "op": "resolve",
+          "provider": "cdnvideohub"
+        }
+      ],
+      "watchAt": 612.9000000000233,
+      "loadStarts": 1
+    },
+    "visibleSourceLabel": "Источники▾"
+  },
+  "firstAfterAttempt": {
+    "checkedAt": "2026-10-13T10:43:57.947Z",
+    "deployments": {
+      "backend": "dpl_BwYgstyuekWrP2v2shJNR2sqCVma",
+      "frontend": "dpl_8AcjLRpFqiUAF6VApytHnUBoVjZA",
+      "commit": "6bc6c1862f586433a45e27fa5be271126f1b5ab7"
+    },
+    "startupMs": 5955,
+    "initial": {
+      "time": 0.314508,
+      "duration": 8700.628999999988,
+      "frames": 12,
+      "readyState": 4,
+      "width": 1280,
+      "height": 720,
+      "mediaErrorCode": null
+    },
+    "startupBeforeDiscoveryFinished": true,
+    "browserLegacyRequestsBeforePlayback": [],
+    "harnessFailure": "Source dropdown automation timed out because playback controls auto-hide; real startup and background delivery succeeded. Harness now hovers the player before opening the menu.",
+    "backgroundProviders": [
+      "habster:collaps",
+      "cdnvideohub",
+      "rutubemovie",
+      "phantom",
+      "vkmovie",
+      "vibix",
+      "aladin",
+      "collaps"
+    ],
+    "resolveCount": 1,
+    "loadStarts": 1
+  }
+}

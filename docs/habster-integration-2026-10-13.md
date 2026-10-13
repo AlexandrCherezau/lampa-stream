@@ -33,6 +33,12 @@ The old public route `/movie/969681` with a stored `online` preference did not d
 
 The startup change passed 56 source-host tests and 21 Habster/player browser tests. A hook self-check proves that web discovery begins while hypothetical legacy ID lookups remain stalled; a client regression proves late sources keep the identical playing stream and do not resolve until selected. Build, player and SSE gateway checks passed. Live exact Habster mapping returned KP 5494049 in 323 ms and source resolution in another 399 ms on the development machine; these are observations, not production speed guarantees.
 
+The published startup release is commit `6bc6c1862f586433a45e27fa5be271126f1b5ab7`, backend `dpl_BwYgstyuekWrP2v2shJNR2sqCVma` and frontend `dpl_8AcjLRpFqiUAF6VApytHnUBoVjZA`. Both reached READY with the canonical production aliases. The same ordinary movie route and stored old preference then selected Habster at 850 ms, resolved at 1508 ms and decoded at 2793 ms (12 frames, 1280×720, readyState 4). The first post-release attempt also decoded in 5955 ms; its later automation failure was an auto-hidden-controls click, not a video failure, and that attempt is retained in the report.
+
+CDNVideoHub arrived at 11,894 ms, after decoded startup, and appeared alongside Habster in the actual source menu. Playback kept the same `currentSrc`, one resolve and one loadstart. Seeking reached 60.00682 seconds and 339 frames at readyState 4 on the same stream. There were no legacy browser source/ID requests before playback and no KP/catalog hint in the initial discovery request. Catalog search, resolve and media were real production requests; matching TMDB details/posters remained fixtures. Login, the user's own network, other titles and uninterrupted whole-film playback were not checked.
+
+### Initial Habster publication
+
 Both production deployments reached READY at commit `f444c1f18f6788c1dde5113c4549cb1a3ace371f`:
 
 - Frontend `dpl_BrN4mPWeXaxC5oyJHTQMobgeeZyY`: https://lampa-stream-six.vercel.app.
