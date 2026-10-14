@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-14T01:03:10.628012+00:00",
+  "checkedAt": "2026-10-14T01:12:35.455402+00:00",
   "goalStatus": "active",
   "frontendOrigin": "https://lampa-stream-six.vercel.app",
   "validatedProfileRuntime": "4f172b094152068e0629e99c069f407ee3cbb56a",
@@ -27,6 +27,10 @@
     "homeFourLatest": {
       "artifact": "/tmp/home-four-user-current-check.txt",
       "sha256": "f83de1990f3fbcccc6c922dea760b5bee54f445bba7c7089e5e9f7360aa8a2a2"
+    },
+    "finalTonightDeployedUi": {
+      "artifact": "/tmp/personal-final-tonight-ui-result.txt",
+      "sha256": "75a7fdc4fce2534eeeff245941dd01ab66e2b8577de460c2cc5ba3b3e09d791e"
     }
   },
   "results": {
@@ -120,7 +124,10 @@
         "detail request socket failure: exit 1, generic JSON",
         "navigation failure: exit 1, generic JSON"
       ],
-      "fakeCredentialAbsentFromStdoutAndStderr": true
+      "fakeCredentialAbsentFromStdoutAndStderr": true,
+      "deployedFixtureUiPass": true,
+      "deployedFixtureUiScenario": "tension, <=120min, pair; identical titles with distinct IDs100..104; first poster navigation; no page errors",
+      "actualCatalogueProbeStatus": 401
     }
   },
   "acceptance": {
@@ -140,5 +147,13 @@
   "polishAliases": [
     "lampa-stream-six.vercel.app",
     "lampa-stream-rrrg23886-7973s-projects.vercel.app"
-  ]
+  ],
+  "currentFrontendRuntime": "d89b981c528b6d00301479d930b67a5d0ecd2b56",
+  "currentFrontendDeployment": "dpl_89FfHiwpu9uoraM6DSnBwBq89rhN",
+  "currentFrontendReady": true,
+  "currentFrontendAliases": [
+    "lampa-stream-six.vercel.app",
+    "lampa-stream-rrrg23886-7973s-projects.vercel.app"
+  ],
+  "profileRuntimeUnchangedSinceValidatedDeployment": true
 }
