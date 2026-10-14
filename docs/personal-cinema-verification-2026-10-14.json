@@ -1,0 +1,144 @@
+{
+  "checkedAt": "2026-10-14T01:03:10.628012+00:00",
+  "goalStatus": "active",
+  "frontendOrigin": "https://lampa-stream-six.vercel.app",
+  "validatedProfileRuntime": "4f172b094152068e0629e99c069f407ee3cbb56a",
+  "validatedProfileDeployment": "dpl_4d49GLQGuuMg7mGQWjyfqfyLDoxd",
+  "polishRuntime": "1b1c01e6ff3fde63ea3db56ec58e1caa831bb1a0",
+  "polishDeployment": "dpl_H3ZM6FqtR3NDs9Rw9qFWGBGZkxZF",
+  "polishReady": true,
+  "checks": {
+    "node78": {
+      "artifact": "/tmp/personal-final-blob-node-78.log",
+      "sha256": "6512d1a87b060852ffa74d40a2cb193ae1b76c7a00da5016da188db9c4b4297d"
+    },
+    "productionPlayer6": {
+      "artifact": "/tmp/personal-blob-production-browser.log",
+      "sha256": "4e0c9f2221cf73e21b3be66f08304dab389f9e013a6ed7ec3470e3cf8b973562"
+    },
+    "productionClientFinal": {
+      "artifact": "/tmp/personal-blob-production-client-trace.log",
+      "sha256": "a9588462eb353c6a88db290101593de29e0c2f18e9fa99c3ba85be4c28638c41"
+    },
+    "productionUi": {
+      "artifact": "/tmp/personal-blob-production-ui.txt",
+      "sha256": "e30f605d9b786c5a78a6b152a38326f9d124da383c75690804efe1484c45b535"
+    },
+    "homeFourLatest": {
+      "artifact": "/tmp/home-four-user-current-check.txt",
+      "sha256": "f83de1990f3fbcccc6c922dea760b5bee54f445bba7c7089e5e9f7360aa8a2a2"
+    }
+  },
+  "results": {
+    "node": {
+      "pass": 78,
+      "fail": 0,
+      "skip": 0,
+      "storage": "Redis/HTTP/private Blob SDK"
+    },
+    "productionPlayer": {
+      "pass": 6,
+      "fail": 0,
+      "player": "OnlinePlayer",
+      "titles": [
+        "movie",
+        "tv episode"
+      ],
+      "cloud": "actual Vercel profile/private Blob",
+      "metadata": "fixtures",
+      "media": "fixture HLS",
+      "phone": "iPhone 13 Chromium emulation",
+      "positionToleranceSeconds": 0.1,
+      "features": [
+        "actual UI seek",
+        "pause and actual pagehide navigation",
+        "voice",
+        "subtitles on/off",
+        "near-end rewind",
+        "native completion"
+      ]
+    },
+    "productionUi": {
+      "cloudPairing": true,
+      "freshPhoneBootstrapTokenTransferred": true,
+      "personalRatingsTransferred": true,
+      "recapTransferred": true,
+      "actualPngDownload": true,
+      "tonightFixtureFilmCount": 5,
+      "metadata": "fixtures",
+      "viewingStats": "explicit 2-hour QA fixture",
+      "pageErrors": 0
+    },
+    "productionClient": {
+      "finalPass": true,
+      "firstConcurrentRunFailed": true,
+      "firstFailure": "phone rewind stayed at previous position during parallel production suites",
+      "causeProven": false,
+      "finalRun": "isolated real HTTP create/pair/bootstrap/checkpoint/voice/subtitles/rewind/rating/session/clear/revoke passed"
+    },
+    "recapPolish": {
+      "buildPass": true,
+      "localUiPass": true,
+      "localPngPass": true,
+      "pngDimensions": [
+        1200,
+        1500
+      ],
+      "labels": [
+        "1 фильм",
+        "0 серий",
+        "1 история"
+      ],
+      "data": "local fixture",
+      "artifacts": [
+        "/tmp/recap-singular-export.png",
+        "/tmp/recap-singular-ui.png"
+      ],
+      "deployedUiPass": true,
+      "deployedPngPass": true,
+      "deployedPageErrors": 0,
+      "deployedPng": "/tmp/personal-prod-singular-export.png",
+      "deployedPngSha256": "a4d657adbd94c6166620e0eabd5c43097f373644546a1e14a6ca87b298497f5b",
+      "unauthenticatedProfileStatus": 401
+    },
+    "homeFour": {
+      "deployedCheckPass": true,
+      "removedFeedRequests": 0,
+      "metadata": "fixture"
+    },
+    "catalogueVerifier": {
+      "file": "scripts/check-production-tonight.mjs",
+      "syntaxPass": true,
+      "actualLiveRun": false,
+      "cardAssociation": "DOM data-movie-id (not title)",
+      "credentials": "environment only; failures print fixed safe JSON, never original Playwright error",
+      "pendingSafetyRegression": false,
+      "regressionPass": true,
+      "regressionScope": "actual CLI and Chrome against an isolated localhost HTML/HTTP fixture only; never live catalogue proof",
+      "scenarios": [
+        "five distinct movie IDs with identical displayed titles",
+        "detail request socket failure: exit 1, generic JSON",
+        "navigation failure: exit 1, generic JSON"
+      ],
+      "fakeCredentialAbsentFromStdoutAndStderr": true
+    }
+  },
+  "acceptance": {
+    "crossDeviceContract": "verified with actual cloud and native player fixture media",
+    "recapContract": "verified analytics, cloud sync, actual PNG download and PNG File share contract",
+    "tonightFiltersAndUi": "verified with fixture metadata",
+    "authenticatedProductionTonight": "unverified: legitimate catalogue token unavailable; actual API returned 401",
+    "freshPhoneActualCatalogue": "unverified: token bootstrap demonstrated with QA token only"
+  },
+  "limits": [
+    "No physical iPhone/Safari or native OS share sheet exercise",
+    "Actual TorrPlayer close transfer was not separately exercised; latest six native tests use OnlinePlayer",
+    "No authenticated live TMDB sample; goal remains active"
+  ],
+  "nextRequiredCheck": "Use the owner configured TMDB token with scripts/check-production-tonight.mjs; then verify that a freshly paired phone can read the actual catalogue",
+  "secretsIncluded": false,
+  "polishAliases": [
+    "lampa-stream-six.vercel.app",
+    "lampa-stream-rrrg23886-7973s-projects.vercel.app"
+  ]
+}
