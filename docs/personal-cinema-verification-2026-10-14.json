@@ -1,6 +1,6 @@
 {
-  "checkedAt": "2026-10-14T01:12:35.455402+00:00",
-  "goalStatus": "blocked",
+  "checkedAt": "2026-10-14T11:37:54.780461+00:00",
+  "goalStatus": "complete",
   "frontendOrigin": "https://lampa-stream-six.vercel.app",
   "validatedProfileRuntime": "4f172b094152068e0629e99c069f407ee3cbb56a",
   "validatedProfileDeployment": "dpl_4d49GLQGuuMg7mGQWjyfqfyLDoxd",
@@ -31,6 +31,10 @@
     "finalTonightDeployedUi": {
       "artifact": "/tmp/personal-final-tonight-ui-result.txt",
       "sha256": "75a7fdc4fce2534eeeff245941dd01ab66e2b8577de460c2cc5ba3b3e09d791e"
+    },
+    "realCatalogue": {
+      "artifact": "docs/personal-cinema-live-catalogue-2026-10-14.json",
+      "sha256": "09fae6f52776a1ff8168c441d2792301372d5d71b3d1bc9c1fb7a74ab1d8496e"
     }
   },
   "results": {
@@ -128,21 +132,148 @@
       "deployedFixtureUiPass": true,
       "deployedFixtureUiScenario": "tension, <=120min, pair; identical titles with distinct IDs100..104; first poster navigation; no page errors",
       "actualCatalogueProbeStatus": 401
+    },
+    "productionRealCatalogue": {
+      "checkedAt": "2026-10-14T11:23:17.739Z",
+      "origin": "https://lampa-stream-six.vercel.app",
+      "metadataMocked": false,
+      "mood": "tension",
+      "maxMinutes": 120,
+      "company": "pair",
+      "movieCount": 5,
+      "movies": [
+        {
+          "id": 1236045,
+          "title": "Животные",
+          "runtime": 109,
+          "releaseDate": "2026-10-09",
+          "genreIds": [
+            53,
+            18
+          ]
+        },
+        {
+          "id": 1101383,
+          "title": "На краю Оук-стрит",
+          "runtime": 99,
+          "releaseDate": "2026-08-12",
+          "genreIds": [
+            878,
+            9648,
+            53
+          ]
+        },
+        {
+          "id": 1291595,
+          "title": "Астрал 6: Они уже здесь",
+          "runtime": 106,
+          "releaseDate": "2026-08-19",
+          "genreIds": [
+            27,
+            53
+          ]
+        },
+        {
+          "id": 1288445,
+          "title": "Мятеж",
+          "runtime": 94,
+          "releaseDate": "2026-08-19",
+          "genreIds": [
+            28,
+            53
+          ]
+        },
+        {
+          "id": 1339274,
+          "title": "Не оставляйте детей одних",
+          "runtime": 93,
+          "releaseDate": "2026-05-14",
+          "genreIds": [
+            27,
+            18,
+            53
+          ]
+        }
+      ],
+      "catalogueResponses": [
+        {
+          "path": "/api/tmdb/3/discover/movie",
+          "status": 200
+        },
+        {
+          "path": "/api/tmdb/3/movie/1101412",
+          "status": 200
+        },
+        {
+          "path": "/api/tmdb/3/movie/1236045",
+          "status": 200
+        },
+        {
+          "path": "/api/tmdb/3/movie/1339274",
+          "status": 200
+        },
+        {
+          "path": "/api/tmdb/3/movie/1291595",
+          "status": 200
+        },
+        {
+          "path": "/api/tmdb/3/movie/1284046",
+          "status": 200
+        },
+        {
+          "path": "/api/tmdb/3/movie/1232569",
+          "status": 200
+        },
+        {
+          "path": "/api/tmdb/3/movie/1101383",
+          "status": 200
+        },
+        {
+          "path": "/api/tmdb/3/movie/1288445",
+          "status": 200
+        }
+      ],
+      "pageErrors": 0
+    },
+    "freshPhoneRealCatalogue": {
+      "checkedAt": "2026-10-14T11:32:47.611Z",
+      "origin": "https://lampa-stream-six.vercel.app",
+      "metadataMocked": false,
+      "profileApi": "actual Vercel/private Blob",
+      "phone": "iPhone 13 Chromium emulation",
+      "freshPhoneInitiallyHasCatalogue": false,
+      "realCatalogueBootstrap": true,
+      "catalogueRead": {
+        "status": 200,
+        "contentType": "application/json;charset=utf-8",
+        "jsonParsed": true,
+        "id": 550,
+        "title": "Бойцовский клуб",
+        "runtime": 139
+      },
+      "actualPhoneTonightMovies": [
+        1236045,
+        1101383,
+        1291595,
+        1288445,
+        1339274
+      ],
+      "revokedAccessStatus": 401,
+      "pageErrors": 0
     }
   },
   "acceptance": {
     "crossDeviceContract": "verified with actual cloud and native player fixture media",
     "recapContract": "verified analytics, cloud sync, actual PNG download and PNG File share contract",
     "tonightFiltersAndUi": "verified with fixture metadata",
-    "authenticatedProductionTonight": "unverified: legitimate catalogue token unavailable; actual API returned 401",
-    "freshPhoneActualCatalogue": "unverified: token bootstrap demonstrated with QA token only"
+    "authenticatedProductionTonight": "verified actual deployed UI: tension <=120min, pair; five distinct released movies, runtime93–109, actual genre metadata, poster navigation",
+    "freshPhoneActualCatalogue": "verified fresh browser initially without catalogue key; QR/code approval; secure bootstrap; actual movie550 HTTP200; actual five phone recommendations; revoke401"
   },
   "limits": [
     "No physical iPhone/Safari or native OS share sheet exercise",
-    "Actual TorrPlayer close transfer was not separately exercised; latest six native tests use OnlinePlayer",
-    "No authenticated live TMDB sample; goal remains active"
+    "Actual TorrPlayer close transfer was not separately exercised; latest six native tests use OnlinePlayer"
   ],
-  "nextRequiredCheck": "Use the owner configured TMDB token with scripts/check-production-tonight.mjs; then verify that a freshly paired phone can read the actual catalogue",
+  "nextRequiredCheck": null,
   "secretsIncluded": false,
   "polishAliases": [
     "lampa-stream-six.vercel.app",
@@ -164,6 +295,14 @@
       "authenticated production chooser: tension <=120min, pair, five actual movies",
       "freshly paired phone can read the actual catalogue"
     ],
-    "scopePreserved": true
+    "scopePreserved": true,
+    "resolved": true,
+    "resolvedBy": "User supplied an authorized catalogue token; actual production chooser and fresh phone checks passed"
+  },
+  "independentCompletionAudit": {
+    "verdict": "all three original features and mandatory validation gates satisfied",
+    "reviewerRole": "code-reviewer",
+    "currentRuntimeUnchanged": true,
+    "coverageBoundsPreserved": true
   }
 }

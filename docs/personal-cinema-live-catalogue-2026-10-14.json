@@ -1,0 +1,132 @@
+{
+  "checkedAt": "2026-10-14T11:37:54.780220+00:00",
+  "productionChooser": {
+    "checkedAt": "2026-10-14T11:23:17.739Z",
+    "origin": "https://lampa-stream-six.vercel.app",
+    "metadataMocked": false,
+    "mood": "tension",
+    "maxMinutes": 120,
+    "company": "pair",
+    "movieCount": 5,
+    "movies": [
+      {
+        "id": 1236045,
+        "title": "Животные",
+        "runtime": 109,
+        "releaseDate": "2026-10-09",
+        "genreIds": [
+          53,
+          18
+        ]
+      },
+      {
+        "id": 1101383,
+        "title": "На краю Оук-стрит",
+        "runtime": 99,
+        "releaseDate": "2026-08-12",
+        "genreIds": [
+          878,
+          9648,
+          53
+        ]
+      },
+      {
+        "id": 1291595,
+        "title": "Астрал 6: Они уже здесь",
+        "runtime": 106,
+        "releaseDate": "2026-08-19",
+        "genreIds": [
+          27,
+          53
+        ]
+      },
+      {
+        "id": 1288445,
+        "title": "Мятеж",
+        "runtime": 94,
+        "releaseDate": "2026-08-19",
+        "genreIds": [
+          28,
+          53
+        ]
+      },
+      {
+        "id": 1339274,
+        "title": "Не оставляйте детей одних",
+        "runtime": 93,
+        "releaseDate": "2026-05-14",
+        "genreIds": [
+          27,
+          18,
+          53
+        ]
+      }
+    ],
+    "catalogueResponses": [
+      {
+        "path": "/api/tmdb/3/discover/movie",
+        "status": 200
+      },
+      {
+        "path": "/api/tmdb/3/movie/1101412",
+        "status": 200
+      },
+      {
+        "path": "/api/tmdb/3/movie/1236045",
+        "status": 200
+      },
+      {
+        "path": "/api/tmdb/3/movie/1339274",
+        "status": 200
+      },
+      {
+        "path": "/api/tmdb/3/movie/1291595",
+        "status": 200
+      },
+      {
+        "path": "/api/tmdb/3/movie/1284046",
+        "status": 200
+      },
+      {
+        "path": "/api/tmdb/3/movie/1232569",
+        "status": 200
+      },
+      {
+        "path": "/api/tmdb/3/movie/1101383",
+        "status": 200
+      },
+      {
+        "path": "/api/tmdb/3/movie/1288445",
+        "status": 200
+      }
+    ],
+    "pageErrors": 0
+  },
+  "freshPhone": {
+    "checkedAt": "2026-10-14T11:32:47.611Z",
+    "origin": "https://lampa-stream-six.vercel.app",
+    "metadataMocked": false,
+    "profileApi": "actual Vercel/private Blob",
+    "phone": "iPhone 13 Chromium emulation",
+    "freshPhoneInitiallyHasCatalogue": false,
+    "realCatalogueBootstrap": true,
+    "catalogueRead": {
+      "status": 200,
+      "contentType": "application/json;charset=utf-8",
+      "jsonParsed": true,
+      "id": 550,
+      "title": "Бойцовский клуб",
+      "runtime": 139
+    },
+    "actualPhoneTonightMovies": [
+      1236045,
+      1101383,
+      1291595,
+      1288445,
+      1339274
+    ],
+    "revokedAccessStatus": 401,
+    "pageErrors": 0
+  },
+  "credentialsIncluded": false
+}
