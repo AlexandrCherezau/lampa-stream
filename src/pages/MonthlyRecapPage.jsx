@@ -9,6 +9,11 @@ const duration = (hours) => {
   const minutes = totalMinutes % 60;
   return whole ? `${whole} ч${minutes ? ` ${minutes} мин` : ""}` : `${minutes} мин`;
 };
+const russianPluralRules = new Intl.PluralRules("ru-RU");
+const russianPluralForm = (count, forms) => {
+  const category = russianPluralRules.select(Math.abs(Number(count)) || 0);
+  return forms[category === "one" ? 0 : category === "few" ? 1 : 2];
+};
 const currentMonth = () => {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Minsk", year: "numeric", month: "2-digit" }).formatToParts(Date.now());
   const values = Object.fromEntries(parts.filter((part) => part.type !== "literal").map(({ type, value }) => [type, value]));
@@ -30,7 +35,7 @@ function drawRecapCard(recap) {
   ctx.fillStyle = "#ff314f"; ctx.font = "164px 'Bebas Neue', sans-serif"; ctx.fillText(duration(recap.watchHours), 74, 500);
   ctx.fillStyle = "#c5c1cc"; ctx.font = "28px 'DM Sans', sans-serif"; ctx.fillText("проведено за просмотром", 92, 555);
   ctx.strokeStyle = "rgba(255,255,255,.16)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(90, 620); ctx.lineTo(1110, 620); ctx.stroke();
-  const stats = [[String(recap.completedMovies), "фильмов"], [String(recap.completedEpisodes), "серий"], [String(recap.activeTitles), "историй"]];
+  const stats = [[String(recap.completedMovies), russianPluralForm(recap.completedMovies, ["фильм", "фильма", "фильмов"])], [String(recap.completedEpisodes), russianPluralForm(recap.completedEpisodes, ["серия", "серии", "серий"])], [String(recap.activeTitles), russianPluralForm(recap.activeTitles, ["история", "истории", "историй"])]];
   stats.forEach(([value, label], index) => { const x = 98 + index * 355; ctx.fillStyle = "#f5f4ef"; ctx.font = "86px 'Bebas Neue', sans-serif"; ctx.fillText(value, x, 755); ctx.fillStyle = "#aaa6b2"; ctx.font = "25px 'DM Sans', sans-serif"; ctx.fillText(label, x, 800); });
   ctx.fillStyle = "#f5f4ef"; ctx.font = "42px 'Bebas Neue', sans-serif"; ctx.fillText("ЖАНРЫ ЭТОГО МЕСЯЦА", 90, 920);
   const genres = recap.genres.slice(0, 4);
@@ -102,7 +107,7 @@ export default function MonthlyRecapPage({ history = [] }) {
       <div className="recap-story-orbit" aria-hidden="true" />
       <div className="recap-story-top"><span>STREAMBERT / {month.replace("-", " · ")}</span><span>01 — 04</span></div>
       <div className="recap-story-main"><span className="recap-kicker">ТВОЯ КИНОИСТОРИЯ</span><h2>{recap.persona}</h2><div className="recap-watch">{duration(recap.watchHours)}</div><p>реального времени просмотра</p></div>
-      <div className="recap-stat-grid"><div><strong>{recap.completedMovies}</strong><span>фильмов завершено</span></div><div><strong>{recap.completedEpisodes}</strong><span>серий завершено</span></div><div><strong>{recap.activeTitles}</strong><span>историй включено</span></div></div>
+      <div className="recap-stat-grid"><div><strong>{recap.completedMovies}</strong><span>{russianPluralForm(recap.completedMovies, ["фильм завершён", "фильма завершено", "фильмов завершено"])}</span></div><div><strong>{recap.completedEpisodes}</strong><span>{russianPluralForm(recap.completedEpisodes, ["серия завершена", "серии завершено", "серий завершено"])}</span></div><div><strong>{recap.activeTitles}</strong><span>{russianPluralForm(recap.activeTitles, ["история включена", "истории включено", "историй включено"])}</span></div></div>
       <div className="recap-filmstrip" aria-hidden="true">{Array.from({ length: 24 }, (_, index) => <i key={index} />)}</div>
     </section>
     <section className="recap-grid">

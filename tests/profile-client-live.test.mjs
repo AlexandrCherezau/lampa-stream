@@ -9,7 +9,22 @@ function device(name) {
   let catalogueToken = '';
   const localQaIp = `2001:db8:${randomUUID()}`;
   const store = createViewingProfileStore({ endpoint, events: null, uuid: randomUUID, deviceName: () => name,
-    fetchImpl: (url, options) => fetch(url, { ...options, headers: { ...options.headers, ...(['localhost', '127.0.0.1'].includes(new URL(endpoint).hostname) ? { 'x-real-ip': localQaIp } : {}) } }),
+    timers: { setTimeout: (...args) => { const timer = setTimeout(...args); timer.unref?.(); return timer; }, clearTimeout, setInterval, clearInterval },
+    fetchImpl: async (url, options) => {
+      const started = Date.now();
+      const requested = options.body ? JSON.parse(options.body).checkpoints?.map((value) => ({ position: value.position, baseRevision: value.baseRevision, clientSeq: value.clientSeq })) : undefined;
+      try {
+        const result = await fetch(url, { ...options, headers: { ...options.headers, ...(['localhost', '127.0.0.1'].includes(new URL(endpoint).hostname) ? { 'x-real-ip': localQaIp } : {}) } });
+        if (process.env.PROFILE_TEST_TRACE === '1' && requested?.length) {
+          const body = await result.clone().json();
+          console.log('Profile QA PATCH', JSON.stringify({ device: name, status: result.status, elapsedMs: Date.now() - started, requested, saved: Object.values(body.snapshot?.checkpoints || {}).map((value) => ({ position: value.position, revision: value.revision, clientSeq: value.clientSeq })), error: body.error }));
+        }
+        return result;
+      } catch (failure) {
+        if (process.env.PROFILE_TEST_TRACE === '1' && requested?.length) console.log('Profile QA PATCH', JSON.stringify({ device: name, elapsedMs: Date.now() - started, requested, error: failure.name }));
+        throw failure;
+      }
+    },
     read: (key) => structuredClone(disk.get(key) ?? null), write: (key, value) => disk.set(key, structuredClone(value)), remove: (key) => disk.delete(key),
     secure: { get: async () => catalogueToken, set: async (_, value) => { catalogueToken = value; } } });
   return { store, token: () => catalogueToken, disk };
