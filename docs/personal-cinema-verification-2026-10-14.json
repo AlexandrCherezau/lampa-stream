@@ -1,6 +1,6 @@
 {
   "checkedAt": "2026-10-14T01:12:35.455402+00:00",
-  "goalStatus": "active",
+  "goalStatus": "blocked",
   "frontendOrigin": "https://lampa-stream-six.vercel.app",
   "validatedProfileRuntime": "4f172b094152068e0629e99c069f407ee3cbb56a",
   "validatedProfileDeployment": "dpl_4d49GLQGuuMg7mGQWjyfqfyLDoxd",
@@ -155,5 +155,15 @@
     "lampa-stream-six.vercel.app",
     "lampa-stream-rrrg23886-7973s-projects.vercel.app"
   ],
-  "profileRuntimeUnchangedSinceValidatedDeployment": true
+  "profileRuntimeUnchangedSinceValidatedDeployment": true,
+  "blockedAudit": {
+    "checkedAt": "2026-10-14T01:15:48.768918+00:00",
+    "sameBlockerAcrossConsecutiveGoalTurns": 3,
+    "reason": "No legitimate catalogue credential available; actual deployed TMDB discover HTTP401/API7",
+    "remainingRequiredChecks": [
+      "authenticated production chooser: tension <=120min, pair, five actual movies",
+      "freshly paired phone can read the actual catalogue"
+    ],
+    "scopePreserved": true
+  }
 }
