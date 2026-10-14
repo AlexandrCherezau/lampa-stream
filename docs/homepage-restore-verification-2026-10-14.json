@@ -1,0 +1,28 @@
+{
+  "checkedAt": "2026-10-14T15:17:19.161278+00:00",
+  "frontendOrigin": "https://lampa-stream-six.vercel.app",
+  "runtime": "5701e8acfea4faa4ac17033e4f942d54653cde13",
+  "deployment": "dpl_BRuFnK1fFKTtSAEoYBrmCAFUTLT1",
+  "ready": true,
+  "request": "Restore previous homepage banner/continue with four ordinary collections and no extra source feeds",
+  "buildPass": true,
+  "bootSmokePass": true,
+  "mobileListFixturePass": true,
+  "layoutMigrationPass": true,
+  "productionUi": {
+    "metadataMocked": true,
+    "serviceWorkersBlocked": true,
+    "hero": 1,
+    "continue": true,
+    "sectionTitles": [
+      "Продолжить просмотр",
+      "Рекомендации для вас",
+      "Популярные фильмы",
+      "Популярные сериалы",
+      "С высоким рейтингом"
+    ],
+    "removedFeedRequests": [],
+    "posterNavigation": true
+  },
+  "mediaBackendRedeployed": false
+}
