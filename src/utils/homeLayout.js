@@ -4,6 +4,7 @@
 import { storage } from "./storage";
 
 export const HOME_ROWS = [
+  { id: "continue", label: "Продолжить просмотр" },
   { id: "recommended", label: "Recommended for You" },
   { id: "trendingMovies", label: "Trending Movies" },
   { id: "trendingTV", label: "Trending Series" },
@@ -12,17 +13,22 @@ export const HOME_ROWS = [
 
 const DEFAULT_ROW_ORDER = HOME_ROWS.map((r) => r.id);
 
+function normalizeHomeOrder(order) {
+  const knownIds = new Set(HOME_ROWS.map((row) => row.id));
+  const savedIds = Array.isArray(order)
+    ? [...new Set(order.filter((id) => knownIds.has(id)))]
+    : [];
+  const missingIds = DEFAULT_ROW_ORDER.filter((id) => !savedIds.includes(id));
+
+  return savedIds.includes("continue")
+    ? [...savedIds, ...missingIds]
+    : ["continue", ...savedIds, ...missingIds.filter((id) => id !== "continue")];
+}
+
 export function loadHomeLayout() {
   const savedOrder = storage.get("homeRowOrder");
   const savedVisible = storage.get("homeRowVisible");
-  const knownIds = new Set(HOME_ROWS.map((r) => r.id));
-  const savedIds = Array.isArray(savedOrder)
-    ? [...new Set(savedOrder.filter((id) => knownIds.has(id)))]
-    : [];
-  const order = [
-    ...savedIds,
-    ...DEFAULT_ROW_ORDER.filter((id) => !savedIds.includes(id)),
-  ];
+  const order = normalizeHomeOrder(savedOrder);
   const visible = Object.fromEntries(
     HOME_ROWS.map(({ id }) => [
       id,
@@ -34,14 +40,7 @@ export function loadHomeLayout() {
 }
 
 export function saveHomeLayout(order, visible) {
-  const knownIds = new Set(HOME_ROWS.map((r) => r.id));
-  const savedIds = Array.isArray(order)
-    ? [...new Set(order.filter((id) => knownIds.has(id)))]
-    : [];
-  const normalizedOrder = [
-    ...savedIds,
-    ...DEFAULT_ROW_ORDER.filter((id) => !savedIds.includes(id)),
-  ];
+  const normalizedOrder = normalizeHomeOrder(order);
   const normalizedVisible = Object.fromEntries(
     HOME_ROWS.map(({ id }) => [
       id,

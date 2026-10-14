@@ -86,7 +86,7 @@ Runtime commit `5346c1cfb1fb258e8f3a084ec1d4bc68cb165887`, frontend `dpl_3xNtEo4
 
 ## Персональное кино — завершено, 2026-10-14
 
-Все три функции реализованы и прошли обязательную проверку: `/devices` (привязка, перенос позиции/озвучки/субтитров, отзыв доступа), `/recap` (месячный киноитог, жанры, собственные оценки, PNG/share), `/tonight` (настроение/время/компания → пять подходящих фильмов). Главная сохраняет четыре заказанные подборки. Полные критерии и границы — `docs/personal-cinema-plan.md`; проверка — `docs/personal-cinema-verification-2026-10-14.json`; живой каталог — `docs/personal-cinema-live-catalogue-2026-10-14.json`. Секретов в документах нет.
+Все три функции реализованы и прошли обязательную проверку: `/devices` (привязка, перенос позиции/озвучки/субтитров, отзыв доступа), `/recap` (месячный киноитог, жанры, собственные оценки, PNG/share), `/tonight` (настроение/время/компания → пять подходящих фильмов). Главная содержит прежний баннер, продолжение просмотра и четыре основные подборки; дополнительные ленты источников исключены. Полные критерии и границы — `docs/personal-cinema-plan.md`; проверка — `docs/personal-cinema-verification-2026-10-14.json`; живой каталог — `docs/personal-cinema-live-catalogue-2026-10-14.json`. Секретов в документах нет.
 
 Production frontend runtime `d89b981c528b6d00301479d930b67a5d0ecd2b56`, deployment `dpl_89FfHiwpu9uoraM6DSnBwBq89rhN` READY; основной alias подтверждён повторно authenticated CLI. Более поздние Git commits меняют документацию, runtime тот же. Private Vercel Blob `store_Koat9ngjtdgTC2hS`, fra1, подключён только к frontend production; `PROFILE_STORAGE_BACKEND=blob`. Hobby подтверждён, платные планы не включались. SDK `@vercel/blob2.8.1` только на сервере, TMDB bootstrap зашифрован. Старый Redis сохранён как default backend, production явно выбирает Blob. Source-host/Worker ради профиля не перевыкладывались.
 
@@ -105,3 +105,13 @@ Production client factory проверил HTTP pairing/bootstrap/checkpoints/re
 Независимое completion review подтвердило все три исходных критерия и отсутствие обязательных проверочных блокеров/P1/P2. Company pair/friends/solo влияет на ранжирование, family имеет строгие genre/certification ограничения; фильтры runtime/release/mood/watched/anime/age/unique/cancel и честный shortfall покрыты. Обязательного следующего шага нет. При новой жалобе воспроизводить конкретный сценарий, сохраняя вышеописанные границы доказательств.
 
 Actual root не зарегистрирован в workstation cloud-context; облачный README другой checkout не изменялся.
+
+## Главная: восстановлен прежний вид без дополнительных источников — 2026-10-14
+
+По последнему уточнению пользователя возвращены прежние Hero/banner и «Продолжить просмотр»; четыре обычные recommended/trendingMovies/trendingTV/topRated сохранены. CUB/Habster/Zona extra rows и их homepage requests отсутствуют. Раннее требование убрать всё кроме четырёх строк отменено этим уточнением. История, cloud profile, киноитог, «На вечер», player и API не менялись.
+
+HomeLayout вновь содержит continue. Если ранее сохранённая четырёхстрочная раскладка его не содержит, continue добавляется первым; заданная пользователем позиция и visible:false сохраняются. Unknown IDs и дубликаты фильтруются при чтении/сохранении. В настройках восстановлено пояснение, что баннер остаётся наверху.
+
+Проверки: fresh Vite build PASS; один существующий boot→home→movie→player smoke PASS8.7s. Четыре carousel headings + Hero1 + Continue visible и отсутствие /api/cub|habster|zona подтверждены. Дополнительный mobile390x664/list smoke: Continue первым после миграции, progress42%, те же четыре обычные headings,0pageerrors,0extra feed requests. Parent адресная проверка order/dedup/unknown/hiddenContinue PASS. Физический телефон и настоящий каталог для этой UI правки не требовались; metadata fixtures явно обозначены.
+
+Следующий обязательный шаг: frontend-only production deploy, READY/mainalias и такой же deployed UI smoke; source-host/Worker не перевыкладывать. Actual root не зарегистрирован в workstation cloud-context, облачный README другой checkout не менять.

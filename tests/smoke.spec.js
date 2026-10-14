@@ -132,8 +132,9 @@ test("boots, renders the home page, navigates to a movie, mounts the player", as
     "Популярные сериалы",
     "С высоким рейтингом",
   ], { timeout: 20_000 });
-  await expect(page.locator(".hero")).toHaveCount(0);
-  await expect(page.getByText("Продолжить просмотр", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".hero")).toHaveCount(1);
+  await expect(page.locator(".hero")).toBeVisible();
+  await expect(page.getByText("Продолжить просмотр", { exact: true })).toBeVisible();
   expect(removedCatalogRequests).toEqual([]);
 
   // The progressive grid reveals the first batch of cards without mounting all.

@@ -1,10 +1,13 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import MediaCard from "../components/MediaCard";
 import ProgressiveGrid from "../utils/useProgressiveList.jsx";
 import TrendingCarousel from "../components/TrendingCarousel";
+import { PlayIcon, StarIcon } from "../components/Icons";
 import {
+  imgUrl,
   tmdbFetch,
   filterAnime,
+  backdropSize,
 } from "../utils/api";
 import { useRatings, getRatingForItem } from "../utils/useRatings";
 import { isRestricted } from "../utils/ageRating";
@@ -39,6 +42,8 @@ export default function HomePage({
   trendingTV,
   loading,
   onSelect,
+  progress,
+  inProgress,
   offline,
   onRetry,
   watched,
@@ -50,6 +55,24 @@ export default function HomePage({
   // Drop anime from every discovery surface when the "Hide anime" setting is on.
   const trendingMoviesRaw = useMemo(() => filterAnime(trending), [trending]);
   const trendingTVRaw = useMemo(() => filterAnime(trendingTV), [trendingTV]);
+  const hero = trendingMoviesRaw[0];
+
+  const [mainWidth, setMainWidth] = useState(0);
+  const mainRef = useRef(null);
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    if (typeof ResizeObserver === "undefined") {
+      setMainWidth(el.clientWidth || 0);
+      return;
+    }
+    const ro = new ResizeObserver(([entry]) => {
+      const w = Math.round(entry.contentRect?.width || el.clientWidth || 0);
+      setMainWidth((prev) => (Math.abs(prev - w) > 1 ? w : prev));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const [recommendedItems, setRecommendedItems] = useState([]);
   const [topRatedItems, setTopRatedItems] = useState([]);
@@ -63,16 +86,21 @@ export default function HomePage({
   // All items for batch ratings fetch
   const allItems = useMemo(
     () => [
+      ...inProgress,
       ...trending.map((i) => ({ ...i, media_type: "movie" })),
       ...trendingTV.map((i) => ({ ...i, media_type: "tv" })),
       ...recommendedItems,
       ...topRatedItems,
     ],
-    [trending, trendingTV, recommendedItems, topRatedItems],
+    [inProgress, trending, trendingTV, recommendedItems, topRatedItems],
   );
 
   const { ratingsMap, ageLimitSetting } = useRatings(allItems);
 
+  const getRating = useCallback(
+    (item) => getRatingForItem(item, ratingsMap),
+    [ratingsMap],
+  );
   const itemRestricted = useCallback(
     (item) =>
       isRestricted(getRatingForItem(item, ratingsMap).minAge, ageLimitSetting),
@@ -205,7 +233,7 @@ export default function HomePage({
   const visibleTopRated = useMemo(() => filterAnime(topRatedItems), [topRatedItems]);
 
   return (
-    <div className="fade-in">
+    <div className="fade-in" ref={mainRef}>
       {/* ── Offline ── */}
       {offline && (
         <div
@@ -258,9 +286,81 @@ export default function HomePage({
         </div>
       )}
 
+      {!loading && hero && (
+        <div className="hero">
+          <div
+            className="hero-bg"
+            style={{
+              backgroundImage: `url(${imgUrl(
+                hero.backdrop_path,
+                backdropSize(mainWidth || 1280),
+              )})`,
+            }}
+          />
+          <div className="hero-gradient" />
+          <div className="hero-content">
+            <div className="hero-type">В тренде · фильм</div>
+            <div className="hero-title">{hero.title || hero.name}</div>
+            <div className="hero-meta">
+              <span className="hero-rating">
+                <StarIcon /> {hero.vote_average?.toFixed(1)}
+              </span>
+              <span>{hero.release_date?.slice(0, 4)}</span>
+            </div>
+            <div className="hero-overview">{hero.overview}</div>
+            <div className="hero-actions">
+              <button
+                className="btn btn-primary"
+                onClick={() => onSelect(hero)}
+              >
+                <PlayIcon /> Watch Now
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => onSelect(hero)}
+              >
+                More Info
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Rows in user-configured order ── */}
       {rowOrder.map((id) => {
         if (!rowVisible[id]) return null;
+
+        if (id === "continue") {
+          if (inProgress.length === 0) return null;
+          return (
+            <div key="continue" className="section">
+              <div className="section-title">Продолжить просмотр</div>
+              <ProgressiveGrid items={inProgress}>
+                {(visible) => visible.map((item) => {
+                  const pk =
+                    item.media_type === "movie"
+                      ? `movie_${item.id}`
+                      : `tv_${item.id}_s${item.season}e${item.episode}`;
+                  const rating = getRating(item);
+                  const restricted = itemRestricted(item);
+                  return (
+                    <MediaCard
+                      key={`${item.media_type}_${item.id}`}
+                      item={item}
+                      onClick={onSelect}
+                      progress={progress[pk] || 0}
+                      watched={watched}
+                      onMarkWatched={onMarkWatched}
+                      onMarkUnwatched={onMarkUnwatched}
+                      ageRating={rating.cert}
+                      restricted={restricted}
+                    />
+                  );
+                })}
+              </ProgressiveGrid>
+            </div>
+          );
+        }
 
         // Render a section as a flat cards-grid (list view)
         const renderList = (key, title, titleHighlight, items) => {
