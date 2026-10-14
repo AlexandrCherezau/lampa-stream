@@ -7,13 +7,15 @@ const endpoint = process.env.PROFILE_TEST_URL;
 function device(name) {
   const disk = new Map();
   let catalogueToken = '';
+  const localQaIp = `2001:db8:${randomUUID()}`;
   const store = createViewingProfileStore({ endpoint, events: null, uuid: randomUUID, deviceName: () => name,
+    fetchImpl: (url, options) => fetch(url, { ...options, headers: { ...options.headers, ...(['localhost', '127.0.0.1'].includes(new URL(endpoint).hostname) ? { 'x-real-ip': localQaIp } : {}) } }),
     read: (key) => structuredClone(disk.get(key) ?? null), write: (key, value) => disk.set(key, structuredClone(value)), remove: (key) => disk.delete(key),
     secure: { get: async () => catalogueToken, set: async (_, value) => { catalogueToken = value; } } });
   return { store, token: () => catalogueToken, disk };
 }
 
-test('two independent clients pair through real Redis-backed HTTP and transfer exact film/episode preferences', { skip: !endpoint }, async () => {
+test('two independent clients pair through real HTTP storage and transfer exact film/episode preferences', { skip: !endpoint }, async () => {
   const desktop = device('QA desktop'), phone = device('QA phone');
   await desktop.store.create({ displayName: 'QA cinema', tmdbToken: 'catalogue-fixture-not-a-real-key' });
   const pair = await desktop.store.beginPairing();

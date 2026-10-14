@@ -39,7 +39,7 @@ import {
   hashFromResult,
 } from "../utils/torrserver-client";
 import { storage, formatBytes, STORAGE_KEYS, setCappedMap } from "../utils/storage";
-import { getPlaybackCheckpoint, waitForViewingProfile, savePlaybackCheckpoint, flushViewingProfile, recordViewingSession } from "../utils/viewingProfile";
+import { getPlaybackCheckpoint, waitForViewingProfile, savePlaybackCheckpoint, flushViewingProfile, recordViewingSession, registerViewingProfileClosingCapture } from "../utils/viewingProfile";
 import { crossedPlaybackPosition, crossedWatchedThreshold, hasGenuinePlaybackForEnd, shouldApplyResumePosition } from "../utils/playbackCompletion";
 import { fetchAniSkipTimings } from "../utils/aniSkip";
 import { fallbackTimings, mergeTimings } from "../utils/introDetect";
@@ -445,6 +445,7 @@ export default function TorrPlayer({
       // stalled initial resume suppress watch-time sampling indefinitely.
       resumeTargetTimerRef.current = setTimeout(() => {
         if (resumeTargetRef.current === resumeStart) resumeTargetRef.current = null;
+        resumeTargetTimerRef.current = null;
       }, 5000);
     }
 
@@ -576,7 +577,7 @@ export default function TorrPlayer({
       persistCheckpoint(resumeTargetRef.current ?? v.currentTime ?? 0, null, false);
       // Let the session sampler append its final segment before flushing the
       // shared outbox at the end of this pause event dispatch.
-      Promise.resolve().then(() => flushViewingProfile({ keepalive: true })).catch(() => {});
+      Promise.resolve().then(() => flushViewingProfile({ keepalive: true, priority: true })).catch(() => {});
     };
     const onWaiting = () => setWaiting(true);
     const onPlaying = () => setWaiting(false);
@@ -585,6 +586,7 @@ export default function TorrPlayer({
       if (resumeTargetRef.current != null && Math.abs(v.currentTime - resumeTargetRef.current) <= 1) {
         resumeTargetRef.current = null;
         clearTimeout(resumeTargetTimerRef.current);
+        resumeTargetTimerRef.current = null;
       }
     };
     const tracks = v.textTracks;
@@ -598,16 +600,6 @@ export default function TorrPlayer({
       });
     };
     tracks?.addEventListener?.("change", onTrackChange);
-    const onPageHide = () => {
-      try {
-        const map = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
-        map[progressKey] = Math.max(0, Math.round((resumeTargetRef.current ?? v.currentTime ?? 0) * 1000) / 1000);
-        setCappedMap(STORAGE_KEYS.RESUME_TIME, map);
-      } catch {}
-      persistCheckpoint(resumeTargetRef.current ?? v.currentTime ?? 0, null, false, false);
-      Promise.resolve().then(() => flushViewingProfile({ keepalive: true })).catch(() => {});
-    };
-    window.addEventListener("pagehide", onPageHide);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("durationchange", onDur);
     v.addEventListener("play", onPlay);
@@ -627,7 +619,6 @@ export default function TorrPlayer({
       v.removeEventListener("canplay", onCanPlay);
       v.removeEventListener("seeked", onSeeked);
       tracks?.removeEventListener?.("change", onTrackChange);
-      window.removeEventListener("pagehide", onPageHide);
       if (v.duration && v.currentTime > 0) persistCheckpoint(resumeTargetRef.current ?? v.currentTime, null, false, false);
     };
   }, [stream, progressKey, profileReady, persistCheckpoint]);
@@ -721,7 +712,7 @@ export default function TorrPlayer({
     const onPause = () => {
       reset();
       commitViewingSession();
-      Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {});
+      Promise.resolve(flushViewingProfile({ keepalive: true, priority: true })).catch(() => {});
     };
     const ended = () => {
       reset();
@@ -732,23 +723,36 @@ export default function TorrPlayer({
       }
       commitViewingSession(session?.completedAt || null);
     };
-    const onPageHide = () => { reset(); commitViewingSession(); Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {}); };
+    const captureClosingState = () => {
+      const currentVideo = videoRef.current;
+      if (currentVideo && currentVideo.duration && currentVideo.currentTime >= 0) {
+        const position = resumeTargetRef.current ?? currentVideo.currentTime;
+        try {
+          const map = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
+          map[progressKey] = Math.max(0, Math.round(position * 1000) / 1000);
+          setCappedMap(STORAGE_KEYS.RESUME_TIME, map);
+        } catch {}
+        persistCheckpoint(position, null, false, false);
+      }
+      reset();
+      commitViewingSession();
+    };
+    const unregisterClosingCapture = registerViewingProfileClosingCapture(captureClosingState);
     video?.addEventListener("seeking", reset);
     video?.addEventListener("waiting", reset);
     video?.addEventListener("pause", onPause);
     video?.addEventListener("ended", ended);
-    window.addEventListener("pagehide", onPageHide);
     return () => {
       clearInterval(timer);
       video?.removeEventListener("seeking", reset);
       video?.removeEventListener("waiting", reset);
       video?.removeEventListener("pause", onPause);
       video?.removeEventListener("ended", ended);
-      window.removeEventListener("pagehide", onPageHide);
-      reset(); commitViewingSession();
-      Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {});
+      captureClosingState();
+      unregisterClosingCapture();
+      Promise.resolve(flushViewingProfile()).catch(() => {});
     };
-  }, [stream, profileReady, progressKey, watchedThreshold, commitViewingSession]);
+  }, [stream, profileReady, progressKey, watchedThreshold, commitViewingSession, persistCheckpoint]);
 
   // ── AniList + AniSkip (intro/outro/recap) for anime ─────────────────────────
   // Same source as OnlinePlayer: resolve TMDB → AniList idMal → AniSkip exact
@@ -882,17 +886,29 @@ export default function TorrPlayer({
     if (v.paused) v.play().catch(() => {});
     else v.pause();
   };
+  const seekTo = (position) => {
+    const v = videoRef.current;
+    if (!v || !Number.isFinite(v.duration) || v.duration <= 0 || !Number.isFinite(position)) return;
+    const target = Math.max(0, Math.min(v.duration, position));
+    resumeTargetRef.current = target;
+    clearTimeout(resumeTargetTimerRef.current);
+    resumeTargetTimerRef.current = setTimeout(() => {
+      if (resumeTargetRef.current === target) resumeTargetRef.current = null;
+      resumeTargetTimerRef.current = null;
+    }, 5000);
+    v.currentTime = target;
+  };
   const seekBy = (delta) => {
     const v = videoRef.current;
     if (!v || !v.duration) return;
-    v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + delta));
+    seekTo(v.currentTime + delta);
   };
   const seek = (e) => {
     const v = videoRef.current;
     if (!v || !v.duration) return;
     const r = e.currentTarget.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-    v.currentTime = ratio * v.duration;
+    seekTo(ratio * v.duration);
   };
   const toggleMute = () => {
     const v = videoRef.current;
@@ -935,7 +951,7 @@ export default function TorrPlayer({
     if (!skipPrompt || !skipTimings?.[skipPrompt]) return;
     const v = videoRef.current;
     if (!v) return;
-    v.currentTime = Number(skipTimings[skipPrompt].endTime);
+    seekTo(Number(skipTimings[skipPrompt].endTime));
     setSkipPrompt(null);
   };
   const openExternal = () => {

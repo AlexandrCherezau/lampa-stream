@@ -105,7 +105,7 @@ function memoryUpstash() {
       profile.library.history = {}; profile.library.watched = {};
       profile.revision += 1; profile.watchResetRevision = profile.revision; profile.watchClearedAt = clearedAt; profile.watchClearMutationId = args[0]; profile.updatedAt = Number(args[3]);
       profile.mutationReceipts ||= {}; profile.mutationOrder ||= [];
-      profile.mutationReceipts[args[0]] = profile.revision; profile.mutationOrder.push(args[0]);
+      profile.mutationReceipts[args[0]] = { revision: profile.revision, deviceId: args[1] }; profile.mutationOrder.push(args[0]);
       while (profile.mutationOrder.length > 128) delete profile.mutationReceipts[profile.mutationOrder.shift()];
       const encoded = JSON.stringify(profile); values.set(keys[0], encoded);
       return makeResponse([encoded, String(profile.revision)]);
@@ -244,6 +244,36 @@ test("checkpoint merge protects a newer checkpoint from a stale offline outbox w
   const currentRevision = patch.body.revision;
   patch = await call("PATCH", "/api/profile", { credential, body: { mutationId: crypto.randomUUID(), deviceId, checkpoints: [checkpoint(22, currentRevision)] } });
   assert.equal(patch.body.snapshot.checkpoints.movie_5494049.position, 22);
+});
+
+test("same-device superseding mutation receipts allow missing predecessor batches without accepting older sequences", async () => {
+  const { call } = makeHarness();
+  const created = await call("POST", "/api/profile", { body: { tmdbToken: "token" } });
+  const { credential, deviceId } = created.body;
+  const firstMutation = crypto.randomUUID();
+  const first = await call("PATCH", "/api/profile", { credential, body: { mutationId: firstMutation, deviceId, checkpoints: [{ ...checkpoint(100, 0), clientSeq: 1 }] } });
+  assert.equal(first.status, 200);
+  const noOpMutation = crypto.randomUUID();
+  const noOp = await call("PATCH", "/api/profile", { credential, body: { mutationId: noOpMutation, deviceId, checkpoints: [{ ...checkpoint(50, 0), clientSeq: 1 }] } });
+  assert.equal(noOp.body.snapshot.checkpoints.movie_5494049.position, 100);
+  const unrelatedReceipt = await call("PATCH", "/api/profile", { credential, body: {
+    mutationId: crypto.randomUUID(), deviceId, supersedesMutationIds: [noOpMutation],
+    checkpoints: [{ ...checkpoint(250, 0), clientSeq: 2 }],
+  } });
+  assert.equal(unrelatedReceipt.body.snapshot.checkpoints.movie_5494049.position, 100, "a receipt from a rejected write cannot supersede the mutation that owns the current record");
+  const latestMutation = crypto.randomUUID();
+  const latest = await call("PATCH", "/api/profile", { credential, body: {
+    mutationId: latestMutation, deviceId, supersedesMutationIds: [firstMutation],
+    checkpoints: [{ ...checkpoint(300, 0), clientSeq: 3 }],
+  } });
+  assert.equal(latest.status, 200);
+  assert.equal(latest.body.snapshot.checkpoints.movie_5494049.position, 300);
+  const olderRebased = await call("PATCH", "/api/profile", { credential, body: {
+    mutationId: crypto.randomUUID(), deviceId, supersedesMutationIds: [firstMutation],
+    checkpoints: [{ ...checkpoint(200, latest.body.revision), clientSeq: 2 }],
+  } });
+  assert.equal(olderRebased.body.snapshot.checkpoints.movie_5494049.position, 300);
+  assert.equal(latest.body.snapshot.mutationReceipts, undefined);
 });
 
 test("session delivery is idempotent and played intervals union without double counting", async () => {
@@ -442,6 +472,7 @@ test("anonymous profile creation is capped while normal polling cadence remains 
 test("validation rejects signed URLs and mismatched progress keys", () => {
   assert.throws(() => validateCheckpoint({ ...checkpoint(10, 0), progressKey: "movie_123" }), /progress_key_mismatch/);
   assert.throws(() => validateCheckpoint({ ...checkpoint(10, 0), item: { ...item, poster_path: "https://cdn.invalid/poster.jpg?token=secret" } }), /invalid_poster_path/);
+  assert.throws(() => validateCheckpoint({ ...checkpoint(10, 0), clientSeq: 1.5 }), /invalid_client_seq/);
   const initial = { revision: 0, checkpoints: {}, sessions: {}, library: { saved: {}, watched: {}, history: {}, ratings: {} } };
   const merged = mergeProfileSnapshot(initial, { checkpoints: [checkpoint(10, 0)], sessions: [], library: {} }, { deviceId: "device", now: 10 });
   assert.equal(merged.checkpoints.movie_5494049.position, 10);

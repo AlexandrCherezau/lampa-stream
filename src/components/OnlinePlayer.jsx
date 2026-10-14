@@ -170,7 +170,7 @@ import { fetchAniSkipTimings, resolveAnimeEpisode } from "../utils/aniSkip";
 import { fetchIntroDbTimings, mergeTimings, providerSkipRanges } from "../utils/introDetect";
 import { applySync as applyWatchSync } from "../utils/watchParty";
 import { storage, STORAGE_KEYS, getStoredVolume, getStoredMuted, setStoredVolume, setStoredMuted, setCappedMap } from "../utils/storage";
-import { getPlaybackCheckpoint, waitForViewingProfile, savePlaybackCheckpoint, flushViewingProfile, recordViewingSession } from "../utils/viewingProfile";
+import { getPlaybackCheckpoint, waitForViewingProfile, savePlaybackCheckpoint, flushViewingProfile, recordViewingSession, registerViewingProfileClosingCapture } from "../utils/viewingProfile";
 import { crossedPlaybackPosition, crossedWatchedThreshold, hasGenuinePlaybackForEnd, shouldApplyResumePosition } from "../utils/playbackCompletion";
 import {
   collapsResolve,
@@ -1479,7 +1479,7 @@ export default function OnlinePlayer({
         persistCheckpoint(position, null, false);
         // Let the watch-session pause listener append its final interval before
         // the shared flush snapshots the outbox.
-        Promise.resolve().then(() => flushViewingProfile({ keepalive: true })).catch(() => {});
+        Promise.resolve().then(() => flushViewingProfile({ keepalive: true, priority: true })).catch(() => {});
       }
     };
     // resume-seek settled → safe to save again. Also the moment a post-switch
@@ -1680,7 +1680,7 @@ export default function OnlinePlayer({
     const onPause = () => {
       reset();
       commitViewingSession();
-      Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {});
+      Promise.resolve(flushViewingProfile({ keepalive: true, priority: true })).catch(() => {});
     };
     const ended = () => {
       reset();
@@ -1691,50 +1691,33 @@ export default function OnlinePlayer({
       }
       commitViewingSession(session?.completedAt || null);
     };
+    const captureClosingState = () => {
+      const currentVideo = videoRef.current;
+      if (currentVideo && currentVideo.duration && currentVideo.currentTime >= 0) {
+        const position = resumeTargetRef.current ?? currentVideo.currentTime;
+        saveResumeTime(position);
+        persistCheckpoint(position, null, false, false);
+      }
+      reset();
+      commitViewingSession();
+    };
+    const unregisterClosingCapture = registerViewingProfileClosingCapture(captureClosingState);
     const video = videoRef.current;
     video?.addEventListener("seeking", reset);
     video?.addEventListener("waiting", reset);
     video?.addEventListener("pause", onPause);
     video?.addEventListener("ended", ended);
-    const onPageHide = () => { reset(); commitViewingSession(); Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {}); };
-    window.addEventListener("pagehide", onPageHide);
     return () => {
       clearInterval(timer);
       video?.removeEventListener("seeking", reset);
       video?.removeEventListener("waiting", reset);
       video?.removeEventListener("pause", onPause);
       video?.removeEventListener("ended", ended);
-      window.removeEventListener("pagehide", onPageHide);
-      reset();
-      commitViewingSession();
-      Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {});
+      captureClosingState();
+      unregisterClosingCapture();
+      Promise.resolve(flushViewingProfile()).catch(() => {});
     };
-  }, [stream, progressKey, watchedThreshold, commitViewingSession]);
-
-  // ── Persist the exact resume timecode on hide / unmount ─────────────────────
-  // The 5s timer + pause save cover normal playback; this captures the precise
-  // stop point right before a reload / tab-switch / unmount, so reopening the
-  // same movie or episode resumes to the exact second (not up to 5s stale).
-  useEffect(() => {
-    if (!stream) return;
-    const flush = () => {
-      const v = videoRef.current;
-      if (v && v.duration && v.currentTime >= 0) {
-        const position = resumeTargetRef.current ?? v.currentTime;
-        saveResumeTime(position);
-        persistCheckpoint(position, null, false, false);
-        Promise.resolve(flushViewingProfile({ keepalive: true })).catch(() => {});
-      }
-    };
-    const onVis = () => { if (document.visibilityState === "hidden") flush(); };
-    document.addEventListener("visibilitychange", onVis);
-    window.addEventListener("pagehide", flush);
-    return () => {
-      flush();
-      document.removeEventListener("visibilitychange", onVis);
-      window.removeEventListener("pagehide", flush);
-    };
-  }, [stream, saveResumeTime, persistCheckpoint]);
+  }, [stream, progressKey, watchedThreshold, commitViewingSession, saveResumeTime, persistCheckpoint]);
 
   // ── Skip intro/outro/recap + next-episode-when-ending detection ───────────────
   // The active mode depends on the content: anime series use introSkipMode

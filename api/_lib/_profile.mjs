@@ -20,23 +20,28 @@ export class ProfileError extends Error {
   }
 }
 
-const fail = (status, code) => { throw new ProfileError(status, code); };
-const isRecord = (v) => !!v && typeof v === "object" && !Array.isArray(v);
-const boundedString = (v, max, field, { optional = false } = {}) => {
+export const fail = (status, code) => { throw new ProfileError(status, code); };
+export const isRecord = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+export const boundedString = (v, max, field, { optional = false } = {}) => {
   if (optional && v == null) return undefined;
   if (typeof v !== "string" || v.length > max || !v.trim()) fail(400, `invalid_${field}`);
   return v.trim();
 };
-const finite = (v, field, min = 0, max = Number.MAX_SAFE_INTEGER) => {
+export const finite = (v, field, min = 0, max = Number.MAX_SAFE_INTEGER) => {
   const n = Number(v);
   if (!Number.isFinite(n) || n < min || n > max) fail(400, `invalid_${field}`);
   return n;
 };
-const id = (v, field) => {
+const sequence = (value) => {
+  const result = finite(value, "client_seq", 1, Number.MAX_SAFE_INTEGER);
+  if (!Number.isSafeInteger(result)) fail(400, "invalid_client_seq");
+  return result;
+};
+export const id = (v, field) => {
   if (typeof v !== "string" || !/^[a-zA-Z0-9:_-]{1,120}$/.test(v)) fail(400, `invalid_${field}`);
   return v;
 };
-const uuid = (v, field) => {
+export const uuid = (v, field) => {
   if (typeof v !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v)) fail(400, `invalid_${field}`);
   return v.toLowerCase();
 };
@@ -110,6 +115,7 @@ export function validateCheckpoint(value) {
     duration: finite(value.duration, "duration", 0, 7 * 24 * 3600),
     preferences: safePreferences(value.preferences),
     baseRevision: finite(value.baseRevision, "base_revision", 0, Number.MAX_SAFE_INTEGER),
+    ...(value.clientSeq != null ? { clientSeq: sequence(value.clientSeq) } : {}),
   };
 }
 
@@ -144,7 +150,10 @@ export function validateLibrary(value) {
     for (const [key, record] of Object.entries(value[bucket])) {
       id(key, "library_key");
       if (!isRecord(record)) fail(400, "invalid_library_record");
-      const clean = { baseRevision: finite(record.baseRevision ?? 0, "base_revision", 0, Number.MAX_SAFE_INTEGER) };
+      const clean = {
+        baseRevision: finite(record.baseRevision ?? 0, "base_revision", 0, Number.MAX_SAFE_INTEGER),
+        ...(record.clientSeq != null ? { clientSeq: sequence(record.clientSeq) } : {}),
+      };
       if (record.deleted !== undefined) {
         if (typeof record.deleted !== "boolean") fail(400, "invalid_tombstone");
         clean.deleted = record.deleted;
@@ -191,6 +200,21 @@ function mergeIntervals(a = [], b = []) {
   return out;
 }
 
+function canApplyVersionedRecord(profile, incoming, old, deviceId, resetRevision, supersedesMutationIds) {
+  if (Number(incoming.baseRevision) < resetRevision) return false;
+  const nextSequence = incoming.clientSeq == null ? undefined : Number(incoming.clientSeq);
+  const oldSequence = Number(old?.clientSeq) || 0;
+  if (old?.deviceId === deviceId && nextSequence != null && nextSequence <= oldSequence) return false;
+  if (!old || Number(incoming.baseRevision) >= (Number(old.revision) || 0)) return true;
+  if (!old || old.deviceId !== deviceId || nextSequence == null || nextSequence <= oldSequence) return false;
+  if (!old.writeMutationId || !supersedesMutationIds.includes(old.writeMutationId)) return false;
+  return supersedesMutationIds.some((mutationId) => {
+    if (mutationId !== old.writeMutationId) return false;
+    const receipt = profile.mutationReceipts?.[mutationId];
+    return isRecord(receipt) && receipt.deviceId === deviceId && Number(receipt.revision) >= (Number(old.revision) || 0);
+  });
+}
+
 // Pure reference implementation shared by unit tests and the Redis Lua merge.
 export function mergeProfileSnapshot(current, patch, { deviceId, now }) {
   const next = structuredClone(current);
@@ -199,11 +223,12 @@ export function mergeProfileSnapshot(current, patch, { deviceId, now }) {
   const revision = current.revision + 1;
   const resetRevision = Number(next.watchResetRevision) || 0;
   const clearedAt = Number(next.watchClearedAt) || 0;
+  const supersedesMutationIds = patch.supersedesMutationIds || [];
   if (patch.displayName !== undefined) next.displayName = patch.displayName;
   for (const incoming of patch.checkpoints || []) {
     const old = next.checkpoints[incoming.progressKey];
-    if (incoming.baseRevision >= resetRevision && (!old || incoming.baseRevision >= old.revision)) {
-      next.checkpoints[incoming.progressKey] = { ...incoming, updatedAt: now, deviceId, revision };
+    if (canApplyVersionedRecord(next, incoming, old, deviceId, resetRevision, supersedesMutationIds)) {
+      next.checkpoints[incoming.progressKey] = { ...incoming, updatedAt: now, deviceId, revision, writeMutationId: mutationId };
     }
   }
   for (const incoming of patch.sessions || []) {
@@ -225,7 +250,8 @@ export function mergeProfileSnapshot(current, patch, { deviceId, now }) {
   for (const bucket of LIBRARY_BUCKETS) {
     for (const [key, incoming] of Object.entries(patch.library?.[bucket] || {})) {
       const old = next.library[bucket][key];
-      if ((bucket === "saved" || bucket === "ratings" || incoming.baseRevision >= resetRevision) && (!old || incoming.baseRevision >= old.revision)) next.library[bucket][key] = { ...incoming, updatedAt: now, deviceId, revision };
+      const bucketResetRevision = bucket === "saved" || bucket === "ratings" ? 0 : resetRevision;
+      if (canApplyVersionedRecord(next, incoming, old, deviceId, bucketResetRevision, supersedesMutationIds)) next.library[bucket][key] = { ...incoming, updatedAt: now, deviceId, revision, writeMutationId: mutationId };
     }
   }
   next.revision = revision;
@@ -233,7 +259,7 @@ export function mergeProfileSnapshot(current, patch, { deviceId, now }) {
   next.mutationReceipts ||= {};
   next.mutationOrder ||= [];
   if (mutationId) {
-    next.mutationReceipts[mutationId] = revision;
+    next.mutationReceipts[mutationId] = { revision, deviceId };
     next.mutationOrder.push(mutationId);
     while (next.mutationOrder.length > 128) delete next.mutationReceipts[next.mutationOrder.shift()];
   }
@@ -248,11 +274,28 @@ if p.mutationReceipts and p.mutationReceipts[mutationId] then return {cjson.enco
 if not p.mutationReceipts then p.mutationReceipts={} end; if not p.mutationOrder then p.mutationOrder={} end
 local revision = (tonumber(p.revision) or 0) + 1
 local resetRevision=tonumber(p.watchResetRevision) or 0; local clearedAt=tonumber(p.watchClearedAt) or 0
+local function canApply(record,old,bucket)
+  local bucketReset=(bucket=='saved' or bucket=='ratings') and 0 or resetRevision
+  local base=tonumber(record.baseRevision) or 0
+  if base<bucketReset then return false end
+  local seq=tonumber(record.clientSeq); local oldSeq=old and (tonumber(old.clientSeq) or 0) or 0
+  if old and old.deviceId==deviceId and seq and seq<=oldSeq then return false end
+  if (not old) or base>=(tonumber(old.revision) or 0) then return true end
+  if old.deviceId~=deviceId or not seq or seq<=oldSeq then return false end
+  if not old.writeMutationId then return false end
+  for _,mid in ipairs(patch.supersedesMutationIds or {}) do
+    if mid==old.writeMutationId then
+      local receipt=p.mutationReceipts[mid]
+      if type(receipt)=='table' and receipt.deviceId==deviceId and (tonumber(receipt.revision) or 0)>=(tonumber(old.revision) or 0) then return true end
+    end
+  end
+  return false
+end
 if patch.displayName~=nil then p.displayName=patch.displayName end
 for _, c in ipairs(patch.checkpoints or {}) do
   local old = p.checkpoints[c.progressKey]
-  if (tonumber(c.baseRevision) or 0)>=resetRevision and ((not old) or (tonumber(c.baseRevision) or 0) >= (tonumber(old.revision) or 0)) then
-    c.revision=revision; c.updatedAt=now; c.deviceId=deviceId; p.checkpoints[c.progressKey]=c
+  if canApply(c,old,'checkpoints') then
+    c.revision=revision; c.updatedAt=now; c.deviceId=deviceId; c.writeMutationId=mutationId; p.checkpoints[c.progressKey]=c
   end
 end
 for _, s in ipairs(patch.sessions or {}) do
@@ -270,12 +313,11 @@ end
 for _, bucket in ipairs({'saved','watched','history','ratings'}) do
   for key, record in pairs((patch.library or {})[bucket] or {}) do
     local old=p.library[bucket][key]
-    local survivesReset=bucket=='saved' or bucket=='ratings' or (tonumber(record.baseRevision) or 0)>=resetRevision
-    if survivesReset and ((not old) or (tonumber(record.baseRevision) or 0)>=(tonumber(old.revision) or 0)) then record.revision=revision; record.updatedAt=now; record.deviceId=deviceId; p.library[bucket][key]=record end
+    if canApply(record,old,bucket) then record.revision=revision; record.updatedAt=now; record.deviceId=deviceId; record.writeMutationId=mutationId; p.library[bucket][key]=record end
   end
 end
 p.revision=revision; p.updatedAt=now
-table.insert(p.mutationOrder,mutationId); p.mutationReceipts[mutationId]=revision
+table.insert(p.mutationOrder,mutationId); p.mutationReceipts[mutationId]={revision=revision,deviceId=deviceId}
 if #p.mutationOrder>128 then local expired=table.remove(p.mutationOrder,1); p.mutationReceipts[expired]=nil end
 local encoded=cjson.encode(p); if string.len(encoded)>tonumber(ARGV[4]) then return {err='PROFILE_TOO_LARGE'} end
 redis.call('SET',KEYS[1],encoded,'EX',ARGV[5]); return {encoded,tostring(revision)}`;
@@ -290,7 +332,7 @@ if p.watchClearMutationId==ARGV[1] or requested<=currentCutoff then return {cjso
 local revision=(tonumber(p.revision) or 0)+1; local clearedAt=math.min(requested,now)
 p.checkpoints={}; p.sessions={}; p.library=p.library or {}; p.library.history={}; p.library.watched={}
 p.revision=revision; p.watchResetRevision=revision; p.watchClearedAt=clearedAt; p.watchClearMutationId=ARGV[1]; p.updatedAt=now
-p.mutationReceipts=p.mutationReceipts or {}; p.mutationOrder=p.mutationOrder or {}; table.insert(p.mutationOrder,ARGV[1]); p.mutationReceipts[ARGV[1]]=revision
+p.mutationReceipts=p.mutationReceipts or {}; p.mutationOrder=p.mutationOrder or {}; table.insert(p.mutationOrder,ARGV[1]); p.mutationReceipts[ARGV[1]]={revision=revision,deviceId=ARGV[2]}
 if #p.mutationOrder>128 then local expired=table.remove(p.mutationOrder,1); p.mutationReceipts[expired]=nil end
 local encoded=cjson.encode(p); if string.len(encoded)>tonumber(ARGV[5]) then return {err='PROFILE_TOO_LARGE'} end
 redis.call('SET',KEYS[1],encoded,'EX',ARGV[7]); return {encoded,tostring(revision)}`;
@@ -361,14 +403,14 @@ function getMasterKey(env = process.env) {
   return Buffer.from(value, "hex");
 }
 
-function encryptToken(token, env) {
+export function encryptToken(token, env) {
   if (!token) return null;
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", getMasterKey(env), iv);
   const ciphertext = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
   return { iv: iv.toString("base64url"), data: ciphertext.toString("base64url"), tag: cipher.getAuthTag().toString("base64url") };
 }
-function decryptToken(record, env) {
+export function decryptToken(record, env) {
   if (!record) return null;
   const decipher = crypto.createDecipheriv("aes-256-gcm", getMasterKey(env), Buffer.from(record.iv, "base64url"));
   decipher.setAuthTag(Buffer.from(record.tag, "base64url"));
@@ -478,13 +520,14 @@ const pairTokenKey = (hash) => `profile:pair-token:v1:${hash}`;
 const pairCodeKey = (code) => `profile:pair-code:v1:${code}`;
 const pairRequestKey = (requestId) => `profile:pair-request:v1:${requestId}`;
 
-function publicSnapshot(profile, timestamp = Date.now()) {
-  const { tmdbTokenCiphertext: _secret, mutationReceipts: _receipts, mutationOrder: _mutationOrder, ...snapshot } = profile;
+export function publicSnapshot(profile, timestamp = Date.now()) {
+  const { tmdbTokenCiphertext: _secret, mutationReceipts: _receipts, mutationOrder: _mutationOrder, pairOffers: _offers, watchClearMutationId: _watchClearMutationId, ...snapshot } = structuredClone(profile);
   // Redis Lua cjson decodes JSON [] and {} into the same empty Lua table, then
   // encodes both as {}. Restore the two public schema fields that are arrays.
   const restoreArrays = (value) => {
     if (Array.isArray(value)) { value.forEach(restoreArrays); return; }
     if (!isRecord(value)) return;
+    delete value.writeMutationId;
     for (const [key, child] of Object.entries(value)) {
       if ((key === "genres" || key === "segments") && isRecord(child) && Object.keys(child).length === 0) value[key] = [];
       else restoreArrays(child);
@@ -497,7 +540,7 @@ function publicSnapshot(profile, timestamp = Date.now()) {
   }));
   snapshot.pendingPairings = Object.fromEntries(Object.entries(profile.pendingPairings || {}).filter(([, request]) =>
     request.status === "pending" && Number(request.expiresAt) > timestamp).map(([key, request]) => {
-    const { tokenHash: _tokenHash, pollTokenHash: _pollTokenHash, ...safeRequest } = request;
+    const { tokenHash: _tokenHash, pollTokenHash: _pollTokenHash, claimIdHash: _claimIdHash, ...safeRequest } = request;
     return [key, safeRequest];
   }));
   return snapshot;
@@ -519,7 +562,7 @@ function send(res, status, body) {
   return res.status(status).json(body);
 }
 
-export function createProfileHandler({ env = process.env, fetchImpl = fetch, now = () => Date.now() } = {}) {
+function createRedisProfileHandler({ env = process.env, fetchImpl = fetch, now = () => Date.now() } = {}) {
   const redis = (command) => redisCommand(command, env, fetchImpl);
   const evalScript = (script, keys, args) => redis(["EVAL", script, String(keys.length), ...keys, ...args.map(String)]);
 
@@ -637,10 +680,13 @@ export function createProfileHandler({ env = process.env, fetchImpl = fetch, now
         if (deviceId !== auth.deviceId) fail(403, "device_mismatch");
         const checkpoints = body.checkpoints == null ? [] : body.checkpoints;
         const sessions = body.sessions == null ? [] : body.sessions;
+        const supersedesRaw = body.supersedesMutationIds == null ? [] : body.supersedesMutationIds;
         if (!Array.isArray(checkpoints) || checkpoints.length > 80) fail(400, "invalid_checkpoints");
         if (!Array.isArray(sessions) || sessions.length > 80) fail(400, "invalid_sessions");
+        if (!Array.isArray(supersedesRaw) || supersedesRaw.length > 30) fail(400, "invalid_supersedes_mutations");
         const patch = {
           mutationId,
+          supersedesMutationIds: [...new Set(supersedesRaw.map((value) => uuid(value, "supersedes_mutation_id")))],
           ...(body.displayName !== undefined ? { displayName: boundedString(body.displayName, 60, "display_name") } : {}),
           checkpoints: checkpoints.map(validateCheckpoint),
           sessions: sessions.map(validateSession),
@@ -696,6 +742,19 @@ export function createProfileHandler({ env = process.env, fetchImpl = fetch, now
       return send(res, status, { error: code });
     }
   };
+}
+
+export function createProfileHandler(options = {}) {
+  const env = options.env || process.env;
+  if (env.PROFILE_STORAGE_BACKEND === "blob") {
+    let handlerPromise;
+    return async (req, res) => {
+      if (!handlerPromise) handlerPromise = import("./_blob-profile.mjs").then((module) => module.createBlobProfileHandler(options));
+      try { return await (await handlerPromise)(req, res); }
+      catch { return res.status(503).json({ error: "profile_storage_unavailable" }); }
+    };
+  }
+  return createRedisProfileHandler(options);
 }
 
 export default createProfileHandler();

@@ -29,6 +29,7 @@
     "dist:mac": "cross-env ELECTRON_DIST=1 vite build && electron-builder --mac --universal --publish never"
   },
   "dependencies": {
+    "@vercel/blob": "^2.8.1",
     "hls.js": "^1.5.17",
     "qrcode": "^1.5.4",
     "react": "^18.2.0",

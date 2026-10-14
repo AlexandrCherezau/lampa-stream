@@ -3,10 +3,11 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test, expect } from "@playwright/test";
+import { test, expect, devices } from "@playwright/test";
 
 const enabled = process.env.PLAYER_PROFILE_LIVE === "1";
 const baseURL = process.env.PROFILE_BROWSER_URL || "http://localhost:3000";
+const localQaIp = `2001:db8:${randomUUID()}`;
 let fixtureDir;
 let desktopAuth;
 let phoneAuth;
@@ -14,7 +15,7 @@ let phoneAuth;
 async function api(path, { method = "GET", body, credential } = {}) {
   const response = await fetch(`${baseURL}/api/profile${path}`, {
     method,
-    headers: { "content-type": "application/json", ...(credential ? { authorization: `Bearer ${credential}` } : {}) },
+    headers: { "content-type": "application/json", ...(['localhost', '127.0.0.1'].includes(new URL(baseURL).hostname) ? { 'x-real-ip': localQaIp } : {}), ...(credential ? { authorization: `Bearer ${credential}` } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const value = await response.json();
@@ -33,7 +34,7 @@ test.beforeAll(async () => {
   const owner = await api("", { method: "POST", body: { displayName: `Player QA ${randomUUID().slice(0, 8)}`, deviceName: "QA desktop", tmdbToken: "profile-browser-fixture" } });
   desktopAuth = { credential: owner.credential, profileId: owner.profileId, deviceId: owner.deviceId };
   const pairing = await api("?op=pair/create", { method: "POST", credential: owner.credential, body: { deviceName: "QA phone" } });
-  const claim = await api("?op=pair/claim", { method: "POST", body: { shortCode: pairing.shortCode, deviceName: "QA phone" } });
+  const claim = await api("?op=pair/claim", { method: "POST", body: { shortCode: pairing.shortCode, deviceName: "QA phone", claimId: randomUUID() } });
   await api("?op=pair/approve", { method: "POST", credential: owner.credential, body: { requestId: claim.requestId } });
   const grant = await api("?op=pair/poll", { method: "POST", body: { requestId: claim.requestId, pollToken: claim.pollToken } });
   phoneAuth = { credential: grant.credential, profileId: grant.profileId, deviceId: grant.deviceId };
@@ -105,10 +106,23 @@ async function play(page, type) {
   return video;
 }
 
+async function seedNearEnd(key, item, position) {
+  await expect.poll(async () => {
+    const current = await api("", { credential: desktopAuth.credential });
+    const patched = await api("", { method: "PATCH", credential: desktopAuth.credential, body: {
+      mutationId: randomUUID(), deviceId: desktopAuth.deviceId,
+      checkpoints: [{ progressKey: key, item, position, duration: 90, baseRevision: current.revision || 0,
+        preferences: { providerId: "habster:alloha", voiceId: "alloha:98", voiceName: "Eng.Original", quality: "1080p", subtitle: { enabled: false } } }],
+      sessions: [], library: {},
+    } });
+    return patched.snapshot.checkpoints[key].position;
+  }, { timeout: 15000 }).toBe(position);
+}
+
 for (const type of ["movie", "tv"]) {
   test(`real profile restores ${type} playback checkpoint and player preferences on another browser context`, { skip: !enabled, timeout: 120_000 }, async ({ browser }) => {
     const desktopContext = await browser.newContext();
-    const phoneContext = await browser.newContext();
+    const phoneContext = await browser.newContext({ ...devices["iPhone 13"] });
     await seedContext(desktopContext, desktopAuth);
     await seedContext(phoneContext, phoneAuth);
     const desktop = await desktopContext.newPage();
@@ -138,9 +152,10 @@ for (const type of ["movie", "tv"]) {
     await expect.poll(() => first.evaluate((value) => !value.seeking && Math.abs(value.currentTime - 37.25) <= 1)).toBe(true);
     await desktop.getByTitle("Пауза (Space / K)").click();
     await expect.poll(() => first.evaluate((value) => value.paused)).toBe(true);
+    await expect.poll(async () => Math.abs(((await api("", { credential: desktopAuth.credential })).checkpoints[key]?.position ?? 0) - 37.25), { timeout: 15000 }).toBeLessThanOrEqual(1);
 
     const checkpoint = await api("", { credential: desktopAuth.credential });
-    const saved = checkpoint.checkpoints[key];
+    let saved = checkpoint.checkpoints[key];
     expect(saved, `missing server checkpoint ${key}`).toBeTruthy();
     expect(Math.abs(saved.position - 37.25)).toBeLessThanOrEqual(1);
     expect(saved.preferences.voiceId).toBe("alloha:98");
@@ -149,6 +164,17 @@ for (const type of ["movie", "tv"]) {
     const watchedSeconds = sessions.flatMap((session) => session.segments).reduce((sum, segment) => sum + (segment.end - segment.start) / 1000, 0);
     expect(watchedSeconds).toBeGreaterThan(0);
     expect(watchedSeconds).toBeLessThan(20); // seeking to 37s contributes no 30s artificial watch time
+
+    await desktop.locator(".torrplayer").hover();
+    const closingSeekBox = await seek.boundingBox();
+    await seek.click({ position: { x: closingSeekBox.width * 41.375 / duration, y: closingSeekBox.height / 2 } });
+    await expect.poll(() => first.evaluate((value) => !value.seeking && Math.abs(value.currentTime - 41.375) <= 1)).toBe(true);
+    const closingPosition = await first.evaluate((value) => value.currentTime);
+    await desktop.goto("about:blank");
+    await expect.poll(async () => Math.abs(((await api("", { credential: desktopAuth.credential })).checkpoints[key]?.position ?? 0) - closingPosition), { timeout: 15000 }).toBeLessThanOrEqual(0.1);
+    saved = (await api("", { credential: desktopAuth.credential })).checkpoints[key];
+    expect(saved.preferences.voiceId).toBe("alloha:98");
+    expect(saved.preferences.subtitle).toMatchObject({ enabled: true, lang: "ru" });
 
     const second = await play(phone, type);
     await expect.poll(() => phoneResolves.at(-1)?.id).toBe("voice-en");
@@ -178,14 +204,7 @@ for (const type of ["movie", "tv"]) {
       ? { type: "movie", id: "969681", title: "QA movie", genres: [] }
       : { type: "tv", id: "1399", title: "QA series", season: 1, episode: 1, genres: [] };
     const position = 86.375;
-    const current = await api("", { credential: desktopAuth.credential });
-    const patched = await api("", { method: "PATCH", credential: desktopAuth.credential, body: {
-      mutationId: randomUUID(), deviceId: desktopAuth.deviceId,
-      checkpoints: [{ progressKey: key, item, position, duration: 90, baseRevision: current.revision || 0,
-        preferences: { providerId: "habster:alloha", voiceId: "alloha:98", voiceName: "Eng.Original", quality: "1080p", subtitle: { enabled: false } } }],
-      sessions: [], library: {},
-    } });
-    expect(patched.snapshot.checkpoints[key].position).toBe(position);
+    await seedNearEnd(key, item, position);
 
     const context = await browser.newContext();
     await seedContext(context, phoneAuth, { progress: { [key]: 96 }, resumeTime: { [key]: 4 }, disableAutoplay: true });
@@ -207,13 +226,7 @@ for (const type of ["movie", "tv"]) {
       ? { type: "movie", id: "969681", title: "QA movie", genres: [] }
       : { type: "tv", id: "1399", title: "QA series", season: 1, episode: 1, genres: [] };
     const position = 86.375;
-    const current = await api("", { credential: desktopAuth.credential });
-    await api("", { method: "PATCH", credential: desktopAuth.credential, body: {
-      mutationId: randomUUID(), deviceId: desktopAuth.deviceId,
-      checkpoints: [{ progressKey: key, item, position, duration: 90, baseRevision: current.revision || 0,
-        preferences: { providerId: "habster:alloha", voiceId: "alloha:98", voiceName: "Eng.Original", quality: "1080p", subtitle: { enabled: false } } }],
-      sessions: [], library: {},
-    } });
+    await seedNearEnd(key, item, position);
     const priorSnapshot = await api("", { credential: phoneAuth.credential });
     const priorSessionIds = new Set(Object.values(priorSnapshot.sessions || {})
       .filter((session) => session.progressKey === key).map((session) => session.sessionId));
