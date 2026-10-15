@@ -38,7 +38,7 @@ test("mobile recap shares a real PNG file and keeps reduced-motion and keyboard 
   const skip = page.getByRole("button", { name: "Skip for now" });
   if (await skip.isVisible().catch(() => false)) await skip.click();
   await expect(page.getByRole("heading", { name: "Киноитоги" })).toBeVisible();
-  await expect(page.getByText("Что зацепило")).toBeVisible();
+  await expect(page.getByText("Лучшие оценки")).toBeVisible();
   await expect(page.getByText(/9\/10/)).toBeVisible();
 
   const actionButton = page.getByRole("button", { name: "Поделиться" });

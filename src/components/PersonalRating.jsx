@@ -10,7 +10,7 @@ export default function PersonalRating({ item }) {
   return (
     <section className="personal-rating" aria-label="Моя оценка">
       <div className="personal-rating-copy">
-        <span className="personal-rating-kicker">ТВОЯ ОЦЕНКА</span>
+        <span className="personal-rating-kicker">Моя оценка</span>
         <strong>{selected ? `${selected} / 10` : "Оцени для своих итогов"}</strong>
         <small>{snapshot.status === "offline" ? "Сохранится на этом устройстве и синхронизируется позже" : "Личная оценка видна только в твоих итогах"}</small>
       </div>
