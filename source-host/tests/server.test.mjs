@@ -13,7 +13,8 @@ const apiKey = "server-test-api-key";
 const auth = { authorization: `Bearer ${apiKey}` };
 
 async function start(adapter, media, key = "", secret = "test-secret-that-is-long-enough-for-this-suite", options = {}) {
-  const server = createSourceServer({ engineUrl: "http://127.0.0.1:29118/", secret, adapter, media, apiKey: key, ...options });
+  const server = createSourceServer({ engineUrl: "http://127.0.0.1:29118/", secret, adapter, media, apiKey: key,
+    vidsrcAdapter: { async *discover() {} }, allmangaAdapter: { async *discover() {} }, ...options });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   return {
@@ -975,3 +976,49 @@ test("movie preparation warms only Habster metadata without probing video or sta
   assert.equal((await post(app.base, "/v1/discover", { type: "movie", title: "Movie", prepareOnly: "true" })).status, 400);
   assert.equal((await post(app.base, "/v1/discover", { type: "tv", title: "TV", season: 1, episode: 1, prepareOnly: true })).status, 400);
 });
+
+for (const [catalogSource, providerId, adapterName] of [["vidsrc", "vidsrc:pm", "vidsrcAdapter"], ["allmanga", "allmanga", "allmangaAdapter"]]) {
+test(`${catalogSource} sealed candidates resolve natively across instances while Lampac is cold`, async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "source-host-native-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const ready = join(dir, "ready");
+  let nativeCalls = 0;
+  const native = { async *discover() { nativeCalls++; }, async resolve() { throw new Error("Wrong adapter"); } };
+  const selectedAdapter = {
+    async *discover(title) {
+      assert.equal(title.tmdbId, 550);
+      yield candidate({ providerId, providerName: catalogSource, catalogSource,
+        season: null, episode: null, ref: { type: "movie", tmdbId: 550 } });
+    },
+    async resolve(value) {
+      assert.equal(value.ref.tmdbId, 550);
+      return { qualities: [{ label: "Auto", type: "hls", url: "https://cdn.test/film.m3u8", publicOnly: true }], subtitles: [] };
+    },
+  };
+  const signed = [];
+  const media = makeMedia();
+  media.probe = async (quality) => { assert.equal(quality.publicOnly, true); return { ok: true, kind: "hls" }; };
+  media.url = (resource) => { signed.push(resource); return "https://media.test/v1/media?token=sealed"; };
+  let id;
+  const first = await start(native, media, "", undefined, { [adapterName]: selectedAdapter, engineReadyFile: ready });
+  try {
+    const response = await post(first.base, "/v1/discover", { type: "movie", title: "Fight Club", tmdbId: 550, anime: true });
+    const stream = sseReader(response.body);
+    const frame = await stream.until("candidate");
+    assert.equal(frame.data.providerId, providerId);
+    assert.equal(frame.data.ref, undefined);
+    id = frame.data.id;
+    await stream.cancel();
+  } finally { await first.close(); }
+  const second = await start(native, media, "", undefined, { [adapterName]: selectedAdapter, engineReadyFile: ready });
+  try {
+    const response = await fetch(`${second.base}/v1/resolve`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, catalogSource: "vi3000", providerId: "hdvb" }), signal: AbortSignal.timeout(1000) });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).source.providerId, providerId);
+    assert.equal(nativeCalls, 0);
+    assert.equal(signed[0].publicOnly, true);
+    assert.equal(signed[0].nodeOnly, true);
+  } finally { await second.close(); }
+});
+}

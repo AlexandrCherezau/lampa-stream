@@ -215,7 +215,6 @@ const providerQualityLabel = (source) => source.qualityHeight >= 2160 ? "4K" : `
 // stall fast. Only acts before first real playback (see the watchdog effect).
 const FLEET_STALL_MS = 7000;
 const MIN_DISPLAY_MS = 250;
-const DISPLAY_ERROR_AFTER_MS = 4000;
 
 // ── Load dash.js once from the local vendor bundle ───────────────────────────
 let _dashLoader = null;
@@ -331,7 +330,6 @@ export default function OnlinePlayer({
   const lastFleetTimeRef = useRef(null);
   const hoverRafRef = useRef(null); // rAF throttle for seek-hover tooltip
   const loadingEnteredAtRef = useRef(0); // when the loading overlay was raised
-  const loadingWatchdogRef = useRef(null); // 4s timer → swap spinner for inline error
   const loadingExitRef = useRef(null); // pending MIN_DISPLAY_MS exit transition
   const saveRef = useRef(saveProgress); saveRef.current = saveProgress;
   const markWatchedRef = useRef(onMarkWatched); markWatchedRef.current = onMarkWatched;
@@ -669,29 +667,17 @@ export default function OnlinePlayer({
       if (lampac.sourceError && !fleetPlayedRef.current) {
         const exit = () => { setState("error"); setError(lampac.sourceError.message || "Источник недоступен"); };
         if (loadingExitRef.current) { clearTimeout(loadingExitRef.current); loadingExitRef.current = null; }
-        if (loadingWatchdogRef.current) { clearTimeout(loadingWatchdogRef.current); loadingWatchdogRef.current = null; }
         const elapsed = loadingEnteredAtRef.current ? Date.now() - loadingEnteredAtRef.current : MIN_DISPLAY_MS;
         if (elapsed < MIN_DISPLAY_MS) loadingExitRef.current = setTimeout(exit, MIN_DISPLAY_MS - elapsed);
         else exit();
       } else if (!fleetPlayedRef.current) {
         loadingEnteredAtRef.current = Date.now();
-        if (loadingWatchdogRef.current) clearTimeout(loadingWatchdogRef.current);
-        loadingWatchdogRef.current = setTimeout(() => {
-          // Discovery is taking too long — swap the spinner for an inline notice so
-          // the overlay never sits frozen. Aborts are handled by the cleanup below.
-          if (loadingEnteredAtRef.current && Date.now() - loadingEnteredAtRef.current >= DISPLAY_ERROR_AFTER_MS) {
-            setState("error");
-            setError("Долгое опрашивание балансеров. Попробуйте другой источник или подождите.");
-          }
-        }, DISPLAY_ERROR_AFTER_MS);
         setState("loading");
       }
       return () => {
-        if (loadingWatchdogRef.current) { clearTimeout(loadingWatchdogRef.current); loadingWatchdogRef.current = null; }
         if (loadingExitRef.current) { clearTimeout(loadingExitRef.current); loadingExitRef.current = null; }
       };
     }
-    if (loadingWatchdogRef.current) { clearTimeout(loadingWatchdogRef.current); loadingWatchdogRef.current = null; }
     const exit = () => {
       loadingEnteredAtRef.current = 0;
       setError("");
@@ -2229,7 +2215,7 @@ export default function OnlinePlayer({
           <div className="torrpicker-status"><span className="torrpicker-error">{error}</span></div>
         </div>
         <div className="torrpicker-list"><div className="torrpicker-empty">{isLampac
-          ? "Ни один балансер не отдал ссылку на этот тайтл. Причины: у тайтла нет imdb_id / kinopoisk_id на TMDB, фильма нет во флоте, либо все CDN сейчас недоступны. Попробуйте источник «Онлайн», «Торренты» или другой."
+          ? "Не удалось получить рабочий поток. Попробуйте ещё раз или выберите другой источник: «Онлайн» либо «Торренты»."
           : "Не удалось найти онлайн-источник. Возможные причины: нет imdb_id у этого тайтла на TMDB, Collaps не имеет этой раздачи, или CDN временно недоступен. Попробуйте источник «Торренты» или другой."}</div></div>
         {/* Even when the auto-scan resolved nothing, the fleet may still have
             balancers whose descent needs a manual nudge — offer them here so the

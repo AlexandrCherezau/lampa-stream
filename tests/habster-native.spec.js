@@ -14,6 +14,48 @@ test.beforeAll(() => {
 });
 test.afterAll(() => { if (fixtureDir) rmSync(fixtureDir, { recursive: true, force: true }); });
 
+async function openDelayedDiscovery(page, { candidate, failure }) {
+  await page.addInitScript(async ({ candidate, failure }) => {
+    localStorage.setItem("lampa_stream_tmdb_token", "delayed-discovery-fixture");
+    localStorage.removeItem("streambert_resumeTime");
+    localStorage.removeItem("streambert_progress");
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      if (!String(input).includes("/api/source-host?op=discover")) return originalFetch(input, init);
+      await new Promise((resolve) => setTimeout(resolve, 4800));
+      if (failure) return new Response(JSON.stringify({ message: failure }), {
+        status: 503, headers: { "content-type": "application/json" },
+      });
+      return new Response(new ReadableStream({ start(controller) {
+        controller.enqueue(new TextEncoder().encode(`event: candidate\ndata: ${JSON.stringify(candidate)}\n\n`));
+        controller.close();
+      } }), { headers: { "content-type": "text/event-stream" } });
+    };
+  }, { candidate, failure });
+  await page.route("**/api/tmdb/**", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({
+    id: 969681, title: "Человек-паук: Новый день", original_title: "Spider-Man: Brand New Day", release_date: "2026-07-31",
+    runtime: 145, imdb_id: "tt22084616", kinopoisk_id: 5494049, genres: [], credits: { cast: [] }, results: [], images: {},
+  }) }));
+  await page.route("**/api/source-host?op=resolve", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({
+    kind: "hls", selected: { label: "720p", height: 720, url: "https://delayed-media.example/master.m3u8" },
+    qualities: [{ label: "720p", height: 720, url: "https://delayed-media.example/master.m3u8" }], subtitles: [], audioNames: [],
+  }) }));
+  await page.route("https://delayed-media.example/**", (route) => {
+    const filename = new URL(route.request().url()).pathname.split("/").pop();
+    if (filename === "master.m3u8") return route.fulfill({
+      contentType: "application/vnd.apple.mpegurl", headers: { "access-control-allow-origin": "*" },
+      body: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=160x90\nfixture.m3u8\n",
+    });
+    return route.fulfill({
+      contentType: filename.endsWith(".m3u8") ? "application/vnd.apple.mpegurl" : "video/mp2t",
+      headers: { "access-control-allow-origin": "*" },
+      body: readFileSync(join(fixtureDir, filename.endsWith(".m3u8") ? "fixture.m3u8" : filename)),
+    });
+  });
+  await page.goto("/movie/969681");
+  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+}
+
 // Tiny decoded fixtures verify our own player's controls and persisted clocks.
 // Actual UHD resolution and the provider protocol require the separate live check.
 test("Habster HLS uses our player, full quality ladder, voice switching and saved history", async ({ page }) => {
@@ -116,6 +158,27 @@ test("Habster HLS uses our player, full quality ladder, voice switching and save
   await page.reload();
   await page.getByRole("button", { name: "Смотреть", exact: true }).click();
   await expect.poll(() => video.evaluate((value) => value.currentTime)).toBeGreaterThanOrEqual(saved - 1);
+});
+
+test("Lampac discovery stays loading past four seconds and attaches the native stream when a source arrives", async ({ page }) => {
+  const candidate = { id: "delayed-source", providerId: "habster:alloha", providerName: "Habster · Alloha", voiceName: "Fixture", qualityHint: "720p" };
+  const mediaRequests = [];
+  page.on("request", (request) => { if (request.url().startsWith("https://delayed-media.example/")) mediaRequests.push(request.url()); });
+  await openDelayedDiscovery(page, { candidate });
+  await page.waitForTimeout(4200);
+  await expect(page.locator(".torrpicker-error")).toHaveCount(0);
+  await expect(page.getByText("Опрашиваем балансеры и ищем фильм…")).toBeVisible();
+  const video = page.locator(".torrplayer > video");
+  await expect.poll(() => video.evaluate((element) => element.currentSrc.startsWith("blob:") && element.readyState >= 1)).toBe(true);
+  await expect.poll(() => mediaRequests.some((url) => url.endsWith("fixture000.ts"))).toBe(true);
+});
+
+test("Lampac discovery shows its actual terminal error after a slow server failure", async ({ page }) => {
+  await openDelayedDiscovery(page, { failure: "Флот сейчас недоступен" });
+  await page.waitForTimeout(4200);
+  await expect(page.locator(".torrpicker-error")).toHaveCount(0);
+  await expect(page.getByText("Опрашиваем балансеры и ищем фильм…")).toBeVisible();
+  await expect(page.locator(".torrpicker-error")).toHaveText("Флот сейчас недоступен", { timeout: 5000 });
 });
 
 test("multilevel Habster HLS decodes its first fragment while the next fragment is stalled", async ({ page }) => {

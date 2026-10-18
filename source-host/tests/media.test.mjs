@@ -375,6 +375,25 @@ test("CDN playback headers survive sealing and same-origin requests but never fo
   assert.equal(media.resource(crossToken).headers["accepts-controls"], undefined);
 });
 
+test("public player bootstrap headers reach their API but are excluded from media and cross-origin redirects", async () => {
+  const calls = [];
+  const transport = createTransport({ lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async (url, options) => {
+      calls.push({ ...options.headers });
+      return calls.length === 1 ? fakeResponse("", 302, { location: "https://other.test/api" }) : fakeResponse("ok");
+    } });
+  const headers = { "x-player-key": "public-client-fixture", "x-aa-boot": "public-boot-fixture", "x-build-id": "public-build-fixture" };
+  const response = await transport.request("https://player.test/api", { headers, publicOnly: true });
+  response.response.resume();
+  for (const name of Object.keys(headers)) {
+    assert.equal(calls[0][name], headers[name]);
+    assert.equal(calls[1][name], undefined);
+  }
+  const media = createMedia({ transport, secret: SECRET });
+  const token = new URL(media.url({ url: "https://cdn.test/media.m3u8", headers, publicOnly: true }), "https://host.test").searchParams.get("token");
+  for (const name of Object.keys(headers)) assert.equal(media.resource(token).headers[name], undefined);
+});
+
 test("transport unwraps exact-engine AES proxy links and filters provider headers", async (t) => {
   const fixture = await startServer();
   t.after(() => closeServer(fixture.server));

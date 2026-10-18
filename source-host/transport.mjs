@@ -8,9 +8,9 @@ const MAX_REDIRECTS = 5;
 const MAX_JSON_BYTES = 4 * 1024 * 1024;
 const MAX_PROXY_TOKEN = 48 * 1024;
 const PROXY_HEADER_ALLOWLIST = new Set(["referer", "origin", "user-agent", "accept", "accept-language", "cookie", "authorizations", "accepts-controls"]);
-const ORIGIN_BOUND_HEADERS = new Set(["cookie", "authorizations", "accepts-controls"]);
+const ORIGIN_BOUND_HEADERS = new Set(["cookie", "authorizations", "accepts-controls", "x-player-key", "x-aa-boot", "x-build-id"]);
 const REQUEST_HEADER_ALLOWLIST = new Set([...PROXY_HEADER_ALLOWLIST, "range", "accept-encoding"]);
-const REQUEST_ONLY_HEADERS = ["borth", "x-requested-with", "content-type"];
+const REQUEST_ONLY_HEADERS = ["borth", "x-requested-with", "content-type", "x-player-key", "x-aa-boot", "x-build-id"];
 for (const name of REQUEST_ONLY_HEADERS) REQUEST_HEADER_ALLOWLIST.add(name);
 
 export class TransportError extends Error {

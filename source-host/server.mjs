@@ -6,6 +6,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createLampacProvider } from "./providers/lampac.mjs";
 import { createVi3000Provider } from "./providers/vi3000.mjs";
 import { createHabsterProvider } from "./providers/habster.mjs";
+import { createVidSrcProvider } from "./providers/vidsrc.mjs";
+import { createAllMangaProvider } from "./providers/allmanga.mjs";
 import { createTransport } from "./transport.mjs";
 import { createMedia } from "./media.mjs";
 
@@ -97,7 +99,7 @@ const publicCandidate = (candidate) => ({
   catalogSource: candidate.catalogSource,
 });
 
-export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "", secret, apiKey = "", publicOrigin = "", mediaRelayUrl = "", adapter, viAdapter, habsterAdapter, media, transport } = {}) {
+export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "", secret, apiKey = "", publicOrigin = "", mediaRelayUrl = "", adapter, viAdapter, habsterAdapter, vidsrcAdapter, allmangaAdapter, media, transport } = {}) {
   if (!engineUrl && !adapter) throw new Error("SOURCE_ENGINE_URL is required");
   if (Buffer.byteLength(secret || "") < 32) throw new Error("SOURCE_HOST_SECRET must contain at least 32 bytes");
   if (mediaRelayUrl && (!apiKey || new URL(mediaRelayUrl).protocol !== "https:" || new URL(mediaRelayUrl).origin === publicOrigin)) throw new Error("Media relay needs a separate HTTPS origin and private API key");
@@ -108,7 +110,9 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
   adapter ||= createLampacProvider({ baseUrl: engineUrl, fetchJson: transport.json, providerOrder: PROVIDER_ORDER });
   viAdapter ||= createVi3000Provider({ transport: createTransport() });
   habsterAdapter ||= createHabsterProvider({ transport: createTransport() });
-  const sourceAdapter = (catalogSource) => catalogSource === "habster" ? habsterAdapter : catalogSource === "vi3000" ? viAdapter : adapter;
+  vidsrcAdapter ||= createVidSrcProvider({ transport: createTransport() });
+  allmangaAdapter ||= createAllMangaProvider({ transport: createTransport() });
+  const sourceAdapter = (catalogSource) => catalogSource === "allmanga" ? allmangaAdapter : catalogSource === "vidsrc" ? vidsrcAdapter : catalogSource === "habster" ? habsterAdapter : catalogSource === "vi3000" ? viAdapter : adapter;
   async function* discoverSources(title, signal) {
     let fallbackTitle = title;
     if (title.kinopoiskId || title.year) {
@@ -125,6 +129,8 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         yield { providerId: "habster:collaps", providerName: "Habster · Collaps", error: "Habster unavailable" };
       }
     }
+    if (title.anime) yield* allmangaAdapter.discover(title, { signal });
+    if (title.tmdbId) yield* vidsrcAdapter.discover(title, { signal });
     const remote = ["vi3000", "habster"].includes(title.catalogSource);
     if (!remote) await waitForEngine(signal);
     if (title.catalogSource === "habster") fallbackTitle = { ...fallbackTitle, catalogSource: "vi3000" };
@@ -263,7 +269,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         if (typeof body.id !== "string" || body.id.length > 24 * 1024) throw failure("Неверный источник");
         if (body.quality != null && (typeof body.quality !== "string" || body.quality.length > 40)) throw failure("Неверное качество");
         const candidate = readCandidate(body.id);
-        if (!["vi3000", "habster"].includes(candidate.catalogSource)) await waitForEngine(controller.signal);
+        if (!["vi3000", "habster", "vidsrc", "allmanga"].includes(candidate.catalogSource)) await waitForEngine(controller.signal);
         if (resolutions >= 8) throw failure("Сервер занят, повторите запрос", 429, "BUSY");
         resolutions++;
         deadline = setTimeout(() => controller.abort(failure("Истекло время проверки", 504, "TIMEOUT")), candidate.providerId === "habster:alloha" ? 30_000 : candidate.catalogSource === "habster" ? 8_000 : RESOLVE_MS);
@@ -314,7 +320,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
           const providerId = candidate.catalogSource === "vi3000"
             ? /^vi3000:([a-z0-9_-]{1,64})$/.exec(candidate.providerId)?.[1] : candidate.providerId;
           // shortcut: vi3000 Filmix files return Worker 429, restore relay routing after verified playback.
-          const nodeOnly = ["zetflixdb", "cdnvideohub"].includes(providerId)
+          const nodeOnly = ["vidsrc", "allmanga"].includes(candidate.catalogSource) || ["zetflixdb", "cdnvideohub"].includes(providerId)
             || (providerId === "zetflix" && candidate.season == null && candidate.episode == null)
             || (providerId === "vkmovie" && probe.kind === "file")
             || (candidate.catalogSource === "vi3000" && providerId === "filmix" && probe.kind === "file")
