@@ -205,7 +205,7 @@ function makeToken(resource, key) {
   const cipher = createCipheriv("aes-256-gcm", key, iv);
   const value = Buffer.from(JSON.stringify({
     url: String(resource.url),
-    headers: headersFor(resource),
+    headers: { ...headersFor(resource), "accept-encoding": undefined },
     headerOrigin: resource.headerOrigin || new URL(resource.url).origin,
     nodeOnly: resource.nodeOnly === true,
     publicOnly: resource.publicOnly === true,
@@ -220,8 +220,8 @@ function makeCompactChildUrl(resource, baseUrl, key, publicOrigin) {
   const contextIv = randomBytes(12);
   const contextCipher = createCipheriv("aes-256-gcm", key, contextIv);
   const exp = Math.min(Number.isFinite(resource.exp) ? resource.exp : Date.now() + TOKEN_TTL_MS, Date.now() + TOKEN_TTL_MS);
-  const contextValue = Buffer.from(JSON.stringify({ baseUrl: base.href,
-    headers: headersFor({ url: base.href, headers: resource.headers, headerOrigin: resource.headerOrigin }), headerOrigin: resource.headerOrigin || base.origin,
+  const contextValue = Buffer.from(JSON.stringify({ baseUrl: new URL(".", base).href,
+    headers: { ...headersFor({ url: base.href, headers: resource.headers, headerOrigin: resource.headerOrigin }), "accept-encoding": undefined }, headerOrigin: resource.headerOrigin || base.origin,
     nodeOnly: resource.nodeOnly === true, publicOnly: resource.publicOnly === true, exp }));
   contextCipher.setAAD(Buffer.from("source-host:v2:context"));
   const contextEncrypted = Buffer.concat([contextCipher.update(contextValue), contextCipher.final()]);

@@ -1027,3 +1027,29 @@ test("HLS init, key and segment checks start together and a failed check aborts 
   assert.equal((await media.probe(resource)).ok, false);
   assert.equal(siblingsAborted, 2);
 });
+
+test("long public HLS child URLs omit redundant context and remain below the client URL limit", async (t) => {
+  const fixture = await startServer();
+  t.after(() => closeServer(fixture.server));
+  const root = `https://cdn.example.test/${"x".repeat(1950)}/index.m3u8`;
+  const child = `segments/${"s".repeat(20)}.ts`;
+  const headers = { origin: "https://befriend.stravers.live", referer: `https://embed.example.test/${"r".repeat(53)}`,
+    "user-agent": "u".repeat(109), authorizations: `Bearer ${"g".repeat(380)}`, "accepts-controls": "h".repeat(64) };
+  let upstreamHeaders;
+  const transport = { async request(raw, options) {
+    upstreamHeaders = options.headers;
+    return { url: new URL(raw), headers: options.headers, headerOrigin: new URL(raw).origin,
+      response: fakeResponse(`#EXTM3U\n#EXTINF:6,\n${child}\n#EXT-X-ENDLIST\n`, 200,
+        { "content-type": "application/vnd.apple.mpegurl" }) };
+  } };
+  const media = createMedia({ transport, secret: SECRET, publicOrigin: fixture.base });
+  fixture.attachMedia(media.handle);
+  const playlist = await httpGet(media.url({ url: root, headers, publicOnly: true, nodeOnly: true }));
+  const uri = playlist.body.toString().split("\n").find((line) => line && !line.startsWith("#"));
+  assert.ok(uri.length + 60 < 4096, `segment URL with production-origin allowance was ${uri.length + 60} characters`);
+  const resource = media.resource(new URL(uri).searchParams.get("token"));
+  assert.equal(resource.url, new URL(child, root).href);
+  assert.equal(resource.headers.authorizations, headers.authorizations);
+  assert.equal(resource.headers["accept-encoding"], "identity");
+  assert.equal(upstreamHeaders["accept-encoding"], "identity");
+});
