@@ -269,19 +269,28 @@ export function createHabsterProvider({ transport, allohaPlayback = openAllohaPl
   }
   async function findKinopoiskId(title, signal) {
     if (!Number.isSafeInteger(title.year) || title.year < 1880 || title.year > 2200) return null;
-    const names = [title.title, title.originalTitle].map(normalizedName).filter(Boolean);
+    const queries = new Map();
+    for (const name of [title.title, title.originalTitle]) {
+      const normalized = normalizedName(name);
+      if (normalized && !queries.has(normalized)) queries.set(normalized, name);
+    }
+    const names = [...queries.keys()];
     if (!names.length) return null;
     const bounded = signal ? AbortSignal.any([signal, AbortSignal.timeout(3_000)]) : AbortSignal.timeout(3_000);
-    const search = new URL("/search.php", ORIGIN);
-    search.searchParams.set("q", title.originalTitle || title.title);
-    const data = JSON.parse(await readText(search, bounded, { accept: "application/json" }));
-    if (!Array.isArray(data?.results) || data.results.length > 100) throw new Error("Habster returned invalid search results");
-    const ids = new Set(data.results.filter((item) => Number(item?.year) === title.year
-      && (title.type === "movie" ? item?.category === "movie" : ["serial", "series"].includes(item?.category))
-      && [item?.name_ru, item?.name].some((name) => names.includes(normalizedName(name))))
-      .map((item) => positiveId(item.kp_id)).filter(Boolean));
-    if (ids.size !== 1) return null;
-    const [id] = ids;
+    let id;
+    for (const query of queries.values()) {
+      const search = new URL("/search.php", ORIGIN);
+      search.searchParams.set("q", query);
+      const data = JSON.parse(await readText(search, bounded, { accept: "application/json" }));
+      if (!Array.isArray(data?.results) || data.results.length > 100) throw new Error("Habster returned invalid search results");
+      const ids = new Set(data.results.filter((item) => Number(item?.year) === title.year
+        && (title.type === "movie" ? item?.category === "movie" : ["serial", "series", "anime-serial"].includes(item?.category))
+        && [item?.name_ru, item?.name].some((name) => names.includes(normalizedName(name))))
+        .map((item) => positiveId(item.kp_id)).filter(Boolean));
+      if (ids.size > 1) return null;
+      if (ids.size === 1) { [id] = ids; break; }
+    }
+    if (!id) return null;
     const info = JSON.parse(await readText(`${ORIGIN}/getinfo.php?kp_id=${id}`, bounded, { accept: "application/json" }));
     if (positiveId(info?.kinopoiskId) !== id || Number(info?.year) !== title.year
       || (title.type === "movie" ? info?.type !== "FILM" : !["TV_SERIES", "MINI_SERIES", "TV_SHOW"].includes(info?.type))

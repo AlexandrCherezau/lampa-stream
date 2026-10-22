@@ -152,7 +152,7 @@ test("Habster maps missing KP only through one exact title/year/type search and 
     assert.equal(url.origin, "https://habster.sbs");
     assert.equal(opts.publicOnly, true);
     if (url.pathname === "/search.php") {
-      assert.equal(url.searchParams.get("q"), title.originalTitle);
+      assert.equal(url.searchParams.get("q"), title.title);
       return response(JSON.stringify({ results: [{ ...card, kp_id: "838", year: 2002 }, card, { ...card, category: "serial", kp_id: "100" }] }));
     }
     assert.equal(url.pathname, "/getinfo.php");
@@ -199,19 +199,90 @@ test("Habster refuses ambiguous titles, years, categories, IDs and mismatched in
   assert.equal(calls, 0, "without an exact year there is no safe Habster search");
 });
 
+test("Habster maps localized Haikyuu anime series without KP and keeps the exact episode", async () => {
+  const title = { type: "tv", title: "Волейбол!!", originalTitle: "ハイキュー!!", year: 2014,
+    language: "ja", anime: true, season: 1, episode: 14 };
+  const card = { kp_id: 840073, category: "anime-serial", year: 2014, name_ru: "Волейбол!!", name: "Haikyuu!!" };
+  const info = { kinopoiskId: 840073, type: "TV_SERIES", year: 2014, nameRu: "Волейбол!!", nameOriginal: "Haikyû!!", imdbId: "tt3398540" };
+  const requests = [];
+  const adapter = createHabsterProvider({ transport: { async request(raw) {
+    const url = new URL(raw); requests.push(url);
+    if (url.pathname === "/search.php") {
+      assert.equal(url.searchParams.get("q"), title.title);
+      return response(JSON.stringify({ results: [card] }));
+    }
+    assert.equal(url.pathname, "/getinfo.php");
+    assert.equal(url.searchParams.get("kp_id"), "840073");
+    return response(JSON.stringify(info));
+  } } });
+  const [alloha, collaps] = await collect(adapter.discover(title));
+  assert.deepEqual(alloha.ref, { type: "tv", kinopoiskId: 840073, voiceId: "default", season: 1, episode: 14 });
+  assert.deepEqual(collaps.ref, { type: "tv", kinopoiskId: 840073, season: 1, episode: 14 });
+  assert.equal(requests.length, 2, "localized match needs no original search or availability preflight");
+});
+
+test("Habster falls back to the original title only after no exact localized match", async () => {
+  const title = { type: "movie", title: "Локальное название", originalTitle: "Original title", year: 2026 };
+  const queries = [];
+  const adapter = createHabsterProvider({ transport: { async request(raw) {
+    const url = new URL(raw);
+    if (url.pathname === "/search.php") {
+      queries.push(url.searchParams.get("q"));
+      return response(JSON.stringify({ results: queries.length === 1
+        ? [{ kp_id: 100, category: "movie", name: "Another title", year: 2026 }]
+        : [{ kp_id: 123, category: "movie", name: title.originalTitle, year: 2026 }] }));
+    }
+    return response(JSON.stringify({ kinopoiskId: 123, type: "FILM", nameOriginal: title.originalTitle, year: 2026 }));
+  } } });
+  assert.equal((await collect(adapter.discover(title)))[0].ref.kinopoiskId, 123);
+  assert.deepEqual(queries, [title.title, title.originalTitle]);
+});
+
+test("Habster rejects ambiguous localized IDs and never treats anime series as movies", async () => {
+  for (const type of ["tv", "movie"]) {
+    const title = { type, title: "Волейбол!!", originalTitle: "ハイキュー!!", year: 2014, season: 1, episode: 14 };
+    const queries = [];
+    const adapter = createHabsterProvider({ transport: { async request(raw) {
+      const url = new URL(raw);
+      assert.equal(url.pathname, "/search.php", "rejected search must not fetch public info");
+      queries.push(url.searchParams.get("q"));
+      return response(JSON.stringify({ results: [840073, 840074].map((kp_id) => ({ kp_id,
+        category: "anime-serial", name_ru: title.title, year: title.year })) }));
+    } } });
+    assert.deepEqual(await collect(adapter.discover(title)), []);
+    assert.deepEqual(queries, type === "tv" ? [title.title] : [title.title, title.originalTitle]);
+  }
+});
+
+test("Habster searches each normalized title at most once", async () => {
+  let calls = 0;
+  const adapter = createHabsterProvider({ transport: { async request() {
+    calls++;
+    return response(JSON.stringify({ results: [] }));
+  } } });
+  assert.deepEqual(await collect(adapter.discover({ type: "tv", title: "Haikyuu!!", originalTitle: "HAIKYUU", year: 2014, season: 1, episode: 14 })), []);
+  assert.equal(calls, 1);
+});
+
 test("Habster search+info shares a three-second body deadline and follows caller cancellation", async () => {
   let bodyAborted = false;
-  const adapter = createHabsterProvider({ transport: { async request(_raw, opts) {
+  const queries = [];
+  const adapter = createHabsterProvider({ transport: { async request(raw, opts) {
+    const query = new URL(raw).searchParams.get("q");
+    queries.push(query);
+    if (query === "Exact film") return response(JSON.stringify({ results: [] }));
     const stream = new Readable({ read() {} }); stream.headers = {}; stream.statusCode = 200;
     opts.signal.addEventListener("abort", () => { bodyAborted = true; }, { once: true });
     return { response: stream };
   } } });
+  const title = { type: "movie", title: "Exact film", originalTitle: "Original film", year: 2026 };
   const before = Date.now();
-  await assert.rejects(collect(adapter.discover({ type: "movie", title: "Exact film", year: 2026 })), { name: "TimeoutError" });
+  await assert.rejects(collect(adapter.discover(title)), { name: "TimeoutError" });
   assert(bodyAborted);
+  assert.deepEqual(queries, [title.title, title.originalTitle]);
   assert(Date.now() - before < 4000);
   const controller = new AbortController();
-  const pending = collect(adapter.discover({ type: "movie", title: "Exact film", year: 2026 }, { signal: controller.signal }));
+  const pending = collect(adapter.discover(title, { signal: controller.signal }));
   controller.abort();
   await assert.rejects(pending, { name: "AbortError" });
 });
