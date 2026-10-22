@@ -19,6 +19,7 @@ source = source.replace(
 
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
 globalThis.__sourceHostHookStubs = {};
+globalThis.window = { __webShim: false };
 const { default: useSourceHost } = await import(moduleUrl);
 
 async function runCase({ details = {}, item = {}, expectedId, expectedDependency = null, expectLookup }) {

@@ -54,10 +54,11 @@ async function decoderFailureUsesSibling() {
     resolve: async (id) => { calls.push(id); return result(`https://media.test/${id}.m3u8`); },
   });
   await session.start({ title: "Film" });
+  await tick();
   assert.equal(state.balanser, "alpha");
   assert.equal(session.reportPlaybackFailure(), true);
   await tick(); await tick();
-  assert.deepEqual(calls, ["a", "b"]);
+  assert.deepEqual(calls, ["a", "b", "b"], "a sibling aborted by the winner is freshly resolved after decode failure");
   assert.deepEqual(state.stream, { hls: "https://media.test/b.m3u8" });
   assert.equal(state.balanser, "beta");
 }
@@ -114,6 +115,7 @@ async function failedVoiceKeepsOtherVoices() {
       },
     });
     await session.start({ title: "Film" });
+    await tick();
     if (failure === "decode") assert.equal(session.reportPlaybackFailure(), true);
     await tick(); await tick();
     assert.deepEqual(calls, ["bad", "good"], `${failure} failure must not discard another voice from the same provider`);
@@ -141,15 +143,15 @@ async function fallbackRotatesProvidersAndStops() {
   });
   await session.start({ title: "Film" });
   await tick(); await tick();
-  assert.deepEqual(calls, ["a1", "b1", "a2"], "try another provider before its remaining voices");
+  assert.deepEqual(calls, ["a1", "b1", "a2", "b2"], "race one voice per provider before trying another voice");
   assert.equal(state.voice, "a2");
   assert.equal(session.reportPlaybackFailure(), true);
   await tick(); await tick();
-  assert.deepEqual(calls, ["a1", "b1", "a2", "b2"]);
+  assert.deepEqual(calls, ["a1", "b1", "a2", "b2", "b2"]);
   assert.equal(state.voice, "b2");
   assert.equal(session.reportPlaybackFailure(), false);
   await tick(); await tick();
-  assert.equal(calls.length, 4, "exhausted candidates are not retried forever");
+  assert.equal(calls.length, 5, "each candidate retries only after its first resolved stream fails to play");
   assert.match(state.sourceError.message, /Не найдено/);
   session.stop();
 }
@@ -159,19 +161,26 @@ async function manualFailureAndStaleRequests() {
   const lateManual = deferred();
   const stale = deferred();
   let oldBCalls = 0;
+  let newBCalls = 0;
   let state;
   let title = "old";
   const session = createSourceSession({
     publish: (value) => { state = value; },
     discover: async (value, { onEvent }) => { title = value.title; onEvent("candidate", candidate(`${value.title}-a`, `${value.title}-alpha`)); onEvent("candidate", candidate(`${value.title}-b`, `${value.title}-beta`)); },
-    resolve: async (id) => {
+    resolve: async (id, _quality, signal) => {
       if (id === "old-a") return result("https://media.test/old.m3u8");
-      if (id === "old-b") return oldBCalls++ === 0 ? manual.promise : lateManual.promise;
+      if (id === "old-b") {
+        if (oldBCalls++ === 0) return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+        return oldBCalls === 2 ? manual.promise : lateManual.promise;
+      }
       if (id === "new-a") return stale.promise;
+      if (id === "new-b") newBCalls++;
       return result("https://media.test/new-b.m3u8");
     },
   });
   await session.start({ title: "old" });
+  await tick();
+  await tick();
   const priorStream = state.stream;
   const failedSelection = session.selectBalanser("old-beta");
   manual.reject(new Error("unavailable"));
@@ -183,6 +192,8 @@ async function manualFailureAndStaleRequests() {
 
   const staleSelection = session.selectBalanser("old-beta");
   await session.start({ title: "new" });
+  await tick();
+  assert.equal(newBCalls, 1, "stopping a pending manual request releases the new title's automatic race");
   const latestSelection = session.selectBalanser("new-beta");
   assert.equal(await latestSelection, true, "the latest current selection settles as success");
   lateManual.resolve(result("https://media.test/old-late.m3u8"));
@@ -347,6 +358,7 @@ async function preparedMovieResolveIsBoundedAndExact() {
     resolve: async () => { mismatchResolves++; return result("https://media.test/mismatch.m3u8"); },
   });
   await mismatchSession.start(mismatchTitle);
+  await tick();
   assert.equal(mismatchResolves, 1, "a different runtime cannot reuse the prepared sealed candidate");
   mismatchSession.stop();
 
@@ -360,6 +372,7 @@ async function preparedMovieResolveIsBoundedAndExact() {
       resolve: async () => { expiredResolves++; return result("https://media.test/expired.m3u8"); },
     });
     await expiredSession.start(title);
+    await tick();
     assert.equal(expiredResolves, 1, "prepared results expire after the short warm window");
     expiredSession.stop();
   } finally { Date.now = realNow; }
@@ -421,6 +434,7 @@ async function preparedMovieResolveIsBoundedAndExact() {
     resolve: async () => { malformedFallbackCalls++; return result("https://media.test/valid-fallback.m3u8"); },
   });
   await malformedSession.start(malformedTitle);
+  await tick();
   assert.equal(malformedFallbackCalls, 1, "malformed prepared playback data falls back to a fresh resolve");
   malformedSession.stop();
 }
@@ -437,6 +451,7 @@ async function skipRangesFollowActiveStream() {
     resolve: async (id) => ({ ...result(`https://media.test/${id}.m3u8`), skip: ranges[id] }),
   });
   await session.start({ title: "Film" });
+  await tick();
   assert.deepEqual(state.skip, ranges.a);
   session.notePlaying();
   await session.selectBalanser("b");
@@ -461,6 +476,7 @@ async function audioNamesFollowActiveStream() {
     resolve: async (id) => ({ ...result(`https://media.test/${id}.m3u8`), ...(id === "habster" ? { audioNames: names } : {}) }),
   });
   await session.start({ title: "Film" });
+  await tick();
   assert.deepEqual(labelAudioTracks(tracks, state.audioNames).map((track) => track.name), names,
     "resolved studio labels replace generic HLS audio names");
   session.notePlaying();

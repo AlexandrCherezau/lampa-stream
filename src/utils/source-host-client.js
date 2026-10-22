@@ -1,7 +1,12 @@
 const ENDPOINT = "/api/source-host";
 const PREPARED_SOURCE_TTL = 15_000;
 const MAX_PREPARED_SOURCES = 4;
+const SOURCE_PREFERENCE_HEADSTART_MS = 1_500;
+const AUTO_RESOLVE_TIMEOUT_MS = 10_000;
+const MAX_AUTO_RESOLVES = 2;
+const PROVIDER_COOLDOWN_MS = 30_000;
 const preparedSources = new Map();
+const providerCooldowns = new Map();
 
 function titleKey(title) {
   // Keep every field that can change a Habster lookup or the sealed runtime
@@ -20,7 +25,11 @@ async function request(op, body, signal) {
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw Object.assign(new Error(error.message || "Источник временно недоступен"), { code: error.error, status: response.status });
+    throw Object.assign(new Error(error.message || "Источник временно недоступен"), { code: error.error, status: response.status,
+      ...(error.sourceMediaCode === "UPSTREAM_HTTP_ERROR" && Number.isInteger(error.sourceUpstreamStatus)
+        && error.sourceUpstreamStatus >= 400 && error.sourceUpstreamStatus <= 599
+        ? { sourceUpstreamStatus: error.sourceUpstreamStatus } : {}),
+    });
   }
   return response;
 }
@@ -97,7 +106,7 @@ function preparedCandidateFor(title) {
     preparedSources.delete(key);
     return null;
   }
-  return entry.claimed || !entry.result ? null : entry.candidate;
+  return entry.claimed ? null : entry.candidate;
 }
 
 function samePreparedVoice(candidate, prepared) {
@@ -157,6 +166,22 @@ function resolvedStream(result) {
   throw new Error("Источник не предоставил поддерживаемое видео");
 }
 
+function coolingDown(providerId) {
+  const until = providerCooldowns.get(providerId) || 0;
+  if (until <= Date.now()) {
+    providerCooldowns.delete(providerId);
+    return false;
+  }
+  return true;
+}
+
+function recordProviderFailure(providerId, error) {
+  if (["BUSY", "ENGINE_STARTING"].includes(error?.code)) return;
+  // A gateway 502 alone can mean one missing film or quality, not a provider outage.
+  const status = error?.sourceUpstreamStatus ?? (error?.status === 502 ? null : error?.status);
+  if (status === 429 || status >= 500) providerCooldowns.set(providerId, Date.now() + PROVIDER_COOLDOWN_MS);
+}
+
 export function createSourceSession({ discover = discoverSources, resolve = resolveSource, publish }) {
   let generation = 0;
   let discovery;
@@ -172,6 +197,10 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   let preparedFallbackCandidate = null;
   let preparedFallbackQueued = false;
   let sourcePreference = null;
+  let preferenceReleased = true;
+  let preferenceTimer;
+  let selectionEpoch = 0;
+  const autoAttempts = new Map();
   let state = { stream: null, switching: false, sourceError: null, meta: "Ищем источники…", qualities: [], subtitles: [], audioNames: [], skip: null };
   const emit = (patch = {}) => {
     state = { ...state, ...patch };
@@ -197,25 +226,99 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     });
   };
   const settle = () => {
-    if (!active && !pending && finished && !state.sourceError) emit({ sourceError: { message: "Не найдено работающего источника для этой записи" }, meta: "" });
+    if (!active && !pending && !autoAttempts.size && finished && !state.sourceError) emit({ sourceError: { message: "Не найдено работающего источника для этой записи" }, meta: "" });
+  };
+  const abortAutomaticAttempts = () => {
+    selectionEpoch++;
+    for (const attempt of autoAttempts.values()) attempt.controller.abort();
+    autoAttempts.clear();
+    pending = Boolean(resolving);
+  };
+  const activate = (candidate, result) => {
+    const stream = resolvedStream(result);
+    providerCooldowns.delete(candidate.providerId);
+    previous = confirmed ? active : previous;
+    active = { candidate, result };
+    confirmed = false;
+    emit({ stream,
+      qualities: (result.qualities || []).map((value) => ({ id: value.label, label: value.height >= 2160 ? "4K" : value.label === "auto" ? "Авто" : value.label, height: value.height })),
+      subtitles: (result.subtitles || []).map((value) => ({ name: value.label, language: value.language, url: value.url })),
+      audioNames: result.audioNames || [],
+      meta: `${candidate.providerName} · ${candidate.voiceName}`, sourceError: null, skip: result.skip || null,
+    });
+  };
+  const startAutomatic = (candidate) => {
+    const controller = new AbortController();
+    const attempt = { candidate, controller, epoch: selectionEpoch, token: generation };
+    autoAttempts.set(candidate.id, attempt);
+    pending = true;
+    emit({ sourceError: null, meta: active ? state.meta : `Проверяем ${candidate.providerName}…` });
+    let timer;
+    let timedOut = false;
+    const timeout = new Promise((_resolve, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        reject(Object.assign(new Error("Источник не ответил вовремя"), { status: 504 }));
+      }, AUTO_RESOLVE_TIMEOUT_MS);
+    });
+    const quality = sourcePreference && matchesSourcePreference(candidate, sourcePreference) ? sourcePreference.quality || undefined : undefined;
+    const warm = quality == null && candidate.id === preparedCandidate?.id ? takePreparedResult(titleForSession, candidate) : null;
+    const resolvingCandidate = Promise.resolve(warm).then((value) => {
+      if (value) return value;
+      if (candidate.id === preparedCandidate?.id) throw new Error("Предварительный источник больше недоступен");
+      return resolve(candidate.id, quality, controller.signal);
+    });
+    Promise.race([resolvingCandidate, timeout])
+      .then((result) => {
+        if (timedOut || controller.signal.aborted || attempt.token !== generation || attempt.epoch !== selectionEpoch) return;
+        resolvedStream(result);
+        if (active || resolving) return;
+        activate(candidate, result);
+        abortAutomaticAttempts();
+      })
+      .catch((error) => {
+        if (attempt.token !== generation || attempt.epoch !== selectionEpoch || (controller.signal.aborted && !timedOut)) return;
+        if (quality == null) recordProviderFailure(candidate.providerId, error);
+        failed.add(candidate.id);
+        if (candidate.id === preparedCandidate?.id) queuePreparedFallback();
+        if (sourcePreference && matchesSourcePreference(candidate, sourcePreference)) preferenceReleased = true;
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        if (autoAttempts.get(candidate.id) !== attempt) return;
+        autoAttempts.delete(candidate.id);
+        pending = Boolean(resolving || autoAttempts.size);
+        if (!active) next();
+      });
   };
   const next = () => {
-    if (active || pending) return false;
+    if (active || resolving) return false;
     const failures = new Map();
     for (const value of candidates) {
       if (failed.has(value.id)) failures.set(value.providerId, (failures.get(value.providerId) || 0) + 1);
     }
     // Try every available provider before exhausting its alternate voices.
-    const available = candidates.filter((value) => !failed.has(value.id));
+    const inFlight = new Set([...autoAttempts.values()].map(({ candidate }) => candidate.providerId));
+    const available = candidates.filter((value) => !failed.has(value.id)
+      && !autoAttempts.has(value.id) && !inFlight.has(value.providerId) && !coolingDown(value.providerId));
     const preferred = sourcePreference && available.find((value) => matchesSourcePreference(value, sourcePreference));
     // A cloud-restored source choice is useful only if it is restored before the
     // first frame. Give discovery time to surface that stable provider/voice
     // label instead of briefly starting a different dub. Once discovery ends,
     // the ordinary failover order remains available if the saved voice is gone.
-    if (sourcePreference && !preferred && !finished) return true;
-    const candidate = (preferred ? [preferred] : available)
-      .sort((a, b) => (failures.get(a.providerId) || 0) - (failures.get(b.providerId) || 0))[0];
-    if (candidate) { choose(candidate, preferred ? sourcePreference?.quality : undefined, false); return true; }
+    if (preferred && !autoAttempts.size) startAutomatic(preferred);
+    if (sourcePreference && !preferenceReleased) return true;
+    const remainingProviders = new Set([...autoAttempts.values()].map(({ candidate }) => candidate.providerId));
+    const others = available.filter((value) => value !== preferred && !remainingProviders.has(value.providerId))
+      .sort((a, b) => (failures.get(a.providerId) || 0) - (failures.get(b.providerId) || 0));
+    for (const candidate of others) {
+      if (autoAttempts.size >= MAX_AUTO_RESOLVES) break;
+      if (remainingProviders.has(candidate.providerId)) continue;
+      remainingProviders.add(candidate.providerId);
+      startAutomatic(candidate);
+    }
+    if (autoAttempts.size) return true;
     settle();
     return !finished;
   };
@@ -226,6 +329,10 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     preparedFallbackQueued = true;
   };
   async function choose(candidate, quality, manual) {
+    if (manual) {
+      abortAutomaticAttempts();
+      pending = false;
+    }
     resolving?.abort();
     const controller = new AbortController();
     resolving = controller;
@@ -236,19 +343,11 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       const prepared = !manual && quality == null ? await takePreparedResult(titleForSession, candidate) : null;
       const result = prepared || await resolve(candidate.id, quality, controller.signal);
       if (controller.signal.aborted || token !== generation) return undefined;
-      const stream = resolvedStream(result);
-      previous = confirmed ? active : previous;
-      active = { candidate, result };
-      confirmed = false;
-      emit({ stream,
-        qualities: (result.qualities || []).map((value) => ({ id: value.label, label: value.height >= 2160 ? "4K" : value.label === "auto" ? "Авто" : value.label, height: value.height })),
-        subtitles: (result.subtitles || []).map((value) => ({ name: value.label, language: value.language, url: value.url })),
-        audioNames: result.audioNames || [],
-        meta: `${candidate.providerName} · ${candidate.voiceName}`, sourceError: null, skip: result.skip || null,
-      });
+      activate(candidate, result);
       return true;
     } catch (error) {
       if (controller.signal.aborted || token !== generation) return undefined;
+      if (quality == null) recordProviderFailure(candidate.providerId, error);
       if (manual && active) {
         emit({ switching: false, sourceError: { message: error.message || "Не удалось переключить источник" } });
         return false;
@@ -257,16 +356,23 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       if (candidate.id === preparedCandidate?.id) queuePreparedFallback();
       return false;
     } finally {
-      if (resolving === controller && token === generation) {
-        pending = false;
-        if (!active) next();
+      if (resolving === controller) {
+        resolving = null;
+        if (token === generation) {
+          pending = false;
+          if (!active) next();
+        }
       }
     }
   }
   function stop() {
     generation++;
+    clearTimeout(preferenceTimer);
+    preferenceTimer = undefined;
+    abortAutomaticAttempts();
     discovery?.abort();
     resolving?.abort();
+    resolving = null;
     pending = false;
   }
   let titleForSession;
@@ -280,6 +386,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       : null;
     sourcePreference = stableSource && (stableSource.providerId || stableSource.voiceId || stableSource.providerName || stableSource.voiceName)
       ? stableSource : null;
+    preferenceReleased = !sourcePreference;
     preparedCandidate = preparedCandidateFor(title);
     preparedFallbackCandidate = null;
     preparedFallbackQueued = false;
@@ -287,6 +394,10 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     state = { stream: null, switching: false, sourceError: null, meta: "Ищем источники…", qualities: [], subtitles: [], audioNames: [], skip: null };
     emit();
     const token = generation;
+    if (sourcePreference) preferenceTimer = setTimeout(() => {
+      preferenceReleased = true;
+      next();
+    }, SOURCE_PREFERENCE_HEADSTART_MS);
     discovery = new AbortController();
     const controller = discovery;
     if (preparedCandidate && (!sourcePreference || matchesSourcePreference(preparedCandidate, sourcePreference))) {
@@ -316,6 +427,11 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     } finally {
       if (token === generation && !controller.signal.aborted) {
         finished = true;
+        if (![...autoAttempts.values()].some(({ candidate }) => matchesSourcePreference(candidate, sourcePreference))) {
+          preferenceReleased = true;
+          clearTimeout(preferenceTimer);
+          preferenceTimer = undefined;
+        }
         if (!active && !pending) next();
         settle();
       }
