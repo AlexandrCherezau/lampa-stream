@@ -10,6 +10,7 @@ const setup = readFileSync(new URL('setup.sh', base), 'utf8');
 const vercelConfig = JSON.parse(readFileSync(new URL('config/vercel.init.conf', base), 'utf8'));
 const vercelProjectConfig = JSON.parse(readFileSync(new URL('vercel.json', base), 'utf8'));
 const vercelDockerfile = readFileSync(new URL('Dockerfile.vercel', base), 'utf8');
+const vercelDockerAllowlist = readFileSync(new URL('Dockerfile.vercel.dockerignore', base), 'utf8').split(/\r?\n/);
 const vercelStart = readFileSync(new URL('start-vercel.sh', base), 'utf8');
 
 assert.equal(config.chromium.enable, true, 'Zetflix requires Lampac Playwright Chromium');
@@ -65,6 +66,19 @@ assert.deepEqual(vercelProjectConfig.rewrites, [{ source: '/(.*)', destination: 
 assert.match(vercelDockerfile, /ghcr\.io\/lampac-nextgen\/lampac:1\.81\.0@sha256:[a-f0-9]{64}/);
 assert.match(vercelDockerfile, /node:24\.13\.0-bookworm-slim@sha256:[a-f0-9]{64}/);
 assert.match(vercelDockerfile, /COPY source-host\/ \/app\//);
+for (const path of [
+  'source-host/',
+  'infrastructure/',
+  'infrastructure/lampac/',
+  'infrastructure/lampac/config/',
+  'infrastructure/lampac/config/vercel.init.conf',
+  'infrastructure/lampac/patch-zetflix-diagnostics.mjs',
+  'infrastructure/lampac/patch-rezka-api.mjs',
+  'infrastructure/lampac/patch-platform-movies.mjs',
+  'infrastructure/lampac/start-vercel.sh',
+]) {
+  assert.ok(vercelDockerAllowlist.includes(`!${path}`), `Docker COPY context must allow ${path}`);
+}
 assert.match(vercelDockerfile, /EXPOSE 9120/);
 assert.match(vercelDockerfile, /c\.chromium\.enable=false/);
 assert.match(vercelDockerfile, /c\.listen\.ip="127\.0\.0\.1"/);

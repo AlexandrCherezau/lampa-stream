@@ -79,8 +79,8 @@ function sseReader(body) {
   const frames = [];
   return {
     frames,
-    async until(eventName) {
-      while (!frames.some((frame) => frame.event === eventName)) {
+    async until(eventName, matches = () => true) {
+      while (!frames.some((frame) => frame.event === eventName && matches(frame.data))) {
         const { done, value } = await reader.read();
         if (done) break;
         text += decoder.decode(value, { stream: true });
@@ -91,7 +91,7 @@ function sseReader(body) {
           if (frame) frames.push(frame);
         }
       }
-      return frames.find((frame) => frame.event === eventName) || null;
+      return frames.find((frame) => frame.event === eventName && matches(frame.data)) || null;
     },
     async drain() {
       while (true) {
@@ -109,6 +109,81 @@ function sseReader(body) {
     cancel() { return reader.cancel(); },
   };
 }
+
+test("slow direct discovery does not block fast direct or Lampac candidates", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "source-parallel-discovery-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const ready = join(directory, "ready");
+  await writeFile(ready, "ready");
+  let releaseSlow;
+  const slowGate = new Promise((resolve) => { releaseSlow = resolve; });
+  let slowFinished = false;
+  const app = await start({ async *discover(title) {
+    assert.equal(title.tmdbId, 120);
+    yield candidate({ providerId: "hdvb", catalogSource: undefined });
+  } }, makeMedia(), "", undefined, {
+    engineReadyFile: ready,
+    habsterAdapter: { async *discover() {} },
+    allmangaAdapter: { async *discover(_title, { signal }) {
+      await slowGate;
+      signal.throwIfAborted();
+      slowFinished = true;
+      yield candidate({ providerId: "allmanga", providerName: "AllManga", catalogSource: "allmanga" });
+    } },
+    vidsrcAdapter: { async *discover() {
+      yield candidate({ providerId: "vidsrc:test", providerName: "VidSrc", catalogSource: "vidsrc" });
+    } },
+  });
+  t.after(() => app.close());
+  try {
+    const response = await post(app.base, "/v1/discover", { type: "movie", title: "Movie", tmdbId: 120, anime: true });
+    const stream = sseReader(response.body);
+    const deadline = new Promise((resolve) => setTimeout(() => resolve(null), 250));
+    const fastVidSrc = await Promise.race([stream.until("candidate", (value) => value.providerId === "vidsrc:test"), deadline]);
+    assert.ok(fastVidSrc, "fast VidSrc candidate must arrive before slow AllManga completes");
+    assert.equal(slowFinished, false);
+    const fastLampac = await Promise.race([stream.until("candidate", (value) => value.providerId === "hdvb"), deadline]);
+    assert.ok(fastLampac, "ready Lampac candidate must arrive before slow AllManga completes");
+    assert.equal(slowFinished, false);
+    releaseSlow();
+    await stream.drain();
+    assert.ok(stream.frames.some((frame) => frame.event === "candidate" && frame.data.providerId === "allmanga"));
+    assert.equal(stream.frames.find((frame) => frame.event === "done").data.complete, true);
+  } finally {
+    releaseSlow();
+  }
+});
+
+test("discovery failure aborts and joins other provider producers", async (t) => {
+  let producerSignal;
+  let producerStopped = false;
+  const app = await start({ async *discover() {
+    yield candidate({ ref: { payload: "x".repeat(20_000) } });
+  } }, makeMedia(), "", undefined, {
+    engineReadyFile: "",
+    habsterAdapter: { async *discover() {} },
+    allmangaAdapter: { async *discover(_title, { signal }) {
+      producerSignal = signal;
+      try {
+        await new Promise((resolve) => {
+          if (signal.aborted) resolve();
+          else signal.addEventListener("abort", resolve, { once: true });
+        });
+        signal.throwIfAborted();
+      } finally {
+        producerStopped = true;
+      }
+    } },
+  });
+  t.after(() => app.close());
+
+  const response = await post(app.base, "/v1/discover", { type: "movie", title: "Movie", anime: true });
+  const body = await response.text();
+  assert.match(body, /event: error/);
+  assert.match(body, /"complete":false/);
+  assert.equal(producerSignal.aborted, true);
+  assert.equal(producerStopped, true, "response must not finish while another producer is still running");
+});
 
 test("strict TV coordinates, progressive safe SSE, and caller engine URLs", async (t) => {
   let seenTitle;

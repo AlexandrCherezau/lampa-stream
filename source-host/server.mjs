@@ -114,27 +114,87 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
   allmangaAdapter ||= createAllMangaProvider({ transport: createTransport() });
   const sourceAdapter = (catalogSource) => catalogSource === "allmanga" ? allmangaAdapter : catalogSource === "vidsrc" ? vidsrcAdapter : catalogSource === "habster" ? habsterAdapter : catalogSource === "vi3000" ? viAdapter : adapter;
   async function* discoverSources(title, signal) {
+    const producerController = new AbortController();
+    const producerSignal = producerController.signal;
+    const abortProducers = () => producerController.abort(signal.reason);
+    if (signal.aborted) abortProducers();
+    else signal.addEventListener("abort", abortProducers, { once: true });
     let fallbackTitle = title;
-    if (title.kinopoiskId || title.year) {
+    const queue = [];
+    const tasks = [];
+    let pending = 0;
+    let wake;
+    let nativeStarted = false;
+    let nativeError;
+    const notify = () => { const resume = wake; wake = null; resume?.(); };
+    const enqueue = (candidate) => { queue.push(candidate); notify(); };
+    const launch = (run, onError) => {
+      pending++;
+      const task = Promise.resolve().then(run).catch((error) => {
+        if (!producerSignal.aborted) onError(error);
+      }).finally(() => { pending--; notify(); });
+      tasks.push(task);
+    };
+    const consume = async (source, onCandidate) => {
+      const iterator = source[Symbol.asyncIterator]();
       try {
-        for await (const candidate of habsterAdapter.discover(title, { signal })) {
+        while (!producerSignal.aborted) {
+          const next = await iterator.next();
+          if (next.done) break;
+          onCandidate(next.value);
+        }
+      } finally {
+        if (producerSignal.aborted) await iterator.return?.();
+      }
+    };
+    const startNative = () => {
+      if (nativeStarted || producerSignal.aborted) return;
+      nativeStarted = true;
+      launch(async () => {
+        const remote = ["vi3000", "habster"].includes(title.catalogSource);
+        if (!remote) await waitForEngine(producerSignal);
+        const target = title.catalogSource === "habster" ? { ...fallbackTitle, catalogSource: "vi3000" } : fallbackTitle;
+        await consume((remote ? viAdapter : adapter).discover(target, { signal: producerSignal }), enqueue);
+      }, (error) => { nativeError ||= error; });
+    };
+    const needsHabster = Boolean(title.kinopoiskId || title.year);
+    const needsHabsterMapping = !title.kinopoiskId && Boolean(title.year) && needsHabster;
+    if (needsHabster) launch(async () => {
+      try {
+        await consume(habsterAdapter.discover(title, { signal: producerSignal }), (candidate) => {
           if (candidate.providerId === "habster:collaps" && Number.isSafeInteger(candidate.ref?.kinopoiskId) && candidate.ref.kinopoiskId > 0) {
             fallbackTitle = { ...title, kinopoiskId: candidate.ref.kinopoiskId };
+            if (needsHabsterMapping) startNative();
           }
-          yield candidate;
-        }
+          enqueue(candidate);
+        });
+      } catch (error) {
+        if (producerSignal.aborted) throw error;
+        enqueue({ providerId: "habster:collaps", providerName: "Habster · Collaps", error: "Habster unavailable" });
+      } finally {
+        if (needsHabsterMapping) startNative();
       }
-      catch {
-        signal.throwIfAborted();
-        yield { providerId: "habster:collaps", providerName: "Habster · Collaps", error: "Habster unavailable" };
+    }, (error) => { nativeError ||= error; });
+    if (title.anime) launch(() => consume(allmangaAdapter.discover(title, { signal: producerSignal }), enqueue), () => {
+      enqueue({ providerId: "allmanga", providerName: "AllManga", error: "AllManga unavailable" });
+    });
+    if (title.tmdbId) launch(() => consume(vidsrcAdapter.discover(title, { signal: producerSignal }), enqueue), () => {
+      enqueue({ providerId: "vidsrc", providerName: "VidSrc", error: "VidSrc unavailable" });
+    });
+    if (!needsHabsterMapping) startNative();
+    producerSignal.addEventListener("abort", notify, { once: true });
+    try {
+      while (!producerSignal.aborted && (pending || queue.length)) {
+        if (queue.length) yield queue.shift();
+        else await new Promise((resolve) => { wake = resolve; });
       }
+      if (!producerSignal.aborted && nativeError) throw nativeError;
+    } finally {
+      signal.removeEventListener("abort", abortProducers);
+      producerController.abort();
+      producerSignal.removeEventListener("abort", notify);
+      await Promise.allSettled(tasks);
     }
-    if (title.anime) yield* allmangaAdapter.discover(title, { signal });
-    if (title.tmdbId) yield* vidsrcAdapter.discover(title, { signal });
-    const remote = ["vi3000", "habster"].includes(title.catalogSource);
-    if (!remote) await waitForEngine(signal);
-    if (title.catalogSource === "habster") fallbackTitle = { ...fallbackTitle, catalogSource: "vi3000" };
-    yield* (remote ? viAdapter : adapter).discover(fallbackTitle, { signal });
   }
   const providers = new Map();
   let discoveries = 0;

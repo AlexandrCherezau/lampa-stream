@@ -1,5 +1,7 @@
 const ENDPOINT = "/api/source-host";
-const PREPARED_SOURCE_TTL = 15_000;
+const PREPARED_RESULT_TTL = 15_000;
+const PREPARED_CANDIDATE_TTL = 5 * 60_000;
+const PREPARED_RESULT_EXPIRED = Symbol("prepared-result-expired");
 const MAX_PREPARED_SOURCES = 4;
 const SOURCE_PREFERENCE_HEADSTART_MS = 1_500;
 const AUTO_RESOLVE_TIMEOUT_MS = 10_000;
@@ -68,22 +70,25 @@ export async function prepareMovieSource(title, { signal, discover = discoverSou
   const runtime = Number(title.runtimeMinutes);
   if (!Number.isSafeInteger(runtime) || runtime < 1 || runtime > 1440) return;
   const key = titleKey(title);
-  const expires = Date.now() + PREPARED_SOURCE_TTL;
+  let preparedEntry = null;
   try {
     await discover(title, {
       signal, prepareOnly: true,
       onEvent: (name, candidate) => {
         if (name !== "candidate" || candidate.providerId !== "habster:alloha" || signal?.aborted) return;
         const current = preparedSources.get(key);
-        if (current) return;
-        const entry = { expires, candidate, voiceId: candidate.voiceId, voiceName: candidate.voiceName, result: null, claimed: false };
+        if (current) { preparedEntry = current; return; }
+        const entry = { candidateExpires: Date.now() + PREPARED_CANDIDATE_TTL, resultExpires: 0,
+          candidate, voiceId: candidate.voiceId, voiceName: candidate.voiceName, result: null, claimed: false };
+        preparedEntry = entry;
         signal?.addEventListener("abort", () => {
           if (preparedSources.get(key) === entry) preparedSources.delete(key);
         }, { once: true });
         entry.promise = Promise.resolve(resolve(candidate.id, undefined, signal)).then((result) => {
-          if (signal?.aborted || Date.now() >= expires || preparedSources.get(key) !== entry) return null;
+          if (signal?.aborted || Date.now() >= entry.candidateExpires || preparedSources.get(key) !== entry) return null;
           resolvedStream(result);
           entry.result = result;
+          entry.resultExpires = Date.now() + PREPARED_RESULT_TTL;
           return result;
         }).catch(() => {
           if (preparedSources.get(key) === entry) preparedSources.delete(key);
@@ -96,13 +101,14 @@ export async function prepareMovieSource(title, { signal, discover = discoverSou
   } catch {
     // Warming is opportunistic; ordinary playback discovery remains the fallback.
   }
+  await preparedEntry?.promise;
 }
 
 function preparedCandidateFor(title) {
   const key = titleKey(title);
   const entry = preparedSources.get(key);
   if (!entry) return null;
-  if (Date.now() >= entry.expires) {
+  if (Date.now() >= entry.candidateExpires) {
     preparedSources.delete(key);
     return null;
   }
@@ -122,7 +128,7 @@ async function takePreparedResult(title, candidate) {
   const key = titleKey(title);
   const entry = preparedSources.get(key);
   if (!entry) return null;
-  if (Date.now() >= entry.expires) {
+  if (Date.now() >= entry.candidateExpires) {
     preparedSources.delete(key);
     return null;
   }
@@ -130,8 +136,12 @@ async function takePreparedResult(title, candidate) {
   if (entry.claimed) return null;
   entry.claimed = true;
   const result = entry.result || await entry.promise;
-  if (preparedSources.get(key) === entry) preparedSources.delete(key);
-  return result;
+  if (preparedSources.get(key) !== entry) return null;
+  if (result && Date.now() < entry.resultExpires) {
+    preparedSources.delete(key);
+    return result;
+  }
+  return result ? PREPARED_RESULT_EXPIRED : null;
 }
 
 function advertisedHeight(hint) {
@@ -194,6 +204,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   let previous = null;
   let confirmed = false;
   let preparedCandidate = null;
+  let preparedCandidateQueued = false;
   let preparedFallbackCandidate = null;
   let preparedFallbackQueued = false;
   let sourcePreference = null;
@@ -263,10 +274,15 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       }, AUTO_RESOLVE_TIMEOUT_MS);
     });
     const quality = sourcePreference && matchesSourcePreference(candidate, sourcePreference) ? sourcePreference.quality || undefined : undefined;
-    const warm = quality == null && candidate.id === preparedCandidate?.id ? takePreparedResult(titleForSession, candidate) : null;
+    const isPreparedCandidate = candidate.id === preparedCandidate?.id;
+    const usePreparedResult = quality == null && isPreparedCandidate;
+    const warm = usePreparedResult ? takePreparedResult(titleForSession, candidate) : null;
     const resolvingCandidate = Promise.resolve(warm).then((value) => {
-      if (value) return value;
-      if (candidate.id === preparedCandidate?.id) throw new Error("Предварительный источник больше недоступен");
+      if (value && value !== PREPARED_RESULT_EXPIRED) return value;
+      if (usePreparedResult && value !== PREPARED_RESULT_EXPIRED) {
+        throw new Error("Предварительный источник больше недоступен");
+      }
+      // The sealed candidate outlives its short-lived media URL; refresh it on click.
       return resolve(candidate.id, quality, controller.signal);
     });
     Promise.race([resolvingCandidate, timeout])
@@ -341,7 +357,9 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     emit({ switching: Boolean(active), sourceError: null, meta: active ? state.meta : `Проверяем ${candidate.providerName}…` });
     try {
       const prepared = !manual && quality == null ? await takePreparedResult(titleForSession, candidate) : null;
-      const result = prepared || await resolve(candidate.id, quality, controller.signal);
+      const result = prepared === PREPARED_RESULT_EXPIRED
+        ? await resolve(candidate.id, quality, controller.signal)
+        : prepared || await resolve(candidate.id, quality, controller.signal);
       if (controller.signal.aborted || token !== generation) return undefined;
       activate(candidate, result);
       return true;
@@ -388,6 +406,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       ? stableSource : null;
     preferenceReleased = !sourcePreference;
     preparedCandidate = preparedCandidateFor(title);
+    preparedCandidateQueued = false;
     preparedFallbackCandidate = null;
     preparedFallbackQueued = false;
     candidates = []; failed = new Set(); active = previous = null; confirmed = false; finished = false;
@@ -402,13 +421,14 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     const controller = discovery;
     if (preparedCandidate && (!sourcePreference || matchesSourcePreference(preparedCandidate, sourcePreference))) {
       candidates.push(preparedCandidate);
+      preparedCandidateQueued = true;
       emit();
       next();
     }
     try {
       await discover(title, { signal: controller.signal, onEvent: (name, value) => {
         if (token !== generation || controller.signal.aborted) return;
-        if (name === "candidate" && samePreparedVoice(value, preparedCandidate)) {
+        if (name === "candidate" && preparedCandidateQueued && samePreparedVoice(value, preparedCandidate)) {
           preparedFallbackCandidate = value;
           if (failed.has(preparedCandidate.id)) {
             queuePreparedFallback();

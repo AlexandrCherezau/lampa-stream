@@ -775,7 +775,10 @@ export default function MoviePage({
       ...(kpId ? { kinopoiskId: kpId } : {}),
       ...(Number.isSafeInteger(runtime) && runtime >= 1 && runtime <= 1440 ? { runtimeMinutes: runtime } : {}),
     };
-    void prepareMovieSource(titleParams, { signal: controller.signal });
+    void prepareMovieSource(titleParams, { signal: controller.signal }).then(
+      () => clearTimeout(timeout),
+      () => clearTimeout(timeout),
+    );
     return () => {
       clearTimeout(timeout);
       controller.abort();

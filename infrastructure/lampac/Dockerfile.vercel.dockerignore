@@ -8,6 +8,8 @@
 !infrastructure/lampac/
 !infrastructure/lampac/Dockerfile.vercel
 !infrastructure/lampac/patch-zetflix-diagnostics.mjs
+!infrastructure/lampac/patch-rezka-api.mjs
+!infrastructure/lampac/patch-platform-movies.mjs
 !infrastructure/lampac/start-vercel.sh
 !infrastructure/lampac/config/
 !infrastructure/lampac/config/vercel.init.conf

@@ -326,10 +326,11 @@ async function preparedMovieResolveIsBoundedAndExact() {
 
   const pendingTitle = { ...title, tmdbId: 45 };
   const pendingResult = deferred();
-  await prepareMovieSource(pendingTitle, {
+  const pendingPreparation = prepareMovieSource(pendingTitle, {
     discover: async (_title, options) => options.onEvent("candidate", habster),
     resolve: () => pendingResult.promise,
   });
+  await tick();
   let pendingState;
   const pendingPlaybackReady = deferred();
   let duplicateResolveCalls = 0;
@@ -345,6 +346,7 @@ async function preparedMovieResolveIsBoundedAndExact() {
   assert.equal(duplicateResolveCalls, 0, "click waits for the in-flight early resolve instead of duplicating it");
   pendingResult.resolve(result("https://media.test/pending-warm.m3u8"));
   await pendingPlaybackReady.promise;
+  await pendingPreparation;
   await pendingStart;
   assert.equal(duplicateResolveCalls, 0);
   assert.equal(pendingState.stream.hls, "https://media.test/pending-warm.m3u8");
@@ -362,24 +364,97 @@ async function preparedMovieResolveIsBoundedAndExact() {
   assert.equal(mismatchResolves, 1, "a different runtime cannot reuse the prepared sealed candidate");
   mismatchSession.stop();
 
+  const expiredTitle = { ...title, tmdbId: 48 };
+  const expiredCandidate = { ...habster, id: "expired-media-signed-id" };
   let expiredResolves = 0;
   const realNow = Date.now;
   try {
-    Date.now = () => realNow() + 16_000;
+    const pageLifetime = new AbortController();
+    let pageTimeoutFired = false;
+    const pageTimeout = setTimeout(() => { pageTimeoutFired = true; pageLifetime.abort(); }, 20);
+    await prepareMovieSource(expiredTitle, {
+      signal: pageLifetime.signal,
+      discover: async (_title, options) => options.onEvent("candidate", expiredCandidate),
+      resolve: async () => result("https://media.test/stale-prepared.m3u8"),
+    }).finally(() => clearTimeout(pageTimeout));
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(pageTimeoutFired, false, "the caller's preparation deadline is cleared once its resolve finishes");
+    assert.equal(pageLifetime.signal.aborted, false, "a completed preparation survives detail-page dwell");
+    Date.now = () => realNow() + 30_000;
+    const expiredReady = deferred();
+    let expiredState;
+    const expiredCalls = [];
     const expiredSession = createSourceSession({
-      publish: () => {},
-      discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "expired-signed-id" }),
-      resolve: async () => { expiredResolves++; return result("https://media.test/expired.m3u8"); },
+      publish: (value) => { expiredState = value; if (value.stream) expiredReady.resolve(); },
+      discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "fresh-after-dwell" }),
+      resolve: async (id) => { expiredCalls.push(id); expiredResolves++; return result("https://media.test/fresh-after-dwell.m3u8"); },
     });
-    await expiredSession.start(title);
-    await tick();
-    assert.equal(expiredResolves, 1, "prepared results expire after the short warm window");
+    const expiredStart = expiredSession.start(expiredTitle);
+    await expiredReady.promise;
+    await expiredStart;
+    assert.equal(expiredResolves, 1);
+    assert.deepEqual(expiredCalls, ["expired-media-signed-id"], "long detail-page dwell re-resolves the retained candidate without waiting for discovery");
+    assert.equal(expiredState.stream.hls, "https://media.test/fresh-after-dwell.m3u8", "stale prepared media URLs are never reused after 15 seconds");
+    assert.equal(expiredState.stream.hls.includes("stale-prepared"), false);
     expiredSession.stop();
+
+    const oldCandidateTitle = { ...title, tmdbId: 49 };
+    await prepareMovieSource(oldCandidateTitle, {
+      discover: async (_title, options) => options.onEvent("candidate", { ...habster, id: "expired-candidate-id" }),
+      resolve: async () => result("https://media.test/too-old.m3u8"),
+    });
+    const candidatePreparedAt = Date.now();
+    Date.now = () => candidatePreparedAt + 5 * 60_000 + 1;
+    const afterCandidateExpiryCalls = [];
+    const afterCandidateExpiry = createSourceSession({
+      publish() {},
+      discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "fresh-after-candidate-expiry" }),
+      resolve: async (id) => { afterCandidateExpiryCalls.push(id); return result(); },
+    });
+    await afterCandidateExpiry.start(oldCandidateTitle);
+    await tick();
+    assert.deepEqual(afterCandidateExpiryCalls, ["fresh-after-candidate-expiry"], "candidate identity is discarded after its bounded five-minute window");
+    afterCandidateExpiry.stop();
   } finally { Date.now = realNow; }
+
+  const tvTitle = { type: "tv", title: "Warm Series", tmdbId: 48, runtimeMinutes: 45, season: 1, episode: 1 };
+  await prepareMovieSource(tvTitle, {
+    discover: async (_title, options) => options.onEvent("candidate", { ...habster, id: "prepared-s1e1" }),
+    resolve: async () => result("https://media.test/s1e1.m3u8"),
+  });
+  const tvCalls = [];
+  const tvSession = createSourceSession({
+    publish() {},
+    discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "fresh-s1e2", episode: 2 }),
+    resolve: async (id) => { tvCalls.push(id); return result(); },
+  });
+  await tvSession.start({ ...tvTitle, episode: 2 });
+  await tick();
+  assert.deepEqual(tvCalls, ["fresh-s1e2"], "a prepared episode cannot leak across exact season/episode cache keys");
+  tvSession.stop();
+
+  const changedPreferenceTitle = { ...title, tmdbId: 50 };
+  await prepareMovieSource(changedPreferenceTitle, {
+    discover: async (_title, options) => options.onEvent("candidate", { ...habster, id: "old-preference-candidate" }),
+    resolve: async () => result("https://media.test/old-preference.m3u8"),
+  });
+  const changedPreferenceCalls = [];
+  const changedPreference = createSourceSession({
+    publish() {},
+    discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "fresh-default-after-preference-change" }),
+    resolve: async (id) => { changedPreferenceCalls.push(id); return result(); },
+  });
+  await changedPreference.start(changedPreferenceTitle, {
+    providerId: "habster:alloha", voiceId: "voice-2", voiceName: "Dub",
+  });
+  await tick();
+  assert.deepEqual(changedPreferenceCalls, ["fresh-default-after-preference-change"],
+    "a changed saved voice preference must not suppress the freshly discovered prepared voice");
+  changedPreference.stop();
 
   const aborted = new AbortController();
   let abortSignal;
-  await prepareMovieSource({ ...title, tmdbId: 43 }, {
+  const abortedPreparation = prepareMovieSource({ ...title, tmdbId: 43 }, {
     signal: aborted.signal,
     discover: async (_title, options) => options.onEvent("candidate", habster),
     resolve: async (_id, _quality, signal) => {
@@ -387,7 +462,9 @@ async function preparedMovieResolveIsBoundedAndExact() {
       return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
     },
   });
+  await tick();
   aborted.abort();
+  await abortedPreparation;
   assert.equal(abortSignal, aborted.signal, "navigation cancellation reaches the early resolve request");
   const afterAbort = createSourceSession({
     publish: () => {},
@@ -397,12 +474,32 @@ async function preparedMovieResolveIsBoundedAndExact() {
   await afterAbort.start({ ...title, tmdbId: 43 });
   afterAbort.stop();
 
+  const navigatedAwayTitle = { ...title, tmdbId: 51 };
+  const navigatedAway = new AbortController();
+  await prepareMovieSource(navigatedAwayTitle, {
+    signal: navigatedAway.signal,
+    discover: async (_title, options) => options.onEvent("candidate", { ...habster, id: "navigation-prepared" }),
+    resolve: async () => result("https://media.test/navigation-prepared.m3u8"),
+  });
+  navigatedAway.abort();
+  const navigationCalls = [];
+  const afterSuccessfulNavigationAbort = createSourceSession({
+    publish() {},
+    discover: async (_title, { onEvent }) => onEvent("candidate", { ...habster, id: "navigation-fresh" }),
+    resolve: async (id) => { navigationCalls.push(id); return result(); },
+  });
+  await afterSuccessfulNavigationAbort.start(navigatedAwayTitle);
+  await tick();
+  assert.deepEqual(navigationCalls, ["navigation-fresh"], "navigation abort removes even a completed preparation entry");
+  afterSuccessfulNavigationAbort.stop();
+
   const failedTitle = { ...title, tmdbId: 44 };
   const failedWarmResult = deferred();
-  await prepareMovieSource(failedTitle, {
+  const failedWarmPreparation = prepareMovieSource(failedTitle, {
     discover: async (_title, options) => options.onEvent("candidate", habster),
     resolve: () => failedWarmResult.promise,
   });
+  await tick();
   const fallbackCalls = [];
   const fallbackReady = deferred();
   const failedWarmSession = createSourceSession({
@@ -416,6 +513,7 @@ async function preparedMovieResolveIsBoundedAndExact() {
   });
   const failedWarmPlayback = failedWarmSession.start(failedTitle);
   failedWarmResult.reject(new Error("prepared resolve failed"));
+  await failedWarmPreparation;
   await fallbackReady.promise;
   await failedWarmPlayback;
   assert.deepEqual(fallbackCalls, ["failed-warm-fallback"],
