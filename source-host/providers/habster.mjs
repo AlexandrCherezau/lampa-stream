@@ -1,4 +1,4 @@
-import { allohaUserAgent, parseAllohaBootstrap, parseAllohaGuard, parseAllohaSources, openAllohaPlayback } from "./alloha-protocol.mjs";
+import { allohaUserAgent, parseAllohaBootstrap, parseAllohaSerialEpisode, parseAllohaGuard, parseAllohaSources, openAllohaPlayback } from "./alloha-protocol.mjs";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 
 const ORIGIN = "https://habster.sbs";
@@ -85,6 +85,18 @@ function audioNames(value = []) {
     throw new Error("Habster returned invalid audio names");
   }
   return value.map((name) => name.trim());
+}
+
+export function selectAllohaEpisodeVoice(voices, episodeChoice) {
+  const normalizedVoice = (value) => normalizedName(value).replace(/^(?:russian|english|ukrainian|original|дубляж)\s+/, "");
+  const target = normalizedVoice(episodeChoice.name);
+  const matches = voices.filter((voice) => normalizedVoice(voice.name) === target);
+  if (matches.length === 1) return matches[0];
+  // Some episodes expose a single anonymous track whose label is its track ID.
+  // Only that proven shape may stand in for the bootstrap translation name.
+  if (matches.length === 0 && voices.length === 1 && /^\d{1,8}$/.test(voices[0].name)
+    && voices[0].name === voices[0].id) return voices[0];
+  throw new Error("Habster Alloha did not return the selected series translation");
 }
 
 export function parseHabsterPlayer(html, title) {
@@ -185,10 +197,12 @@ export function createHabsterProvider({ transport, allohaPlayback = openAllohaPl
     allohaGuardCache = entry;
     return entry.promise;
   }
-  async function loadAlloha(kinopoiskId, signal) {
+  async function loadAlloha(title, signal, requestedTranslationId = null) {
+    const { kinopoiskId } = title;
+    const cacheKey = `${title.type}:${kinopoiskId}:${title.season ?? ""}:${title.episode ?? ""}:${requestedTranslationId ?? "default"}`;
     const now = Date.now();
     for (const [id, entry] of allohaCache) if (entry.expires < now) allohaCache.delete(id);
-    let entry = allohaCache.get(kinopoiskId);
+    let entry = allohaCache.get(cacheKey);
     if (!entry) {
       if (allohaCache.size >= 8) {
         const cached = [...allohaCache].find(([, value]) => value.ready);
@@ -199,35 +213,47 @@ export function createHabsterProvider({ transport, allohaPlayback = openAllohaPl
       const bounded = AbortSignal.any([titleController.signal, AbortSignal.timeout(20_000)]);
       const promise = (async () => {
         try {
-          const page = await readText(`${ORIGIN}/film/${kinopoiskId}`, bounded, { accept: "text/html" });
+          const page = await readText(`${ORIGIN}/${title.type === "tv" ? "series" : "film"}/${kinopoiskId}`, bounded, { accept: "text/html" });
           const embed = parseHabsterAllohaEmbed(page, kinopoiskId);
           const headers = { referer: `${ORIGIN}/`, "user-agent": allohaUserAgent, accept: "text/html" };
           const bootstrap = parseAllohaBootstrap(await readText(embed, bounded, headers));
+          let playbackId = bootstrap.movieId;
+          let episodeChoice = null;
+          if (title.type === "tv") {
+            if (bootstrap.type !== "serial") throw new Error("Habster Alloha did not return a series");
+            episodeChoice = parseAllohaSerialEpisode(bootstrap, title.season, title.episode, requestedTranslationId);
+            playbackId = episodeChoice.id;
+          } else if (bootstrap.type !== "movie") throw new Error("Habster Alloha did not return a movie");
           const guardPromise = loadAllohaGuard(bootstrap.bundleUrl, headers);
           const form = new URLSearchParams({ token: new URL(embed).searchParams.get("token"), av1: "true", autoplay: "0", audio: "", subtitle: "" });
-          const dataPromise = readText(`${ALLOHA_ORIGIN}/bnsi/movies/${bootstrap.movieId}`, bounded, {
+          const dataPromise = readText(`${ALLOHA_ORIGIN}/bnsi/movies/${playbackId}`, bounded, {
             referer: embed, origin: ALLOHA_ORIGIN, "user-agent": allohaUserAgent,
             "content-type": "application/x-www-form-urlencoded", "x-requested-with": "XMLHttpRequest", borth: bootstrap.borth,
           }, { method: "POST", body: form.toString() }).then(JSON.parse);
           const [guard, data] = await awaitSignal(Promise.all([guardPromise, dataPromise]), bounded);
           const sources = parseAllohaSources(data);
-          const primary = sources.voices.find((voice) => voice.default) || sources.voices[0];
+          const primary = episodeChoice ? selectAllohaEpisodeVoice(sources.voices, episodeChoice)
+            : sources.voices.find((voice) => voice.default) || sources.voices[0];
           const edgeHash = await allohaPlayback(sources.websocketUrl, primary, { signal: bounded });
-          return { ...sources, primary, headers: { referer: embed, origin: ALLOHA_ORIGIN, "user-agent": allohaUserAgent,
+          return { ...sources, primary, episodeChoice, episodeChoices: episodeChoice?.choices || [], headers: { referer: embed, origin: ALLOHA_ORIGIN, "user-agent": allohaUserAgent,
             authorizations: `Bearer ${guard}`, "accepts-controls": edgeHash } };
         } finally { titleController.abort(); }
       })();
       entry = { promise, expires: now + 45_000, ready: false };
-      allohaCache.set(kinopoiskId, entry);
-      promise.then(() => { entry.ready = true; }, () => { if (allohaCache.get(kinopoiskId) === entry) allohaCache.delete(kinopoiskId); });
+      allohaCache.set(cacheKey, entry);
+      promise.then(() => { entry.ready = true; }, () => { if (allohaCache.get(cacheKey) === entry) allohaCache.delete(cacheKey); });
     }
     return awaitSignal(entry.promise, signal);
   }
-  function allohaCandidate(kinopoiskId, voice) {
-    const voiceId = voice ? `alloha:${voice.id}` : "default";
+  function allohaCandidate(title, voice, episodeChoice = null) {
+    const voiceId = episodeChoice ? `alloha-translation:${episodeChoice.translationId}` : voice ? `alloha:${voice.id}` : "default";
     const candidate = { providerId: "habster:alloha", providerName: "Habster · Alloha", catalogSource: "habster",
-      voiceId, voiceName: voice?.name || "Основная озвучка", qualityHint: "До 4K", season: null, episode: null };
-    Object.defineProperty(candidate, "ref", { value: { type: "movie", kinopoiskId, voiceId }, enumerable: false });
+      voiceId, voiceName: episodeChoice?.name || voice?.name || "Основная озвучка",
+      qualityHint: title.type === "movie" ? "До 4K" : episodeChoice ? (episodeChoice.uhd ? "До 4K" : "Auto") : "Auto",
+      season: title.type === "tv" ? title.season : null, episode: title.type === "tv" ? title.episode : null };
+    Object.defineProperty(candidate, "ref", { value: { type: title.type, kinopoiskId: title.kinopoiskId, voiceId,
+      ...(title.type === "tv" ? { season: title.season, episode: title.episode,
+        ...(episodeChoice ? { translationId: episodeChoice.translationId } : {}) } : {}) }, enumerable: false });
     return candidate;
   }
   async function refresh(title, signal) {
@@ -273,33 +299,41 @@ export function createHabsterProvider({ transport, allohaPlayback = openAllohaPl
     }
     validateTitle(title);
     signal?.throwIfAborted();
-    if (title.type === "movie") {
-      yield allohaCandidate(title.kinopoiskId);
-    }
+    yield allohaCandidate(title);
     const candidate = { providerId: "habster:collaps", providerName: "Habster · Collaps", catalogSource: "habster",
       voiceId: "multi", voiceName: "Мультиаудио", qualityHint: "Auto", season: title.type === "tv" ? title.season : null,
       episode: title.type === "tv" ? title.episode : null };
     Object.defineProperty(candidate, "ref", { value: { type: title.type, kinopoiskId: title.kinopoiskId,
       ...(title.type === "tv" ? { season: title.season, episode: title.episode } : {}) }, enumerable: false });
     yield candidate;
-    if (title.type === "movie") {
-      const sources = await loadAlloha(title.kinopoiskId, signal);
-      for (const voice of sources.voices) yield allohaCandidate(title.kinopoiskId, voice);
+    const sources = await loadAlloha(title, signal);
+    if (title.type === "tv") {
+      for (const choice of sources.episodeChoices) {
+        yield allohaCandidate(title, null, choice);
+      }
+    } else {
+      for (const voice of sources.voices) yield allohaCandidate(title, voice);
     }
   }
   async function resolve(candidate, { signal } = {}) {
     const alloha = candidate?.providerId === "habster:alloha";
     if (!["habster:collaps", "habster:alloha"].includes(candidate?.providerId) || candidate.catalogSource !== "habster"
-      || (alloha ? !/^(default|alloha:\d{1,8})$/.test(candidate.voiceId) || candidate.ref?.voiceId !== candidate.voiceId : candidate.voiceId !== "multi")) {
+      || (alloha ? !/^(default|alloha:\d{1,8}|alloha-translation:[1-9]\d{0,7})$/.test(candidate.voiceId) || candidate.ref?.voiceId !== candidate.voiceId : candidate.voiceId !== "multi")) {
       throw new Error("Invalid Habster source reference");
     }
     validateTitle(candidate.ref);
-    if ((candidate.ref.type === "tv" && (candidate.season !== candidate.ref.season || candidate.episode !== candidate.ref.episode))
+    if ((candidate.ref.type === "tv" && (candidate.season !== candidate.ref.season || candidate.episode !== candidate.ref.episode
+      || !Number.isSafeInteger(candidate.ref.season) || !Number.isSafeInteger(candidate.ref.episode)))
       || (candidate.ref.type === "movie" && (candidate.season != null || candidate.episode != null))) throw new Error("Invalid Habster episode reference");
     if (alloha) {
-      if (candidate.ref.type !== "movie") throw new Error("Habster Alloha needs an exact movie reference");
-      const sources = await loadAlloha(candidate.ref.kinopoiskId, signal);
-      const voice = candidate.voiceId === "default" ? sources.primary : sources.voices.find((item) => `alloha:${item.id}` === candidate.voiceId);
+      const translationCandidate = candidate.ref.type === "tv" && /^alloha-translation:[1-9]\d{0,7}$/.test(candidate.voiceId);
+      if (candidate.ref.type === "tv" && candidate.voiceId !== "default" && !translationCandidate) throw new Error("Habster Alloha needs an exact series translation");
+      const translationId = translationCandidate ? candidate.voiceId.slice("alloha-translation:".length) : null;
+      if (translationCandidate && candidate.ref.translationId !== translationId) throw new Error("Invalid Habster series translation reference");
+      if (!translationCandidate && candidate.ref.translationId != null) throw new Error("Invalid Habster series translation reference");
+      const sources = await loadAlloha(candidate.ref, signal, translationId);
+      const voice = candidate.voiceId === "default" || translationCandidate ? sources.primary
+        : sources.voices.find((item) => `alloha:${item.id}` === candidate.voiceId);
       if (!voice) throw new Error("Habster Alloha did not return the requested audio track");
       const qualities = voice.qualities.map((quality) => ({ label: quality.label, height: quality.height, type: "hls",
         url: quality.urls[0], headers: sources.headers, publicOnly: true }));

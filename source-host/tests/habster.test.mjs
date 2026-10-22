@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Readable } from "node:stream";
 import { gzipSync } from "node:zlib";
-import { createHabsterProvider, parseHabsterEmbed, parseHabsterAllohaEmbed, parseHabsterPlayer } from "../providers/habster.mjs";
+import { createHabsterProvider, parseHabsterEmbed, parseHabsterAllohaEmbed, parseHabsterPlayer, selectAllohaEpisodeVoice } from "../providers/habster.mjs";
 
 const movie = { type: "movie", kinopoiskId: 328, title: "Movie", catalogSource: "habster" };
 const page = (id = 328, origin = "https://api.initem.ws") => `var KP_ID='${id}';var VARIYT_SRC='${origin}/embed/kp/'+KP_ID+'?host=partner.test&token=public-fixture';`;
@@ -133,8 +133,10 @@ test("Habster TV discovery preserves the exact episode in sealed references and 
     }
     return response(`makePlayer({playlist:{seasons:${JSON.stringify([{ season: 2, episodes: [{ episode: 3, ...source }] }])}}});`);
   } } });
-  const [candidate] = await collect(adapter.discover(title));
+  const [alloha, candidate] = await collect(adapter.discover(title), 2);
+  assert.deepEqual(alloha.ref, { type: "tv", kinopoiskId: 328, voiceId: "default", season: 2, episode: 3 });
   assert.deepEqual(candidate.ref, { type: "tv", kinopoiskId: 328, season: 2, episode: 3 });
+  assert.equal(candidate.providerId, "habster:collaps");
   assert.equal((await adapter.resolve(candidate)).qualities[0].url, source.hls);
   assert.deepEqual((await adapter.resolve(candidate)).audioNames, source.audio.names);
   await assert.rejects(adapter.resolve({ ...candidate, ref: candidate.ref, episode: 4 }), /episode reference/);
@@ -167,7 +169,7 @@ test("Habster maps missing KP only through one exact title/year/type search and 
       ? { results: [{ ...card, category: "series" }] } : { ...info, type: "MINI_SERIES" }));
   } } });
   const [episode] = await collect(tv.discover(tvTitle));
-  assert.deepEqual(episode.ref, { type: "tv", kinopoiskId: 5494049, season: 2, episode: 3 });
+  assert.deepEqual(episode.ref, { type: "tv", kinopoiskId: 5494049, voiceId: "default", season: 2, episode: 3 });
 });
 
 test("Habster refuses ambiguous titles, years, categories, IDs and mismatched info/IMDb without guessing", async () => {
@@ -236,7 +238,7 @@ function allohaFixtureTransport({ bundle = "/build/app.v1.js", guard = "g".repea
       if (url.pathname === "/") {
         const id = Number(url.searchParams.get("kp"));
         const currentBundle = typeof bundle === "function" ? bundle() : bundle;
-        return response(`<meta name="viewporti" content="abcdefghi"><script src="${currentBundle}"></script><script>fileList = JSON.parse('{"active":{"id":${id + 1000}}}')</script>`);
+        return response(`<meta name="viewporti" content="abcdefghi"><script src="${currentBundle}"></script><script>fileList = JSON.parse('{"type":"movie","active":{"id":${id + 1000}}}')</script>`);
       }
       if (url.pathname.startsWith("/build/")) {
         stats.bundles++;
@@ -276,6 +278,16 @@ test("Habster Alloha reads a matching anonymous page literal and rejects injecte
   assert.throws(() => parseHabsterAllohaEmbed(allohaPage().replace(" + KP_ID", " + KP_ID + '#evil'"), 328), /unavailable/);
 });
 
+test("Alloha serial translation matching fails closed except for the observed anonymous numeric singleton", () => {
+  const choice = { name: "Red Head Sound" };
+  const rhs = { id: "2", name: "(Russian) Red Head Sound" };
+  assert.equal(selectAllohaEpisodeVoice([{ id: "1", name: "1" }, rhs], choice), rhs);
+  assert.equal(selectAllohaEpisodeVoice([rhs], { name: "Дубляж Red Head Sound" }), rhs);
+  assert.deepEqual(selectAllohaEpisodeVoice([{ id: "1", name: "1" }], { name: "Coldfilm" }), { id: "1", name: "1" });
+  assert.throws(() => selectAllohaEpisodeVoice([{ id: "1", name: "Original" }], choice), /selected series translation/);
+  assert.throws(() => selectAllohaEpisodeVoice([rhs, { id: "3", name: "Red Head Sound" }], choice), /selected series translation/);
+});
+
 test("Habster exposes native Alloha qualities and independent voice candidates from a shared anonymous session", async () => {
   let calls = 0, playbackCalls = 0;
   const data = { hlsSource: [
@@ -286,7 +298,7 @@ test("Habster exposes native Alloha qualities and independent voice candidates f
     const url = new URL(raw);
     assert.equal(options.publicOnly, true);
     if (url.origin === "https://habster.sbs") { calls++; return response(allohaPage().replace("public-fixture", `public-fixture-${calls}`)); }
-    if (url.pathname === "/") return response(`<meta name="viewporti" content="abcdefghi"><script src="/build/app.fixture.js"></script><script>fileList = JSON.parse('{"active":{"id":123}}')</script>`);
+    if (url.pathname === "/") return response(`<meta name="viewporti" content="abcdefghi"><script src="/build/app.fixture.js"></script><script>fileList = JSON.parse('{"type":"movie","active":{"id":123}}')</script>`);
     if (url.pathname === "/build/app.fixture.js") return response(`return r['a'](1,'${"x".repeat(380)}')`);
     assert.equal(url.pathname, "/bnsi/movies/123");
     assert.equal(options.method, "POST");
@@ -338,7 +350,72 @@ test("Habster exposes native Alloha qualities and independent voice candidates f
   await assert.rejects(adapter.resolve({ ...first, ref: first.ref, voiceId: "embedded" }), /Invalid Habster/);
   await assert.rejects(adapter.resolve({ ...first, ref: { ...first.ref, voiceId: "alloha:3" } }), /Invalid Habster/);
   await assert.rejects(adapter.resolve({ ...first, voiceId: "alloha:3", ref: { ...first.ref, voiceId: "alloha:3" } }), /requested audio/);
-  await assert.rejects(adapter.resolve({ ...first, ref: { ...first.ref, type: "tv", season: 1, episode: 1 }, season: 1, episode: 1 }), /exact movie/);
+  await assert.rejects(adapter.resolve({ ...first, voiceId: "alloha:3", ref: { ...first.ref, type: "tv", voiceId: "alloha:3", season: 1, episode: 1 }, season: 1, episode: 1 }), /exact series translation/);
+});
+
+test("Habster Alloha resolves the exact serial episode from the public episode map before using native HLS", async () => {
+  const id = 5512084;
+  const title = { type: "tv", kinopoiskId: id, title: "Reference series", season: 2, episode: 6, catalogSource: "habster" };
+  const fileList = { type: "serial", active: { id: 900, id_translation: 13, seasons: 2, episode: 6 }, translationList: [13, 234], all: {
+    1: { 1: { t234: { id: 101, id_translation: 234, seasons: 1, episode: 1, translation: "Dub", uhd: 1 } } },
+    2: { 6: {
+      t13: { id: 206, id_translation: 13, seasons: 2, episode: 6, translation: "Original", uhd: 0 },
+      t234: { id: 207, id_translation: 234, seasons: 2, episode: 6, translation: "Red Head Sound", uhd: 1 },
+    } },
+  } };
+  const media = { hlsSource: [{ audioId: "1", label: "Original", default: true,
+    quality: { "720": "https://cdn.test/720.m3u8", "2160": "https://cdn.test/4k.m3u8" } },
+  { audioId: "2", label: "(Russian) Red Head Sound", default: false,
+    quality: { "720": "https://cdn.test/rhs-720.m3u8", "2160": "https://cdn.test/rhs-4k.m3u8" } }], tracks: [],
+  pnr: "wss://befriend.stravers.live/ws/", pnk: "serial-session" };
+  const requests = [];
+  const adapter = createHabsterProvider({ allohaPlayback: async () => "serial-edge", transport: { async request(raw, options) {
+    const url = new URL(raw); requests.push({ url, options });
+    if (url.origin === "https://habster.sbs") {
+      assert.equal(url.pathname, `/series/${id}`);
+      return response(allohaPage(id));
+    }
+    if (url.pathname === "/") {
+      assert.equal(url.searchParams.get("kp"), String(id));
+      return response(`<meta name="viewporti" content="abcdefghi"><script src="/build/app.serial.js"></script><script>fileList = JSON.parse('${JSON.stringify(fileList)}')</script>`);
+    }
+    if (url.pathname === "/build/app.serial.js") return response(`return r['a'](1,'${"g".repeat(380)}')`);
+    if (url.pathname.startsWith("/bnsi/")) {
+      assert(["/bnsi/movies/206", "/bnsi/movies/207"].includes(url.pathname), "Alloha uses the exact selected episode/translation ID through its public movie resolver");
+      assert.equal(options.method, "POST");
+      const body = new URLSearchParams(options.body);
+      assert.equal(body.get("token"), "public-fixture");
+      assert.equal(body.get("av1"), "true");
+      return response(JSON.stringify(media));
+    }
+    throw new Error(`Unexpected Alloha URL: ${url.pathname}`);
+  } } });
+  const iterator = adapter.discover(title);
+  const candidate = (await iterator.next()).value;
+  assert.equal(candidate.providerId, "habster:alloha");
+  assert.deepEqual(candidate.ref, { type: "tv", kinopoiskId: id, voiceId: "default", season: 2, episode: 6 });
+  assert.equal(requests.length, 0, "the Alloha option appears without waiting on source metadata");
+  assert.equal((await iterator.next()).value.providerId, "habster:collaps");
+  const original = (await iterator.next()).value;
+  assert.deepEqual(original.ref, { type: "tv", kinopoiskId: id, voiceId: "alloha-translation:13", season: 2, episode: 6, translationId: "13" });
+  const redHeadSound = (await iterator.next()).value;
+  assert.equal(redHeadSound.voiceId, "alloha-translation:234", "episode-map translations remain independent choices");
+  assert.equal(redHeadSound.qualityHint, "До 4K");
+  assert.deepEqual(redHeadSound.ref, { type: "tv", kinopoiskId: id, voiceId: "alloha-translation:234", season: 2, episode: 6, translationId: "234" });
+  const result = await adapter.resolve(candidate);
+  assert.deepEqual(result.qualities.map(({ label, height }) => [label, height]), [["720p", 720], ["2160p", 2160]]);
+  assert.deepEqual(result.audioNames, ["Original"]);
+  assert(result.qualities.every((quality) => quality.publicOnly));
+  assert.equal(requests.filter(({ url }) => url.pathname.startsWith("/bnsi/")).length, 1);
+  const alternate = await adapter.resolve(redHeadSound);
+  assert.deepEqual(alternate.audioNames, ["(Russian) Red Head Sound"]);
+  assert(alternate.qualities.some((quality) => quality.height === 2160));
+  assert.equal(requests.filter(({ url }) => url.pathname.startsWith("/bnsi/")).length, 2, "translation IDs have separate cache entries and POSTs");
+  assert.deepEqual(requests.filter(({ url }) => url.pathname.startsWith("/bnsi/")).map(({ url }) => url.pathname).sort(), ["/bnsi/movies/206", "/bnsi/movies/207"]);
+
+  const wrongEpisode = { ...candidate, season: 1, ref: { ...candidate.ref, season: 1 } };
+  await assert.rejects(adapter.resolve(wrongEpisode), /requested series episode/);
+  assert.equal(requests.filter(({ url }) => url.pathname.startsWith("/bnsi/")).length, 2, "a missing episode never falls through to active.id or another episode");
 });
 
 test("Habster starts Alloha source lookup alongside the bundle and shares one guard fetch across titles", async () => {

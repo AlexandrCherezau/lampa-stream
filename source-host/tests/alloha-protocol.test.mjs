@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createAllohaBorth, parseAllohaBootstrap, parseAllohaGuard, parseAllohaSources, openAllohaPlayback } from "../providers/alloha-protocol.mjs";
+import { createAllohaBorth, parseAllohaBootstrap, parseAllohaSerialEpisode, parseAllohaGuard, parseAllohaSources, openAllohaPlayback } from "../providers/alloha-protocol.mjs";
 
-const bootstrap = `<meta name="viewporti" content="abcdefghi"><script src="/build/app.fixture.js"></script><script>fileList = JSON.parse('{"active":{"id":123}}')</script>`;
+const bootstrap = `<meta name="viewporti" content="abcdefghi"><script src="/build/app.fixture.js"></script><script>fileList = JSON.parse('{"type":"movie","active":{"id":123}}')</script>`;
 const data = { hlsSource: [{ audioId: "1", label: "Русский", quality: { "2160": "https://cdn.test/4k.m3u8 or https://backup.test/4k.m3u8", "720": "https://cdn.test/720.m3u8" } }], pnr: "wss://befriend.stravers.live/ws/", pnk: "anonymous-fixture" };
 
 test("Alloha safely reads the anonymous bootstrap, permutations and current public bundle guard", () => {
   assert.equal(createAllohaBorth("abcdefghi").split("|")[1], "edaficbgh");
   const parsed = parseAllohaBootstrap(bootstrap);
   assert.equal(parsed.movieId, "123");
+  assert.equal(parsed.type, "movie");
   assert.equal(parsed.bundleUrl, "https://befriend.stravers.live/build/app.fixture.js");
   assert.match(parsed.borth, /^[a-f0-9]{64}\|edaficbgh$/);
   const guard = `return r['a'](0,'${"x".repeat(380)}')`;
@@ -16,6 +17,34 @@ test("Alloha safely reads the anonymous bootstrap, permutations and current publ
   for (const html of [bootstrap.replace('content="abcdefghi"', 'content=""'), bootstrap.replace('"id":123', '"id":-1'), bootstrap.replace('/build/app.fixture.js', 'https://evil.test/build/app.fixture.js'), bootstrap.replace("JSON.parse('", "execute('")]) assert.throws(() => parseAllohaBootstrap(html));
   assert.throws(() => parseAllohaGuard("execute()"), /unavailable/);
   assert.throws(() => parseAllohaGuard(`${guard}; ${guard}`), /unavailable/);
+  const currentBundleShape = `var strings=['ordinary','${"y".repeat(380)}','player'];`;
+  assert.equal(parseAllohaGuard(currentBundleShape), "y".repeat(380), "the current bundle stores its guard in a string table");
+  assert.throws(() => parseAllohaGuard(`${currentBundleShape}var another='${"z".repeat(380)}'`), /unavailable/);
+});
+
+test("Alloha serial bootstrap selects only the requested episode and a matching available translation", () => {
+  const list = { type: "serial", active: { id: 206, id_translation: 13, seasons: 2, episode: 6 }, translationList: [13, 234], all: {
+    1: { 1: { t234: { id: 101, id_translation: 234, seasons: 1, episode: 1, translation: "Dub", uhd: 1 } } },
+    2: { 6: { t13: { id: 206, id_translation: 13, seasons: 2, episode: 6, translation: "Original", uhd: 0 } } },
+  } };
+  const html = bootstrap.replace('{"type":"movie","active":{"id":123}}', JSON.stringify(list));
+  const parsed = parseAllohaBootstrap(html);
+  assert.equal(parsed.type, "serial");
+  assert.equal(parseAllohaSerialEpisode(parsed, 2, 6).id, "206");
+  assert.equal(parseAllohaSerialEpisode(parsed, 2, 6).name, "Original");
+  assert.equal(parseAllohaSerialEpisode(parsed, 1, 1).id, "101");
+  assert.equal(parseAllohaSerialEpisode(parsed, 1, 1).uhd, true);
+  assert.equal(parseAllohaSerialEpisode(parsed, 1, 1, 234).translationId, "234");
+  assert.throws(() => parseAllohaSerialEpisode(parsed, 2, 6, 234), /matching series translation/);
+  assert.throws(() => parseAllohaSerialEpisode(parsed, 2, 1), /requested series episode/);
+  assert.throws(() => parseAllohaSerialEpisode(parsed, 0, 6), /exact series episode/);
+  const ambiguous = { ...parsed, active: {}, translationList: [], all: { 1: { 1: {
+    t234: { id: 101, id_translation: 234, seasons: 1, episode: 1, translation: "Dub" },
+    t13: { id: 102, id_translation: 13, seasons: 1, episode: 1, translation: "Original" },
+  } } } };
+  assert.throws(() => parseAllohaSerialEpisode(ambiguous, 1, 1), /matching series translation/);
+  const mismatch = { ...parsed, all: { 2: { 6: { t13: { id: 206, id_translation: 13, seasons: 1, episode: 6, translation: "Wrong" } } } } };
+  assert.throws(() => parseAllohaSerialEpisode(mismatch, 2, 6), /invalid series episode/);
 });
 
 test("Alloha retains all quality/voice ladders and rejects private protocol origins, unsafe media and ambiguous voice IDs", () => {

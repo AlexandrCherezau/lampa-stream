@@ -37,14 +37,44 @@ export function parseAllohaBootstrap(html) {
   let list; try { list = JSON.parse(raw); } catch { throw new Error("Alloha returned invalid movie data"); }
   const id = String(list?.active?.id ?? "");
   if (!/^[1-9]\d{0,15}$/.test(id) || !Number.isSafeInteger(Number(id))) throw new Error("Alloha returned invalid movie ID");
+  if (!['movie', 'serial'].includes(list.type)) throw new Error("Alloha returned an unsupported title type");
   const scripts = [...html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["']/gi)].map((match) => new URL(match[1], ORIGIN));
   const app = scripts.filter((url) => url.origin === ORIGIN && /^\/build\/app\.[a-z0-9]+\.js$/.test(url.pathname) && !url.username && !url.password && !url.hash);
   if (app.length !== 1) throw new Error("Alloha player protocol bundle is unavailable");
-  return { movieId: id, bundleUrl: app[0].href, borth: createAllohaBorth(viewport) };
+  return { movieId: id, type: list.type, active: list.active, all: list.all, translationList: list.translationList,
+    bundleUrl: app[0].href, borth: createAllohaBorth(viewport) };
+}
+
+export function parseAllohaSerialEpisode(bootstrap, season, episode, requestedTranslationId = null) {
+  if (bootstrap?.type !== 'serial' || !Number.isSafeInteger(season) || season < 1
+    || !Number.isSafeInteger(episode) || episode < 1) throw new Error("Alloha needs an exact series episode");
+  const rows = bootstrap.all?.[String(season)]?.[String(episode)];
+  if (!rows || typeof rows !== 'object' || Array.isArray(rows)) throw new Error("Alloha does not have the requested series episode");
+  const choices = Object.entries(rows).map(([key, item]) => {
+    const id = String(item?.id ?? "");
+    const translationId = String(item?.id_translation ?? "");
+    if (!/^t[1-9]\d{0,7}$/.test(key) || key !== `t${translationId}` || !/^[1-9]\d{0,7}$/.test(id)
+      || Number(item.seasons) !== season || Number(item.episode) !== episode
+      || typeof item.translation !== 'string' || !item.translation.trim() || item.translation.length > 300) {
+      throw new Error("Alloha returned invalid series episode data");
+    }
+    return { id, translationId, name: item.translation.trim(), uhd: item.uhd === 1 };
+  });
+  if (!choices.length) throw new Error("Alloha does not have the requested series episode");
+  const available = new Map(choices.map((choice) => [choice.translationId, choice]));
+  const activeTranslation = String(bootstrap.active?.id_translation ?? '');
+  const preferred = requestedTranslationId == null ? (available.get(activeTranslation)
+    || (Array.isArray(bootstrap.translationList) && bootstrap.translationList.map(String).map((id) => available.get(id)).find(Boolean))
+    || (choices.length === 1 ? choices[0] : null)) : available.get(String(requestedTranslationId));
+  if (!preferred) throw new Error("Alloha could not select a matching series translation");
+  return { ...preferred, choices };
 }
 
 export function parseAllohaGuard(bundle) {
-  const matches = [...bundle.matchAll(/return\s+\w+\['a'\]\([^;]{0,100},'([A-Za-z0-9]{256,1024})'\)/g)];
+  // Current public bundles keep the request guard as a long string-table entry;
+  // older bundles returned it inline. Treat both as data and require one unique
+  // candidate so unrelated bundle literals can never be guessed around.
+  const matches = [...bundle.matchAll(/["']([A-Za-z0-9]{256,1024})["']/g)];
   if (matches.length !== 1) throw new Error("Alloha player protocol guard is unavailable");
   return matches[0][1];
 }

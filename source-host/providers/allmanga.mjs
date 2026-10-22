@@ -3,13 +3,41 @@ import { createDecipheriv, createHmac, createHash, createCipheriv } from "node:c
 const SITE = "https://mkissa.to";
 const API = "https://api.mkissa.net";
 const CLOCK = "https://allanime.day";
-const BUILD_ID = "180";
+const BUILD_ID = "181";
 const EPOCH_MS = 604_800_000;
-// shortcut: build 180 public client constants; update this profile when the guarded site build changes.
-const BOOT_MASK = Buffer.from([210,95,113,21,228,205,125,137,27,125,1,230,205,68,37,183,104,115,209,103,115,34,26,42,21,184,251,96,0,206,55,176]);
-const BOOT_PREFIX = "NmmeXF:";
-const BOOT_JOIN = "+";
-const BOOT_PARTS = ["lane", "buildId", "host", "group", "epoch"];
+const EPOCH_GRACE_MS = 86_400_000;
+// Public build-181 profile statically extracted from the first-party client bundle.
+// Keep the fragments and derivation constants together: mkissa rotates them as one profile.
+// shortcut: this profile supports build 181, update it when the public client rotates.
+const CRYPTO_PROFILE = Object.freeze({
+  saltMul: 60,
+  saltAdd: 175,
+  fragMul: 44,
+  fragAdd: 1,
+  fragments: ["Yh7GkKY7p1E=", "GhmFaOUHEGk=", "prExpp5kt+4=", "FSm6Hdvb+S4="],
+  bootPrefix: "UZQjku7:",
+  bootJoin: ":",
+  bootParts: ["buildId", "group", "host", "epoch", "lane"],
+});
+function deriveMask(buildId = BUILD_ID) {
+  const text = String(buildId || "");
+  const seed = Buffer.alloc(32);
+  for (let index = 0; index < seed.length; index += 1) {
+    seed[index] = (text.charCodeAt(index % Math.max(text.length, 1)) || 0)
+      ^ ((index * CRYPTO_PROFILE.saltMul + CRYPTO_PROFILE.saltAdd) & 255);
+  }
+  const mask = Buffer.alloc(32);
+  for (let fragmentIndex = 0; fragmentIndex < CRYPTO_PROFILE.fragments.length; fragmentIndex += 1) {
+    const fragment = Buffer.from(CRYPTO_PROFILE.fragments[fragmentIndex], "base64");
+    for (let byteIndex = 0; byteIndex < 8; byteIndex += 1) {
+      const offset = fragmentIndex * 8 + byteIndex;
+      mask[offset] = fragment[byteIndex] ^ seed[offset]
+        ^ ((fragmentIndex * CRYPTO_PROFILE.fragMul + byteIndex * CRYPTO_PROFILE.fragAdd) & 255);
+    }
+  }
+  return mask;
+}
+const BOOT_MASK = deriveMask();
 const SEARCH_HASH = "8b319a0fda488e4319f1b6d99093ba12802f3fc039572f39bcc02d5f9b9d9b02";
 const EPISODE_HASH = "670bbf38d0868f446e2346c1e956ca2c40c416e733ca248fd54e04f1c8b99145";
 const LANE = "k7";
@@ -51,9 +79,9 @@ function bootToken({ buildId, epoch, group, host, lane }) {
   if (buildId !== BUILD_ID || !Number.isSafeInteger(epoch) || typeof group !== "string" || typeof host !== "string") {
     throw new Error("AllManga crypto profile is invalid or outdated");
   }
-  const first = createHmac("sha256", BOOT_MASK).update(`${BOOT_PREFIX}${buildId}`).digest();
+  const first = createHmac("sha256", BOOT_MASK).update(`${CRYPTO_PROFILE.bootPrefix}${buildId}`).digest();
   const fields = { buildId, group, host: host.replace(/^www\./i, "").toLowerCase(), epoch: String(epoch), lane: String(lane || "").toLowerCase() };
-  const input = BOOT_PARTS.map((part) => fields[part] ?? "").join(BOOT_JOIN);
+  const input = CRYPTO_PROFILE.bootParts.map((part) => fields[part] ?? "").join(CRYPTO_PROFILE.bootJoin);
   return createHmac("sha256", first).update(input).digest("hex");
 }
 
@@ -157,16 +185,27 @@ async function currentBuild(signal) {
   async function cryptoContext(buildId, signal) {
     const host = new URL(SITE).hostname;
     const group = "mkissa";
-    const epoch = Math.floor(Date.now() / EPOCH_MS);
+    const now = Date.now();
+    const epoch = Math.floor(now / EPOCH_MS);
+    const epochs = now - epoch * EPOCH_MS < EPOCH_GRACE_MS && epoch > 0
+      ? [epoch, epoch - 1] : [epoch];
     const url = new URL("/client-crypto/v1/bootstrap", API);
     url.searchParams.set("buildId", buildId);
     url.searchParams.set("k", LANE);
-    const headers = { referer: `${SITE}/`, origin: SITE, "x-build-id": buildId,
-      "x-aa-boot": bootToken({ buildId, epoch, group, host, lane: LANE }), accept: "application/json" };
-    const data = await readJson(transport, url.href, { signal, headers });
-    if (!Number.isSafeInteger(data?.epoch) || typeof data.partB !== "string") throw new Error("AllManga bootstrap response is invalid");
-    if (data.epoch !== epoch) throw new Error("AllManga crypto epoch changed during bootstrap; retry after refreshing the profile");
-    return { epoch: data.epoch, key: buildKey(data.partB) };
+    let lastError;
+    for (const requestedEpoch of epochs) {
+      const headers = { referer: `${SITE}/`, origin: SITE, "x-build-id": buildId,
+        "x-aa-boot": bootToken({ buildId, epoch: requestedEpoch, group, host, lane: LANE }), accept: "application/json" };
+      try {
+        const data = await readJson(transport, url.href, { signal, headers });
+        if (!Number.isSafeInteger(data?.epoch) || typeof data.partB !== "string") throw new Error("AllManga bootstrap response is invalid");
+        if (!epochs.includes(data.epoch)) throw new Error("AllManga returned a crypto epoch outside the current grace window");
+        return { epoch: data.epoch, key: buildKey(data.partB) };
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error("AllManga bootstrap failed");
   }
 
   async function* discover(title, { signal } = {}) {
@@ -202,7 +241,12 @@ async function currentBuild(signal) {
     const episodeResponse = await readJson(transport, apiUrl(query, { persistedQuery: { version: 1, sha256Hash: EPISODE_HASH }, aaReq, k: LANE }), {
       signal, headers: { referer: `${SITE}/`, origin: SITE, "x-build-id": buildId, accept: "application/json" },
     });
-    if (episodeResponse?.errors?.length) throw new Error("AllManga episode request failed");
+    if (episodeResponse?.errors?.length) {
+      const requiresChallenge = episodeResponse.errors.some((item) =>
+        /captcha|challenge/i.test(`${item?.message || ""} ${item?.extensions?.code || ""}`));
+      if (requiresChallenge) throw new Error("AllManga requires a site challenge before this episode can play");
+      throw new Error("AllManga episode request failed");
+    }
     const encrypted = episodeResponse?.data?.tobeparsed;
     const episode = encrypted ? decryptResponse(encrypted, crypto.key).episode : episodeResponse?.data?.episode;
     exactEpisode(episode, show, title, candidate);
@@ -235,4 +279,4 @@ async function currentBuild(signal) {
   return { discover, resolve };
 }
 
-export const allMangaProtocol = Object.freeze({ makeAaReq, decryptResponse, bootToken, decodeClockPath, exactShow });
+export const allMangaProtocol = Object.freeze({ makeAaReq, decryptResponse, bootToken, decodeClockPath, exactShow, deriveMask });

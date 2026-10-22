@@ -378,3 +378,35 @@ test("local server congestion and cold startup do not poison provider health", a
     session.stop();
   }
 });
+
+test("automatic source deadlines abort stalled providers and let the next provider start", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const calls = [];
+  const aborted = [];
+  const slow = deferred();
+  let state;
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  const session = createSourceSession({ publish: (value) => { state = value; },
+    discover: async (_title, { onEvent }) => ["a", "b", "c"].forEach((id) => onEvent("candidate", {
+      ...candidate(id, id, id), providerId: `deadline-${id}`,
+    })),
+    resolve: async (id, _quality, signal) => {
+      calls.push(id);
+      if (id === "c") return result("fast");
+      signal.addEventListener("abort", () => aborted.push(id), { once: true });
+      return slow.promise;
+    },
+  });
+  await session.start({ title: "Bounded sources" });
+  await flush();
+  assert.deepEqual(calls, ["a", "b"]);
+  t.mock.timers.tick(10_000);
+  await flush(); await flush();
+  assert.deepEqual(aborted, ["a", "b"]);
+  assert.deepEqual(calls, ["a", "b", "c"]);
+  assert.equal(state.balanser, "deadline-c");
+  slow.resolve(result("late"));
+  await flush();
+  assert.equal(state.balanser, "deadline-c");
+  session.stop();
+});

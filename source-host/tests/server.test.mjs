@@ -302,6 +302,31 @@ test("cold containers serve media immediately while metadata waits for the priva
   assert.equal((await (await fetch(app.base + "/healthz")).json()).engineReady, true);
 });
 
+test("cold engine resolves reserve capacity before waiting and release it after startup", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "source-resolve-ready-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const engineReadyFile = join(directory, "ready");
+  await writeFile(engineReadyFile, "ready");
+  const adapter = {
+    async *discover() { yield candidate(); },
+    async resolve() { return { qualities: [{ label: "720p", height: 720, url: "https://video.test/master.m3u8" }] }; },
+  };
+  const app = await start(adapter, makeMedia(), "", undefined, { engineReadyFile });
+  t.after(() => app.close());
+  const discovery = await post(app.base, "/v1/discover", { type: "movie", title: "Movie" });
+  const id = JSON.parse(/^data: (.+)$/m.exec((await discovery.text()).split("event: candidate\n")[1])[1]).id;
+  await rm(engineReadyFile);
+  const pending = Array.from({ length: 8 }, () => post(app.base, "/v1/resolve", { id }));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const busy = await fetch(app.base + "/v1/resolve", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id }), signal: AbortSignal.timeout(1_000) });
+  assert.equal(busy.status, 429);
+  assert.equal((await busy.json()).error, "BUSY");
+  await writeFile(engineReadyFile, "ready");
+  assert.deepEqual((await Promise.all(pending)).map((response) => response.status), Array(8).fill(200));
+  assert.equal((await post(app.base, "/v1/resolve", { id })).status, 200);
+});
+
 test("cold media waits for the engine when a provider owns its playlist endpoint", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "source-media-ready-"));
   t.after(() => rm(directory, { recursive: true, force: true }));

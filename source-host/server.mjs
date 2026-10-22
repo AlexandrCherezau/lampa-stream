@@ -269,11 +269,11 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         if (typeof body.id !== "string" || body.id.length > 24 * 1024) throw failure("Неверный источник");
         if (body.quality != null && (typeof body.quality !== "string" || body.quality.length > 40)) throw failure("Неверное качество");
         const candidate = readCandidate(body.id);
-        if (!["vi3000", "habster", "vidsrc", "allmanga"].includes(candidate.catalogSource)) await waitForEngine(controller.signal);
         if (resolutions >= 8) throw failure("Сервер занят, повторите запрос", 429, "BUSY");
         resolutions++;
         deadline = setTimeout(() => controller.abort(failure("Истекло время проверки", 504, "TIMEOUT")), candidate.providerId === "habster:alloha" ? 30_000 : candidate.catalogSource === "habster" ? 8_000 : RESOLVE_MS);
         try {
+          if (!["vi3000", "habster", "vidsrc", "allmanga"].includes(candidate.catalogSource)) await waitForEngine(controller.signal);
           const selectedAdapter = sourceAdapter(candidate.catalogSource);
           const resolved = await selectedAdapter.resolve(candidate, { signal: controller.signal });
           const qualities = resolved.qualities || [];
