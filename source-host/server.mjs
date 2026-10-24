@@ -8,6 +8,7 @@ import { createVi3000Provider } from "./providers/vi3000.mjs";
 import { createHabsterProvider } from "./providers/habster.mjs";
 import { createVidSrcProvider } from "./providers/vidsrc.mjs";
 import { createAllMangaProvider } from "./providers/allmanga.mjs";
+import { createKinoarcProvider } from "./providers/kinoarc.mjs";
 import { createTransport } from "./transport.mjs";
 import { createMedia } from "./media.mjs";
 
@@ -99,7 +100,7 @@ const publicCandidate = (candidate) => ({
   catalogSource: candidate.catalogSource,
 });
 
-export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "", secret, apiKey = "", publicOrigin = "", mediaRelayUrl = "", adapter, viAdapter, habsterAdapter, vidsrcAdapter, allmangaAdapter, media, transport } = {}) {
+export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "", secret, apiKey = "", publicOrigin = "", mediaRelayUrl = "", adapter, viAdapter, habsterAdapter, vidsrcAdapter, allmangaAdapter, kinoarcAdapter, media, transport } = {}) {
   if (!engineUrl && !adapter) throw new Error("SOURCE_ENGINE_URL is required");
   if (Buffer.byteLength(secret || "") < 32) throw new Error("SOURCE_HOST_SECRET must contain at least 32 bytes");
   if (mediaRelayUrl && (!apiKey || new URL(mediaRelayUrl).protocol !== "https:" || new URL(mediaRelayUrl).origin === publicOrigin)) throw new Error("Media relay needs a separate HTTPS origin and private API key");
@@ -112,7 +113,8 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
   habsterAdapter ||= createHabsterProvider({ transport: createTransport() });
   vidsrcAdapter ||= createVidSrcProvider({ transport: createTransport() });
   allmangaAdapter ||= createAllMangaProvider({ transport: createTransport() });
-  const sourceAdapter = (catalogSource) => catalogSource === "allmanga" ? allmangaAdapter : catalogSource === "vidsrc" ? vidsrcAdapter : catalogSource === "habster" ? habsterAdapter : catalogSource === "vi3000" ? viAdapter : adapter;
+  kinoarcAdapter ||= createKinoarcProvider({ transport: createTransport() });
+  const sourceAdapter = (catalogSource) => catalogSource === "kinoarc" ? kinoarcAdapter : catalogSource === "allmanga" ? allmangaAdapter : catalogSource === "vidsrc" ? vidsrcAdapter : catalogSource === "habster" ? habsterAdapter : catalogSource === "vi3000" ? viAdapter : adapter;
   async function* discoverSources(title, signal) {
     const producerController = new AbortController();
     const producerSignal = producerController.signal;
@@ -180,6 +182,9 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
     });
     if (title.tmdbId) launch(() => consume(vidsrcAdapter.discover(title, { signal: producerSignal }), enqueue), () => {
       enqueue({ providerId: "vidsrc", providerName: "VidSrc", error: "VidSrc unavailable" });
+    });
+    if (title.imdbId || title.tmdbId) launch(() => consume(kinoarcAdapter.discover(title, { signal: producerSignal }), enqueue), () => {
+      enqueue({ providerId: "kinoarc:collaps", providerName: "Kinoarc · Collaps", error: "Kinoarc unavailable" });
     });
     if (!needsHabsterMapping) startNative();
     producerSignal.addEventListener("abort", notify, { once: true });
@@ -333,7 +338,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
         resolutions++;
         deadline = setTimeout(() => controller.abort(failure("Истекло время проверки", 504, "TIMEOUT")), candidate.providerId === "habster:alloha" ? 30_000 : candidate.catalogSource === "habster" ? 8_000 : RESOLVE_MS);
         try {
-          if (!["vi3000", "habster", "vidsrc", "allmanga"].includes(candidate.catalogSource)) await waitForEngine(controller.signal);
+          if (!["vi3000", "habster", "vidsrc", "allmanga", "kinoarc"].includes(candidate.catalogSource)) await waitForEngine(controller.signal);
           const selectedAdapter = sourceAdapter(candidate.catalogSource);
           const resolved = await selectedAdapter.resolve(candidate, { signal: controller.signal });
           const qualities = resolved.qualities || [];
@@ -380,7 +385,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
           const providerId = candidate.catalogSource === "vi3000"
             ? /^vi3000:([a-z0-9_-]{1,64})$/.exec(candidate.providerId)?.[1] : candidate.providerId;
           // shortcut: vi3000 Filmix files return Worker 429, restore relay routing after verified playback.
-          const nodeOnly = ["vidsrc", "allmanga"].includes(candidate.catalogSource) || ["zetflixdb", "cdnvideohub"].includes(providerId)
+          const nodeOnly = ["vidsrc", "allmanga", "kinoarc"].includes(candidate.catalogSource) || ["zetflixdb", "cdnvideohub"].includes(providerId)
             || (providerId === "zetflix" && candidate.season == null && candidate.episode == null)
             || (providerId === "vkmovie" && probe.kind === "file")
             || (candidate.catalogSource === "vi3000" && providerId === "filmix" && probe.kind === "file")
@@ -389,7 +394,7 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
             url: media.url({ ...(quality === selected && probe.url ? { ...quality, url: String(probe.url), headers: probe.headers || quality.headers, headerOrigin: probe.headerOrigin } : quality), nodeOnly }),
           }));
           const subtitles = (resolved.subtitles || []).map((subtitle) => ({ label: subtitle.label, language: subtitle.language,
-            url: media.url(candidate.catalogSource === "habster" ? { ...subtitle, nodeOnly } : subtitle) }));
+            url: media.url(["habster", "kinoarc"].includes(candidate.catalogSource) ? { ...subtitle, nodeOnly } : subtitle) }));
           json(res, 200, {
             source: publicCandidate(candidate),
             qualities: variants,

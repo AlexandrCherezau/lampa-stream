@@ -14,7 +14,7 @@ const auth = { authorization: `Bearer ${apiKey}` };
 
 async function start(adapter, media, key = "", secret = "test-secret-that-is-long-enough-for-this-suite", options = {}) {
   const server = createSourceServer({ engineUrl: "http://127.0.0.1:29118/", secret, adapter, media, apiKey: key,
-    vidsrcAdapter: { async *discover() {} }, allmangaAdapter: { async *discover() {} }, ...options });
+    vidsrcAdapter: { async *discover() {} }, allmangaAdapter: { async *discover() {} }, kinoarcAdapter: { async *discover() {} }, ...options });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   return {
@@ -1077,7 +1077,7 @@ test("movie preparation warms only Habster metadata without probing video or sta
   assert.equal((await post(app.base, "/v1/discover", { type: "tv", title: "TV", season: 1, episode: 1, prepareOnly: true })).status, 400);
 });
 
-for (const [catalogSource, providerId, adapterName] of [["vidsrc", "vidsrc:pm", "vidsrcAdapter"], ["allmanga", "allmanga", "allmangaAdapter"]]) {
+for (const [catalogSource, providerId, adapterName] of [["vidsrc", "vidsrc:pm", "vidsrcAdapter"], ["allmanga", "allmanga", "allmangaAdapter"], ["kinoarc", "kinoarc:collaps", "kinoarcAdapter"]]) {
 test(`${catalogSource} sealed candidates resolve natively across instances while Lampac is cold`, async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "source-host-native-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -1092,7 +1092,8 @@ test(`${catalogSource} sealed candidates resolve natively across instances while
     },
     async resolve(value) {
       assert.equal(value.ref.tmdbId, 550);
-      return { qualities: [{ label: "Auto", type: "hls", url: "https://cdn.test/film.m3u8", publicOnly: true }], subtitles: [] };
+      return { qualities: [{ label: "Auto", type: "hls", url: "https://cdn.test/film.m3u8", publicOnly: true }],
+        subtitles: catalogSource === "kinoarc" ? [{ label: "Русские", url: "https://cdn.test/ru.vtt", publicOnly: true }] : [] };
     },
   };
   const signed = [];
@@ -1119,6 +1120,39 @@ test(`${catalogSource} sealed candidates resolve natively across instances while
     assert.equal(nativeCalls, 0);
     assert.equal(signed[0].publicOnly, true);
     assert.equal(signed[0].nodeOnly, true);
+    if (catalogSource === "kinoarc") {
+      assert.equal(signed[1].publicOnly, true);
+      assert.equal(signed[1].nodeOnly, true, "IP-bound Collaps subtitle traffic stays on the same Node relay");
+    }
   } finally { await second.close(); }
 });
 }
+
+test("Kinoarc IMDb-only discovery and native HLS resolution remain usable while Lampac is cold", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "kinoarc-cold-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  let nativeCalls = 0;
+  const app = await start({ async *discover() { nativeCalls++; } }, makeMedia(), "", undefined, {
+    engineReadyFile: join(directory, "ready"),
+    kinoarcAdapter: {
+      async *discover(title) {
+        assert.equal(title.imdbId, "tt31049299");
+        yield candidate({ providerId: "kinoarc:collaps", providerName: "Kinoarc · Collaps", catalogSource: "kinoarc", season: null, episode: null, ref: { type: "movie", imdbId: title.imdbId } });
+      },
+      async resolve(value) {
+        assert.equal(value.ref.imdbId, "tt31049299");
+        return { qualities: [{ label: "Auto", type: "hls", url: "https://cdn.test/movie.m3u8", publicOnly: true }], audioNames: ["Русский"] };
+      },
+    },
+  });
+  t.after(() => app.close());
+  const stream = sseReader((await post(app.base, "/v1/discover", { type: "movie", title: "Animals", imdbId: "tt31049299" })).body);
+  const frame = await stream.until("candidate", (value) => value.providerId === "kinoarc:collaps");
+  await stream.cancel();
+  const resolved = await fetch(`${app.base}/v1/resolve`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: frame.data.id }), signal: AbortSignal.timeout(1000) });
+  assert.equal(resolved.status, 200);
+  const data = await resolved.json();
+  assert.equal(data.kind, "hls");
+  assert.deepEqual(data.audioNames, ["Русский"]);
+  assert.equal(nativeCalls, 0);
+});
