@@ -478,6 +478,8 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     notePlaying: () => { confirmed = true; previous = null; emit({ switching: false }); },
     reportPlaybackFailure: () => {
       if (!active) return pending || !finished;
+      // Once frames have played, recovery must keep the viewer's source and dub.
+      if (confirmed) return false;
       failed.add(active.candidate.id);
       if (previous) {
         active = previous; previous = null; confirmed = true;

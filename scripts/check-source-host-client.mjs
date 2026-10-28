@@ -63,6 +63,46 @@ async function decoderFailureUsesSibling() {
   assert.equal(state.balanser, "beta");
 }
 
+async function confirmedPlaybackKeepsSource() {
+  let state;
+  const calls = [];
+  const session = createSourceSession({
+    publish: (value) => { state = value; },
+    discover: async (_title, { onEvent }) => {
+      onEvent("candidate", candidate("a"));
+      onEvent("candidate", candidate("b"));
+    },
+    resolve: async (id) => { calls.push(id); return result(`https://media.test/${id}.m3u8`); },
+  });
+  await session.start({ title: "Film" });
+  await tick();
+  session.notePlaying();
+  const playing = state.stream;
+  const beforeFailure = [...calls];
+  for (let i = 0; i < 3; i++) {
+    assert.equal(session.reportPlaybackFailure(), false, "a confirmed source must not auto-fail over mid-film");
+    await tick();
+    assert.equal(state.stream, playing);
+    assert.equal(state.balanser, "a");
+    assert.deepEqual(calls, beforeFailure, "playback failures must not resolve other providers after confirmation");
+  }
+  assert.equal(await session.selectBalanser("b"), true, "explicit source switching remains available");
+  assert.equal(state.balanser, "b");
+  assert.equal(session.reportPlaybackFailure(), true, "an unplayable manual replacement returns to the previous source");
+  assert.equal(state.balanser, "a");
+  assert.equal(session.reportPlaybackFailure(), false, "the restored confirmed source remains locked");
+  await session.selectBalanser("b");
+  session.notePlaying();
+  assert.equal(session.reportPlaybackFailure(), false);
+  assert.equal(state.balanser, "b", "a confirmed manual choice also stays selected");
+  await session.start({ title: "Next film" });
+  await tick();
+  assert.equal(session.reportPlaybackFailure(), true, "a new title resets confirmation for startup failover");
+  await tick();
+  assert.equal(state.balanser, "b");
+  session.stop();
+}
+
 async function delayedHigherQualityRequiresManualChoice() {
   const gate = deferred();
   const ready = deferred();
@@ -591,6 +631,7 @@ async function audioNamesFollowActiveStream() {
 await progressiveRecoveryWithState();
 await delayedHigherQualityRequiresManualChoice();
 await decoderFailureUsesSibling();
+await confirmedPlaybackKeepsSource();
 await failedVoiceKeepsOtherVoices();
 await fallbackRotatesProvidersAndStops();
 await manualFailureAndStaleRequests();

@@ -445,9 +445,6 @@ export default function OnlinePlayer({
   reportFleetFailureRef.current = isLampac ? lampac.reportPlaybackFailure : null;
   const noteFleetPlayingRef = useRef(null);
   noteFleetPlayingRef.current = isLampac ? lampac.notePlaying : null;
-  // Persist the exact clock when an exhausted HLS network retry hands playback
-  // to the next source. Keeping this before fleetFailover also makes the callback
-  // dependency explicit instead of reaching through a stale closure.
   const saveResumeTime = useCallback((t) => {
     try {
       const map = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
@@ -497,30 +494,19 @@ export default function OnlinePlayer({
   // Advance to the next fleet balancer when a stream that resolved fine won't
   // actually play. Returns true if it jumped (→ keep the player in loading), false
   // when the fleet is exhausted (→ let the caller settle into the error screen).
-  const fleetFailover = useCallback((preservePosition = false, position) => {
+  const fleetFailover = useCallback(() => {
     const fn = reportFleetFailureRef.current;
     if (!fn) return false;
-    const video = videoRef.current;
-    const previousTarget = resumeTargetRef.current;
-    const currentPosition = position ?? video?.currentTime;
-    const target = preservePosition && Number.isFinite(currentPosition) && currentPosition > 0
-      ? currentPosition : null;
-    if (target != null) {
-      saveResumeTime(target);
-      resumeTargetRef.current = target;
-    }
     if (fn()) {
       // A new descent is in flight: blank the dead stream and show loading rather
-      // than the terminal error screen. For a late network failure the saved
-      // target is applied by the next stream's normal resume path.
+      // than the terminal error screen.
       setStream(null);
       setError("");
       setState("loading");
       return true;
     }
-    if (target != null) resumeTargetRef.current = previousTarget;
     return false;
-  }, [saveResumeTime]);
+  }, []);
 
   // Mirror `levels` into a ref so the DASH/HLS quality-change listeners (closures
   // captured once at attach time) map the engine's level index to our UI index
@@ -1266,16 +1252,16 @@ export default function OnlinePlayer({
         if (!data?.fatal) return;
         errCountRef.current += 1;
         const attempts = errCountRef.current;
-        const giveUp = (why, preservePosition = false) => {
-          // hls.destroy() detaches the media element and may reset currentTime.
-          // Capture before teardown so a late network failover resumes accurately.
-          const position = preservePosition ? (resumeTargetRef.current ?? videoRef.current?.currentTime) : null;
+        const giveUp = (why) => {
+          // Save before teardown because hls.destroy() may reset currentTime.
+          const position = resumeTargetRef.current ?? videoRef.current?.currentTime;
+          if (fleetHasPlayedRef.current && Number.isFinite(position) && position > 0) {
+            saveResumeTime(position);
+            resumeTargetRef.current = position;
+          }
           try { hls.destroy(); } catch {} hlsRef.current = null;
-          // Fleet & not yet truly playing → walk to the next balancer; only when
-          // the pool is exhausted does the terminal error screen show. After
-          // confirmed playback, only exhausted HLS network retries may use the
-          // remaining source pool; decode errors keep their existing behavior.
-          if (isLampac && (!fleetPlayedRef.current || preservePosition) && fleetFailover(preservePosition, position)) return;
+          // Only a source that has never produced decoded playback may fail over.
+          if (isLampac && !fleetPlayedRef.current && fleetFailover()) return;
           setState("error"); setError("Поток прерван (CDN нестабилен). " + why);
         };
         // Fleet, nothing decoded yet: the byte-probe let this balancer through but
@@ -1301,11 +1287,9 @@ export default function OnlinePlayer({
           return;
         }
         try {
-          // HLS marks NETWORK_ERROR fatal only after its fragment retry policy is
-          // exhausted. On an owned source we already have alternatives, so don't
-          // repeat another four startLoad cycles after that fatal signal.
-          if (isLampac && data.type === Hls.ErrorTypes.NETWORK_ERROR) giveUp(data.details || data.type, true);
-          else if (data.type === Hls.ErrorTypes.NETWORK_ERROR && attempts <= 4) hls.startLoad();
+          // Keep retries on this source after playback has begun. A transient CDN
+          // error must not silently replace the stream the viewer chose.
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR && attempts <= 4) hls.startLoad();
           else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && attempts <= 4) hls.recoverMediaError();
           else giveUp(data.details || data.type);
         } catch {}
