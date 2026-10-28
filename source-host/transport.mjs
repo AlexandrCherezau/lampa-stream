@@ -7,6 +7,7 @@ import net from "node:net";
 const MAX_REDIRECTS = 5;
 const MAX_JSON_BYTES = 4 * 1024 * 1024;
 const MAX_PROXY_TOKEN = 48 * 1024;
+const MEDIA_RETRY_BACKOFF_MS = 200;
 const PROXY_HEADER_ALLOWLIST = new Set(["referer", "origin", "user-agent", "accept", "accept-language", "cookie", "authorizations", "accepts-controls"]);
 const ORIGIN_BOUND_HEADERS = new Set(["cookie", "authorizations", "accepts-controls", "x-player-key", "x-aa-boot", "x-build-id"]);
 const REQUEST_HEADER_ALLOWLIST = new Set([...PROXY_HEADER_ALLOWLIST, "range", "accept-encoding"]);
@@ -80,6 +81,33 @@ function abortError(signal) {
   return signal?.reason instanceof Error
     ? signal.reason
     : Object.assign(new Error("Request aborted"), { name: "AbortError", code: "ABORT_ERR" });
+}
+
+function mediaRetryDelay(response, remaining) {
+  const retryAfter = response?.headers?.["retry-after"];
+  if (retryAfter != null) {
+    const value = String(retryAfter).trim();
+    const seconds = /^\d+$/.test(value) ? Number(value) : NaN;
+    const date = Number.isFinite(seconds) ? Date.now() + seconds * 1000 : Date.parse(value);
+    const delay = Number.isFinite(seconds) ? seconds * 1000 : Number.isFinite(date) ? Math.max(0, date - Date.now()) : MEDIA_RETRY_BACKOFF_MS;
+    return delay < remaining ? delay : null;
+  }
+  return MEDIA_RETRY_BACKOFF_MS < remaining ? MEDIA_RETRY_BACKOFF_MS : null;
+}
+
+function waitForRetry(delay, signal) {
+  if (signal?.aborted) return Promise.reject(abortError(signal));
+  if (delay <= 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+    const timer = setTimeout(() => { cleanup(); resolve(); }, delay);
+    const onAbort = () => { clearTimeout(timer); cleanup(); reject(abortError(signal)); };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function retryableMediaError(error) {
+  return error?.name !== "AbortError" && (error?.code === "UPSTREAM_CONNECT_ERROR" || error?.code === "UPSTREAM_TIMEOUT");
 }
 
 async function lookupPublicHost(hostname, signal, timeout, lookup = dns.lookup) {
@@ -261,13 +289,14 @@ export function createTransport({ engineUrl, engineKey, lookup = dns.lookup, req
     return { kind: url.origin === trustedEngine ? "engine" : "direct", url: url.toString(), headers: providerHeaders, headerOrigin: url.origin };
   }
 
+  // Keep the existing opt-in so media callers retry once while JSON/provider calls remain unchanged.
   async function request(rawUrl, { headers = {}, method = "GET", body, signal, timeout = 15_000, retryNotFound = false, publicOnly = false } = {}) {
     if (body != null && ((typeof body !== "string" && !Buffer.isBuffer(body)) || Buffer.byteLength(body) > 64 * 1024
       || method.toUpperCase() !== "POST")) throw new TransportError("Invalid upstream POST body", { code: "BAD_BODY" });
     let { url, requestHeaders, providerHeaders, trustedEngine } = unwrapResource(rawUrl, headers, publicOnly);
     let deadline = Date.now() + timeout;
     let redirects = 0;
-    let notFoundRetries = 0;
+    let mediaRetries = 0;
     while (true) {
       if (signal?.aborted) throw abortError(signal);
       if (!publicOnly && url.origin === engineOrigin) {
@@ -298,11 +327,28 @@ export function createTransport({ engineUrl, engineKey, lookup = dns.lookup, req
         if (remaining <= 0) throw new TransportError("Upstream request timed out", { code: "UPSTREAM_TIMEOUT", status: 504 });
       }
       let response;
+      const attemptRemaining = deadline - Date.now();
+      const requestTimeout = retryNotFound === true && mediaRetries === 0
+        && body == null && (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD") && url.origin !== engineOrigin
+        ? Math.max(1, attemptRemaining - Math.min(1_000, attemptRemaining / 2)) : attemptRemaining;
       try {
-        response = await requestOnceImpl(url, { headers: requestHeaders, method, body, signal, timeout: deadline - Date.now(), addresses });
+        response = await requestOnceImpl(url, { headers: requestHeaders, method, body, signal, timeout: requestTimeout, addresses });
       } catch (cause) {
-        if (cause instanceof TransportError || cause.name === "AbortError") throw cause;
-        throw new TransportError("Upstream request failed", { code: "UPSTREAM_CONNECT_ERROR", cause });
+        if (cause.name === "AbortError" || signal?.aborted) throw cause.name === "AbortError" ? cause : abortError(signal);
+        const error = cause instanceof TransportError ? cause
+          : new TransportError("Upstream request failed", { code: "UPSTREAM_CONNECT_ERROR", cause });
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw new TransportError("Upstream request timed out", { code: "UPSTREAM_TIMEOUT", status: 504, cause: error });
+        if (retryNotFound === true && mediaRetries === 0 && (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD")
+          && body == null && url.origin !== engineOrigin && retryableMediaError(error)) {
+          const delay = mediaRetryDelay(null, remaining);
+          if (delay !== null && !signal?.aborted) {
+            mediaRetries++;
+            await waitForRetry(delay, signal);
+            continue;
+          }
+        }
+        throw error;
       }
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
@@ -328,11 +374,18 @@ export function createTransport({ engineUrl, engineKey, lookup = dns.lookup, req
         const status = response.statusCode;
         response.resume();
         if (signal?.aborted) throw abortError(signal);
-        if (retryNotFound === true && status === 404 && notFoundRetries === 0
-          && (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD")
-          && url.origin !== engineOrigin && !signal?.aborted) {
-          notFoundRetries++;
-          continue;
+        const retryableStatus = status === 404 || [429, 502, 503, 504].includes(status);
+        if (retryNotFound === true && retryableStatus && mediaRetries === 0
+          && body == null && (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD") && url.origin !== engineOrigin) {
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) throw new TransportError("Upstream request timed out", { code: "UPSTREAM_TIMEOUT", status: 504 });
+          const delay = status === 404 ? (MEDIA_RETRY_BACKOFF_MS < remaining ? MEDIA_RETRY_BACKOFF_MS : null)
+            : mediaRetryDelay(response, remaining);
+          if (delay !== null && !signal?.aborted) {
+            mediaRetries++;
+            await waitForRetry(delay, signal);
+            continue;
+          }
         }
         throw new TransportError(`Upstream returned HTTP ${status}`, { code: "UPSTREAM_HTTP_ERROR", status });
       }

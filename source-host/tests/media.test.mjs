@@ -199,10 +199,10 @@ test("transport retries one opted-in direct GET 404 at the same final URL only",
     const noRetry = createTransport({
       engineUrl: `${fixture.base}/`,
       lookup: async () => [{ address: "93.184.216.34", family: 4 }],
-      requestOnceImpl: async () => { attempts++; return fakeResponse("denied", url.startsWith("https:") ? 503 : 404); },
+      requestOnceImpl: async () => { attempts++; return fakeResponse("denied", 403); },
     });
     await assert.rejects(noRetry.request(url, { retryNotFound: true }), { code: "UPSTREAM_HTTP_ERROR" });
-    assert.equal(attempts, expectedCalls, "engine 404 and direct 503 are not retried");
+    assert.equal(attempts, expectedCalls, "403 responses are not retried");
   }
 
   let defaultOffCalls = 0;
@@ -218,9 +218,9 @@ test("transport retries one opted-in direct GET 404 at the same final URL only",
   const post = createTransport({
     engineUrl: `${fixture.base}/`,
     lookup: async () => [{ address: "93.184.216.34", family: 4 }],
-    requestOnceImpl: async () => { postCalls++; return fakeResponse("missing", 404); },
+    requestOnceImpl: async () => { postCalls++; return fakeResponse("temporary", 503); },
   });
-  await assert.rejects(post.request("https://cdn.example.test/post", { method: "POST", retryNotFound: true }), { status: 404 });
+  await assert.rejects(post.request("https://cdn.example.test/post", { method: "POST", retryNotFound: true }), { status: 503 });
   assert.equal(postCalls, 1, "non-GET/HEAD methods are never retried");
 
   let headCalls = 0;
@@ -258,12 +258,104 @@ test("transport retries one opted-in direct GET 404 at the same final URL only",
     lookup: async () => [{ address: "93.184.216.34", family: 4 }],
     requestOnceImpl: async (_url, options) => {
       deadlineCalls++;
-      await new Promise((resolve) => setTimeout(resolve, options.timeout + 5));
+      await new Promise((resolve) => setTimeout(resolve, options.timeout + 25));
       return fakeResponse("missing", 404);
     },
   });
   await assert.rejects(slow404.request("https://cdn.example.test/slow.ts", { timeout: 20, retryNotFound: true }), { code: "UPSTREAM_TIMEOUT", status: 504 });
   assert.equal(deadlineCalls, 1, "the retry cannot extend the original request deadline");
+});
+
+test("opted-in media requests retry transient CDN status once at the same final URL", async (t) => {
+  const fixture = await startServer();
+  t.after(() => closeServer(fixture.server));
+  for (const status of [429, 502, 503, 504]) {
+    const calls = [];
+    const transport = createTransport({
+      engineUrl: `${fixture.base}/`,
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      requestOnceImpl: async (url, options) => {
+        calls.push({ url: url.href, method: options.method, headers: { ...options.headers } });
+        return calls.length === 1 ? fakeResponse("temporary", status, { "retry-after": "0" })
+          : fakeResponse("segment", 200, { "content-type": "video/mp2t" });
+      },
+    });
+    const result = await transport.request("https://cdn.example.test/segment.ts", {
+      headers: { range: "bytes=0-99", referer: "https://provider.example/watch" }, retryNotFound: true,
+    });
+    assert.equal(result.response.statusCode, 200, `HTTP ${status} should retry once`);
+    assert.deepEqual(calls, [
+      { url: "https://cdn.example.test/segment.ts", method: "GET", headers: { range: "bytes=0-99", referer: "https://provider.example/watch" } },
+      { url: "https://cdn.example.test/segment.ts", method: "GET", headers: { range: "bytes=0-99", referer: "https://provider.example/watch" } },
+    ]);
+    result.response.resume();
+  }
+
+  let combinedAttempts = 0;
+  const combinedBudget = createTransport({
+    engineUrl: `${fixture.base}/`,
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async () => fakeResponse("temporary", ++combinedAttempts === 1 ? 404 : 503, { "retry-after": "0" }),
+  });
+  await assert.rejects(combinedBudget.request("https://cdn.example.test/segment.ts", { retryNotFound: true }), { status: 503 });
+  assert.equal(combinedAttempts, 2, "404 and transient-status retries share one attempt budget");
+});
+
+test("opted-in media retry respects Retry-After, one shared attempt, and abort", async () => {
+  let longWaitCalls = 0;
+  const longWait = createTransport({
+    engineUrl: "https://engine.example/",
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async () => { longWaitCalls++; return fakeResponse("busy", 503, { "retry-after": "60" }); },
+  });
+  await assert.rejects(longWait.request("https://cdn.example.test/segment.ts", { timeout: 40, retryNotFound: true }),
+    (error) => error.code === "UPSTREAM_HTTP_ERROR" && error.status === 503);
+  assert.equal(longWaitCalls, 1, "Retry-After beyond the total request deadline is surfaced immediately");
+
+  const aborted = new AbortController();
+  let abortedCalls = 0;
+  const abortAfter503 = createTransport({
+    engineUrl: "https://engine.example/",
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async () => { abortedCalls++; aborted.abort(); return fakeResponse("busy", 503); },
+  });
+  await assert.rejects(abortAfter503.request("https://cdn.example.test/segment.ts", { signal: aborted.signal, retryNotFound: true }), { name: "AbortError" });
+  assert.equal(abortedCalls, 1, "an aborted request never starts its retry");
+});
+
+test("opted-in media requests retry a pre-header connection reset once", async () => {
+  let attempts = 0;
+  const transport = createTransport({
+    engineUrl: "https://engine.example/",
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async () => {
+      attempts++;
+      if (attempts === 1) throw Object.assign(new Error("reset"), { code: "ECONNRESET" });
+      return fakeResponse("segment", 200, { "content-type": "video/mp2t" });
+    },
+  });
+  const result = await transport.request("https://cdn.example.test/segment.ts", { retryNotFound: true });
+  assert.equal(result.response.statusCode, 200);
+  assert.equal(attempts, 2);
+  result.response.resume();
+
+  let timeoutAttempts = 0;
+  const timedOutConnect = createTransport({
+    engineUrl: "https://engine.example/",
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+    requestOnceImpl: async (_url, options) => {
+      timeoutAttempts++;
+      if (timeoutAttempts === 1) {
+        await new Promise((resolve) => setTimeout(resolve, options.timeout));
+        throw Object.assign(new Error("connect timeout"), { code: "ETIMEDOUT" });
+      }
+      return fakeResponse("segment", 200, { "content-type": "video/mp2t" });
+    },
+  });
+  const afterTimeout = await timedOutConnect.request("https://cdn.example.test/slow-connect.ts", { timeout: 1_000, retryNotFound: true });
+  assert.equal(afterTimeout.response.statusCode, 200);
+  assert.equal(timeoutAttempts, 2, "a pre-header connection timeout may use the single reserved retry window");
+  afterTimeout.response.resume();
 });
 
 test("media opts probe and playback into bounded direct-404 retry before responding", async (t) => {

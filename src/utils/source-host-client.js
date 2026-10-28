@@ -6,6 +6,8 @@ const MAX_PREPARED_SOURCES = 4;
 const SOURCE_PREFERENCE_HEADSTART_MS = 1_500;
 const AUTO_RESOLVE_TIMEOUT_MS = 10_000;
 const MAX_AUTO_RESOLVES = 2;
+const REFRESH_TIMEOUT_MS = 20_000;
+const MAX_AUTO_REFRESHES = 2;
 const PROVIDER_COOLDOWN_MS = 30_000;
 const preparedSources = new Map();
 const providerCooldowns = new Map();
@@ -196,6 +198,8 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   let generation = 0;
   let discovery;
   let resolving;
+  let refreshing;
+  let refreshAttempts = 0;
   let pending = false;
   let finished = false;
   let candidates = [];
@@ -344,8 +348,93 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     if (!candidates.some((candidate) => candidate.id === preparedFallbackCandidate.id)) candidates.push(preparedFallbackCandidate);
     preparedFallbackQueued = true;
   };
+  const cancelRefresh = () => {
+    refreshing?.controller.abort();
+    refreshing = null;
+  };
+  function refreshCurrent() {
+    if (refreshing) return refreshing.promise;
+    if (resolving) return Promise.resolve(undefined);
+    if (!active || !confirmed || refreshAttempts >= MAX_AUTO_REFRESHES) return Promise.resolve(false);
+    const current = active;
+    const controller = new AbortController();
+    const token = generation;
+    const epoch = selectionEpoch;
+    const attempt = { controller };
+    refreshing = attempt;
+    refreshAttempts++;
+    let timedOut = false;
+    let search;
+    let onAbort;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort(new Error("Истекло время восстановления источника"));
+    }, REFRESH_TIMEOUT_MS);
+    const stale = () => token !== generation || epoch !== selectionEpoch || active !== current || refreshing !== attempt;
+    const quality = current.result.selected?.label;
+    const work = async () => {
+      let candidate = current.candidate;
+      let result;
+      try { result = await resolve(candidate.id, quality, controller.signal); }
+      catch (error) {
+        if (controller.signal.aborted || (error.code !== "SOURCE_EXPIRED" && error.status !== 410)) throw error;
+        // Renew only this exact dub/episode; discovery must not substitute a sibling.
+        search = new AbortController();
+        candidate = await new Promise((accept, reject) => {
+          let found;
+          Promise.resolve(discover(titleForSession, {
+            signal: AbortSignal.any([controller.signal, search.signal]),
+            onEvent: (name, value) => {
+              if (name !== "candidate" || found || controller.signal.aborted
+                || !matchesSourcePreference(value, current.candidate)
+                || stableLabel(value.voiceName) !== stableLabel(current.candidate.voiceName)
+                || (value.season ?? null) !== (current.candidate.season ?? null)
+                || (value.episode ?? null) !== (current.candidate.episode ?? null)) return;
+              found = value;
+              accept(value);
+              search.abort();
+            },
+          })).then(() => { if (!found) reject(new Error("Выбранная озвучка больше недоступна")); }, reject);
+        });
+        result = await resolve(candidate.id, quality, controller.signal);
+      }
+      return { candidate, result };
+    };
+    emit({ switching: true, sourceError: null });
+    attempt.promise = (async () => {
+      try {
+        const aborted = new Promise((_accept, reject) => {
+          onAbort = () => reject(controller.signal.reason);
+          controller.signal.addEventListener("abort", onAbort, { once: true });
+        });
+        const { candidate, result } = await Promise.race([work(), aborted]);
+        if (stale() || controller.signal.aborted) return undefined;
+        resolvedStream(result);
+        if (candidate.id !== current.candidate.id) {
+          candidates = candidates.filter((value) => value.id !== current.candidate.id && value.id !== candidate.id);
+          candidates.push(candidate);
+        }
+        activate(candidate, result);
+        confirmed = true;
+        previous = null;
+        return true;
+      } catch (error) {
+        if (stale() || (controller.signal.aborted && !timedOut)) return undefined;
+        emit({ switching: false, sourceError: { message: error?.message || "Не удалось восстановить выбранный источник" } });
+        return false;
+      } finally {
+        clearTimeout(timer);
+        controller.signal.removeEventListener("abort", onAbort);
+        search?.abort();
+        if (refreshing === attempt) refreshing = null;
+      }
+    })();
+    return attempt.promise;
+  }
   async function choose(candidate, quality, manual) {
     if (manual) {
+      cancelRefresh();
+      refreshAttempts = 0;
       abortAutomaticAttempts();
       pending = false;
     }
@@ -385,6 +474,8 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   }
   function stop() {
     generation++;
+    cancelRefresh();
+    refreshAttempts = 0;
     clearTimeout(preferenceTimer);
     preferenceTimer = undefined;
     abortAutomaticAttempts();
@@ -458,7 +549,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     }
   }
   return {
-    start, stop,
+    start, stop, refreshCurrent,
     selectBalanser: (id, quality) => {
       const providerCandidates = candidates.filter((value) => value.providerId === id);
       const requestedHeight = advertisedHeight(quality);

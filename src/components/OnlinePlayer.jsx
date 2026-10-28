@@ -214,6 +214,7 @@ const providerQualityLabel = (source) => source.qualityHeight >= 2160 ? "4K" : `
 // disaster was ~63 s. ~2× the slowest legit start gives margin while killing the
 // stall fast. Only acts before first real playback (see the watchdog effect).
 const FLEET_STALL_MS = 7000;
+const PLAYBACK_STALL_MS = 20_000;
 const MIN_DISPLAY_MS = 250;
 
 // ── Load dash.js once from the local vendor bundle ───────────────────────────
@@ -316,6 +317,14 @@ export default function OnlinePlayer({
   // show an inline notice (a switch failed but the current media is fine).
   const hadPlayedRef = useRef(false);
   const userPausedRef = useRef(false);
+  const recoveryPendingRef = useRef(false);
+  const recoveryInFlightRef = useRef(false);
+  const recoveryFailedRef = useRef(false);
+  const recoveryQualityRef = useRef(null);
+  // Keep the engine ladder choice separate from Lampac's source-quality axis;
+  // both used to share checkpoint.preferences.quality and could overwrite one another.
+  const engineQualityPreferenceRef = useRef("auto");
+  const forceStreamReattachRef = useRef(false);
   // Genuine-playback signal for the fleet: `play`/`playing` fire the instant
   // hls.js calls v.play() on MANIFEST_PARSED — before a single segment has
   // decoded — so hadPlayedRef flips true even on a stream that immediately dies
@@ -356,6 +365,7 @@ export default function OnlinePlayer({
   const [buffered, setBuffered] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [waiting, setWaiting] = useState(false);
+  const [recovering, setRecovering] = useState(false);
 
   const [audioTracks, setAudioTracks] = useState([]);
   const [audioId, setAudioId] = useState(-1);
@@ -445,6 +455,8 @@ export default function OnlinePlayer({
   reportFleetFailureRef.current = isLampac ? lampac.reportPlaybackFailure : null;
   const noteFleetPlayingRef = useRef(null);
   noteFleetPlayingRef.current = isLampac ? lampac.notePlaying : null;
+  const refreshFleetSourceRef = useRef(null);
+  refreshFleetSourceRef.current = isLampac ? lampac.refreshCurrent : null;
   const saveResumeTime = useCallback((t) => {
     try {
       const map = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
@@ -498,6 +510,7 @@ export default function OnlinePlayer({
     const fn = reportFleetFailureRef.current;
     if (!fn) return false;
     if (fn()) {
+      forceStreamReattachRef.current = true;
       // A new descent is in flight: blank the dead stream and show loading rather
       // than the terminal error screen.
       setStream(null);
@@ -506,6 +519,55 @@ export default function OnlinePlayer({
       return true;
     }
     return false;
+  }, []);
+  const refreshCurrentSource = useCallback(async (previousEngine = engineRef.current) => {
+    const refresh = refreshFleetSourceRef.current;
+    if (!refresh) return false;
+    if (recoveryInFlightRef.current) return undefined;
+    const selection = sourceSelectionRef.current;
+    recoveryFailedRef.current = false;
+    forceStreamReattachRef.current = false;
+    recoveryQualityRef.current = previousEngine === "hls" || previousEngine === "dash"
+      ? engineQualityPreferenceRef.current : null;
+    recoveryInFlightRef.current = true;
+    recoveryPendingRef.current = true;
+    setRecovering(true);
+    setError("");
+    setState("loading");
+    try {
+      const result = await refresh();
+      // A manual picker choice made during recovery takes precedence.
+      if (selection !== sourceSelectionRef.current) {
+        recoveryPendingRef.current = false;
+        recoveryQualityRef.current = null;
+        setRecovering(false);
+        return undefined;
+      }
+      if (result === true) {
+        forceStreamReattachRef.current = true;
+      } else {
+        recoveryPendingRef.current = false;
+        recoveryQualityRef.current = null;
+        recoveryFailedRef.current = result === false;
+        if (result === false) {
+          setState("error");
+          setError("Воспроизведение остановилось. Источник не удалось восстановить.");
+        }
+      }
+      if (result !== true) setRecovering(false);
+      return result;
+    } catch {
+      if (selection !== sourceSelectionRef.current) return undefined;
+      recoveryPendingRef.current = false;
+      recoveryQualityRef.current = null;
+      recoveryFailedRef.current = true;
+      setRecovering(false);
+      setState("error");
+      setError("Воспроизведение остановилось. Источник не удалось восстановить.");
+      return false;
+    } finally {
+      recoveryInFlightRef.current = false;
+    }
   }, []);
 
   // Mirror `levels` into a ref so the DASH/HLS quality-change listeners (closures
@@ -643,6 +705,12 @@ export default function OnlinePlayer({
   useEffect(() => {
     if (!isLampac) return;
     const ls = lampac.stream;
+    if (ls && recoveryFailedRef.current) {
+      setSubtitles(lampac.subtitles || []);
+      setAudioNames(lampac.audioNames || []);
+      setMeta(lampac.meta || "");
+      return;
+    }
     if (!ls) {
       // No stream yet: loading unless the hook surfaced an inline error and we
       // have nothing playing. A dead balancer must NOT blank a running film.
@@ -668,9 +736,10 @@ export default function OnlinePlayer({
       loadingEnteredAtRef.current = 0;
       setError("");
       setState("ready");
+      const forceReattach = forceStreamReattachRef.current;
+      forceStreamReattachRef.current = false;
       setStream((previous) => {
-        const engineWasDestroyed = engineRef.current === "hls" && !hlsRef.current;
-        return !engineWasDestroyed && previous?.mp4 === ls.mp4 && previous?.hls === ls.hls && previous?.viaRelay === ls.viaRelay
+        return !forceReattach && previous?.mp4 === ls.mp4 && previous?.hls === ls.hls && previous?.viaRelay === ls.viaRelay
           ? previous : ls.mp4 ? { mp4: ls.mp4, viaRelay: ls.viaRelay } : { hls: ls.hls, viaRelay: ls.viaRelay };
       });
       setSubtitles(lampac.subtitles || []);
@@ -775,7 +844,7 @@ export default function OnlinePlayer({
     const onMeta = () => { metaSeen = true; };
     v.addEventListener("loadedmetadata", onMeta, { once: true });
     const t = setTimeout(() => {
-      if (fleetPlayedRef.current) return;              // genuine playback latched → healthy
+      if (fleetPlayedRef.current || userPausedRef.current) return; // paused viewers never trigger startup failover
       const rs = v.readyState;
       if (!metaSeen && rs >= 3 /* HAVE_FUTURE_DATA */) {
         // bytes flowing but moov still ahead — the previous watchdog couldn't see
@@ -799,6 +868,57 @@ export default function OnlinePlayer({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLampac, stream, fleetFailover]);
+
+  // A fatal engine error is not the only way a relay can stop: some stalls emit
+  // neither an error nor `waiting`. After real playback, refresh the SAME source
+  // only when its clock has stopped for 20s while the buffer is empty.
+  useEffect(() => {
+    if (!isLampac || !stream || switching) return;
+    const v = videoRef.current;
+    if (!v) return;
+    let lastTime = v.currentTime || 0;
+    let stalledSince = Date.now();
+    let finished = false;
+    const resetStall = (now = Date.now()) => {
+      lastTime = v.currentTime || 0;
+      stalledSince = now;
+    };
+    const checkStall = (now = Date.now()) => {
+      const time = v.currentTime || 0;
+      if (document.hidden || !fleetPlayedRef.current || v.paused || userPausedRef.current || v.ended || v.seeking
+        || v.readyState >= 3 || switching || recoveryInFlightRef.current || recoveryPendingRef.current) {
+        resetStall(now);
+        return;
+      }
+      if (time > lastTime + 0.1) {
+        resetStall(now);
+        return;
+      }
+      if (now - stalledSince < PLAYBACK_STALL_MS || finished) return;
+      finished = true;
+      const position = resumeTargetRef.current ?? time;
+      if (Number.isFinite(position) && position > 0) {
+        saveResumeTime(position);
+        resumeTargetRef.current = position;
+      }
+      refreshCurrentSource();
+    };
+    const onReset = () => resetStall();
+    const onVisibility = () => resetStall();
+    const timer = setInterval(() => checkStall(), 2500);
+    const resetEvents = ["pause", "play", "seeking", "seeked", "canplay", "playing", "loadeddata"];
+    for (const event of resetEvents) {
+      v.addEventListener(event, onReset);
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(timer);
+      for (const event of resetEvents) {
+        v.removeEventListener(event, onReset);
+      }
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [isLampac, stream, switching, saveResumeTime, refreshCurrentSource]);
 
   // ── AniList + AniSkip (intro/outro) for anime ───────────────────────────────
   useEffect(() => {
@@ -896,6 +1016,7 @@ export default function OnlinePlayer({
   // re-resolves into a new stream mid-episode; resetting here (instead of in the
   // attach effect) keeps that switch from re-firing autoplay over the credits.
   useEffect(() => {
+    sourceSelectionRef.current += 1;
     nextFiredRef.current = false;
     hadPlayedRef.current = false;
     setResolvedImdbId(item?.imdb_id || details?.imdb_id || details?.external_ids?.imdb_id || null);
@@ -904,6 +1025,10 @@ export default function OnlinePlayer({
     fleetPlayedRef.current = false;
     fleetHasPlayedRef.current = false;
     lastFleetTimeRef.current = null;
+    recoveryFailedRef.current = false;
+    recoveryQualityRef.current = null;
+    engineQualityPreferenceRef.current = "auto";
+    forceStreamReattachRef.current = false;
   }, [item?.id, item?.imdb_id, details?.imdb_id, details?.external_ids?.imdb_id, season, episode]);
 
   useEffect(() => () => {
@@ -917,7 +1042,9 @@ export default function OnlinePlayer({
     const v = videoRef.current;
     if (!v) return;
     destroyAll();
-    userPausedRef.current = false;
+    const recoveringStream = recoveryPendingRef.current;
+    if (!recoveringStream) userPausedRef.current = false;
+    recoveryPendingRef.current = false;
     resumeDoneRef.current = false; // allow one resume seek for this stream
     subsAddedRef.current = false;  // re-add subtitle <track>s for the new media
     setCurrent(0); setDuration(0); setBuffered(0);
@@ -957,20 +1084,31 @@ export default function OnlinePlayer({
       engineRef.current = "native";
       v.src = src;
       const onMeta = () => {
+        setRecovering(false);
         try { v.playbackRate = rateRef.current || 1; } catch {}
         reapplyVolume();
         resumeAt(v);
-        v.play().catch(() => {});
+        if (!userPausedRef.current) v.play().catch(() => {});
       };
       v.addEventListener("loadedmetadata", onMeta, { once: true });
       // A native media error can't recover in-place (no ABR ladder): surface it
       // so the Lampac path can show an inline notice and keep the picker up.
-      v.addEventListener("error", () => {
+      v.addEventListener("error", async () => {
         if (disposed) return;
         if (isLampac) {
           // Real frames decoded already → leave the player as-is (a mid-play CDN
           // drop is not a reason to blank a film the viewer was watching).
-          if (fleetPlayedRef.current) return;
+          if (fleetPlayedRef.current) {
+            const position = resumeTargetRef.current ?? v.currentTime;
+            if (Number.isFinite(position) && position > 0) {
+              saveResumeTime(position);
+              resumeTargetRef.current = position;
+            }
+            const refreshed = await refreshCurrentSource();
+            if (refreshed === true || refreshed === undefined) return;
+            setState("error"); setError("Поток прерван (CDN нестабилен)");
+            return;
+          }
           // Nothing truly played: a resolved MP4/MKV that won't decode → next
           // balancer (the byte-probe can't catch a bad container); only when the
           // pool is exhausted does the terminal error show.
@@ -992,7 +1130,7 @@ export default function OnlinePlayer({
         const player = dashjs.MediaPlayer().create();
         dashRef.current = player;
         engineRef.current = "dash";
-        player.initialize(v, stream.dash, true);
+        player.initialize(v, stream.dash, !userPausedRef.current);
         // ABR ON with a 1080p-class ceiling. Pinning the rung (the old
         // `autoSwitchBitrate:{video:false}` + setQualityFor) meant a bandwidth
         // dip could never downshift — the engine just rebuffered, which is the
@@ -1036,13 +1174,21 @@ export default function OnlinePlayer({
                 _qidx: b.qualityIndex,
               }));
             setLevels(lvls);
+            const preferredQuality = recoveringStream ? recoveryQualityRef.current : null;
+            const preferredIndex = preferredQuality && preferredQuality !== "auto"
+              ? lvls.findIndex((level) => level.label === preferredQuality) : -1;
+            if (preferredIndex >= 0) {
+              player.updateSettings({ streaming: { abr: { autoSwitchBitrate: { video: false }, maxBitrate: { video: Number.MAX_SAFE_INTEGER } } } });
+              player.setQualityFor("video", lvls[preferredIndex]._qidx);
+            }
             // Default: ABR (Auto) capped at the 12 Mbps ceiling from
             // updateSettings — the engine starts on a mid rung (fast first
             // frame) and adapts up/down with the network. Do NOT pin with
             // setQualityFor here: a pinned rung can't downshift on a dip.
             // The old default pinned 1080p (setQualityFor) — same quota
             // intent, but it traded every network hiccup for a rebuffer.
-            setCurrentLevel(-1);
+            setCurrentLevel(preferredIndex);
+            recoveryQualityRef.current = null;
           } catch {}
         };
 
@@ -1075,7 +1221,7 @@ export default function OnlinePlayer({
           try { v.playbackRate = rateRef.current || 1; } catch {}
           reapplyVolume();
           resumeAt(v);
-          v.play().catch(() => {});
+          if (!userPausedRef.current) v.play().catch(() => {});
           // F4: early `clearSwitching` on a fresh fleet attach. dash.js's STREAM_INITIALIZED
           // fires when the MPD parses — earlier than the first decoded frame that `playing`
           // would react to, and reliably (it is the engine's "we have a stream" signal,
@@ -1097,7 +1243,7 @@ export default function OnlinePlayer({
             if (idx >= 0) setCurrentLevel(idx);
           }
         });
-        player.on(EVENTS.ERROR, (e) => {
+        player.on(EVENTS.ERROR, async (e) => {
           // Network-class errors (a fragment/segment/key download that failed)
           // are transient by nature: the fleet CDN blips constantly and dash.js
           // retries them internally. The old code fell back to HLS on the FIRST
@@ -1129,6 +1275,17 @@ export default function OnlinePlayer({
           } else if (giveUp) {
             // No HLS ladder to fall back to: surface it, but only after the
             // retries are truly exhausted (transient errors never get here).
+            if (isLampac && fleetPlayedRef.current) {
+              const position = resumeTargetRef.current ?? v.currentTime;
+              if (Number.isFinite(position) && position > 0) {
+                saveResumeTime(position);
+                resumeTargetRef.current = position;
+              }
+              try { player.destroy(); } catch {}
+              dashRef.current = null; engineRef.current = null;
+              const refreshed = await refreshCurrentSource("dash");
+              if (refreshed === true || refreshed === undefined) return;
+            }
             setState("error");
             setError("Ошибка DASH: " + ((e && (e.error || e.message)) || "unknown"));
           }
@@ -1215,7 +1372,15 @@ export default function OnlinePlayer({
         // a bandwidth dip can't downshift, so the engine rebuffers instead
         // (the classic mid-film stall). ABR starts on a mid rung (fast first
         // frame) and adapts up/down with the network.
-        setCurrentLevel(-1);
+        const preferredQuality = recoveringStream ? recoveryQualityRef.current : null;
+        const preferredIndex = preferredQuality && preferredQuality !== "auto"
+          ? lvls.findIndex((level) => level.label === preferredQuality) : -1;
+        if (preferredIndex >= 0) {
+          const levelIndex = (hls.levels || []).findIndex((level) => level.height === lvls[preferredIndex].height);
+          if (levelIndex >= 0) hls.currentLevel = levelIndex;
+        }
+        setCurrentLevel(preferredIndex);
+        recoveryQualityRef.current = null;
         // Preserve the old default's quota intent: cap the AUTO rung at
         // 1080p so 4K (40+ Mbps) can't be auto-selected and burn the shared
         // Fast-Origin-Transfer budget. 4K stays one click away in the picker.
@@ -1231,7 +1396,7 @@ export default function OnlinePlayer({
         resumeAt(v);
         try { v.playbackRate = rateRef.current || 1; } catch {}
         reapplyVolume();
-        v.play().catch(() => {});
+        if (!userPausedRef.current) v.play().catch(() => {});
         // F4: see dash STREAM_INITIALIZED note above. MANIFEST_PARSED is hls.js's
         // "we have a stream" signal — fires as soon as the master m3u8 has been
         // parsed and the level list is available, well before the first frame
@@ -1251,12 +1416,13 @@ export default function OnlinePlayer({
         const pref = savedIdx >= 0 ? savedIdx : preferredRuTrackIndex(tracks, audioNames);
         if (pref >= 0) { try { hls.audioTrack = pref; setAudioId(pref); } catch {} }
       });
-      hls.on(Hls.Events.ERROR, (_e, data) => {
+      hls.on(Hls.Events.ERROR, async (_e, data) => {
         if (!data?.fatal) return;
         errCountRef.current += 1;
         const attempts = errCountRef.current;
-        const giveUp = (why) => {
+        const giveUp = async (why) => {
           // Save before teardown because hls.destroy() may reset currentTime.
+          const hadCurrentPlayback = fleetPlayedRef.current;
           const position = resumeTargetRef.current ?? videoRef.current?.currentTime;
           if (fleetHasPlayedRef.current && Number.isFinite(position) && position > 0) {
             saveResumeTime(position);
@@ -1265,6 +1431,10 @@ export default function OnlinePlayer({
           try { hls.destroy(); } catch {} hlsRef.current = null;
           // Only a source that has never produced decoded playback may fail over.
           if (isLampac && !fleetPlayedRef.current && fleetFailover()) return;
+          if (isLampac && hadCurrentPlayback) {
+            const refreshed = await refreshCurrentSource();
+            if (refreshed !== false) return;
+          }
           setState("error"); setError("Поток прерван (CDN нестабилен). " + why);
         };
         // Fleet, nothing decoded yet: the byte-probe let this balancer through but
@@ -1286,7 +1456,7 @@ export default function OnlinePlayer({
         if (isLampac && !fleetPlayedRef.current) {
           // The loader already made its one allowed initial retry. Calling
           // startLoad() here would restart that retry budget and delay failover.
-          giveUp(data.details || data.type);
+          await giveUp(data.details || data.type);
           return;
         }
         try {
@@ -1294,7 +1464,7 @@ export default function OnlinePlayer({
           // error must not silently replace the stream the viewer chose.
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR && attempts <= 4) hls.startLoad();
           else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && attempts <= 4) hls.recoverMediaError();
-          else giveUp(data.details || data.type);
+          else await giveUp(data.details || data.type);
         } catch {}
       });
     };
@@ -1470,7 +1640,7 @@ export default function OnlinePlayer({
     const onWaiting = () => setWaiting(true);
     // Playback actually running → clear the switch freeze even when no resume
     // seek fired (a fresh balancer/dub that starts at 0 emits no `seeked`).
-    const onPlaying = () => { setWaiting(false); hadPlayedRef.current = true; if (isLampac) lampac.clearSwitching(); };
+    const onPlaying = () => { setWaiting(false); setRecovering(false); hadPlayedRef.current = true; if (isLampac) lampac.clearSwitching(); };
     const onCanPlay = () => setWaiting(false);
     // `progress` fires on every appended chunk — one re-render per segment
     // during a buffer fill. Same rAF coalescing + no-op skip as onTime.
@@ -1487,6 +1657,7 @@ export default function OnlinePlayer({
       } catch {}
     };
     const onLoadedMeta = () => {
+      setRecovering(false);
       setDuration(v.duration || 0);
       // Safety net: re-apply the user's volume/mute here too, in case the
       // engine (dash.js/hls.js) or native <video> attaches the new source
@@ -2029,6 +2200,7 @@ export default function OnlinePlayer({
         if (origIdx >= 0) { hls.currentLevel = origIdx; setCurrentLevel(idx); }
       }
     }
+    engineQualityPreferenceRef.current = idx < 0 ? "auto" : String(levels[idx]?.label || "auto");
     persistCheckpoint(videoRef.current?.currentTime || resumeTargetRef.current || checkpointRef.current?.position || 0, { quality: idx < 0 ? "auto" : String(levels[idx]?.label || "") });
     setShowQuality(false);
   };
@@ -2050,6 +2222,7 @@ export default function OnlinePlayer({
   };
   const selectManualSource = (select) => {
     const selection = ++sourceSelectionRef.current;
+    recoveryFailedRef.current = false;
     if (sourceSeekTimerRef.current) { clearTimeout(sourceSeekTimerRef.current); sourceSeekTimerRef.current = null; }
     const time = preserveSwitchPosition();
     Promise.resolve(select()).then((resolved) => {
@@ -2060,6 +2233,7 @@ export default function OnlinePlayer({
         lampac.clearSwitching?.();
         return;
       }
+      forceStreamReattachRef.current = true;
       if (time == null) return;
       sourceSeekTimerRef.current = setTimeout(() => {
         if (selection === sourceSelectionRef.current && resumeTargetRef.current === time) resumeTargetRef.current = null;
@@ -2252,7 +2426,7 @@ export default function OnlinePlayer({
       {state === "loading" && hasMedia && (
         <div className="torrplayer-state-overlay">
           <div className="torrplayer-spinner" />
-          <span className="torrplayer-state-overlay-label">Переключаем источник…</span>
+          <span className="torrplayer-state-overlay-label">{recovering ? "Восстанавливаем поток…" : "Переключаем источник…"}</span>
         </div>
       )}
       {/* Fatal error over a live element: the viewer keeps the frame and the
