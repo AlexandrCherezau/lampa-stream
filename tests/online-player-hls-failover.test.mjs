@@ -9,6 +9,11 @@ const end = source.indexOf("\n      });\n    };", start);
 assert.ok(start >= 0 && end > start, "find the production HLS error callback");
 const callbackBody = source.slice(start + marker.length, end);
 const names = ["Hls", "data", "hls", "errCountRef", "isLampac", "fleetPlayedRef", "fleetHasPlayedRef", "fleetFailover", "setState", "setError", "hlsRef", "resumeTargetRef", "videoRef", "saveResumeTime"];
+const streamUpdaterMarker = "setStream((previous) => {";
+const updaterStart = source.indexOf(streamUpdaterMarker);
+const updaterEnd = source.indexOf("\n      });", updaterStart);
+assert.ok(updaterStart >= 0 && updaterEnd > updaterStart, "find the production stream identity updater");
+const streamUpdaterBody = source.slice(updaterStart + streamUpdaterMarker.length, updaterEnd);
 
 function createCallback({ played = false } = {}) {
   const calls = [];
@@ -72,4 +77,19 @@ test("late media decode error still invokes bounded in-place recovery", () => {
   const run = createCallback({ played: true });
   run.fire("mediaError");
   assert.deepEqual(run.calls, [["recoverMediaError"]]);
+});
+
+test("healthy same-URL discovery update preserves the current stream instance", () => {
+  const updater = new Function("previous", "ls", "engineRef", "hlsRef", streamUpdaterBody);
+  const previous = { hls: "https://cdn.test/video.m3u8", viaRelay: false };
+  const next = updater(previous, { hls: previous.hls, viaRelay: false }, { current: "hls" }, { current: {} });
+  assert.equal(next, previous);
+});
+
+test("same-URL manual retry after HLS teardown creates a fresh stream instance", () => {
+  const updater = new Function("previous", "ls", "engineRef", "hlsRef", streamUpdaterBody);
+  const previous = { hls: "https://cdn.test/video.m3u8", viaRelay: false };
+  const next = updater(previous, { hls: previous.hls, viaRelay: false }, { current: "hls" }, { current: null });
+  assert.notEqual(next, previous);
+  assert.equal(next.hls, previous.hls);
 });

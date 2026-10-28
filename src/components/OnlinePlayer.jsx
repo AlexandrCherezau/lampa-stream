@@ -668,8 +668,11 @@ export default function OnlinePlayer({
       loadingEnteredAtRef.current = 0;
       setError("");
       setState("ready");
-      setStream((previous) => previous?.mp4 === ls.mp4 && previous?.hls === ls.hls && previous?.viaRelay === ls.viaRelay
-        ? previous : ls.mp4 ? { mp4: ls.mp4, viaRelay: ls.viaRelay } : { hls: ls.hls, viaRelay: ls.viaRelay });
+      setStream((previous) => {
+        const engineWasDestroyed = engineRef.current === "hls" && !hlsRef.current;
+        return !engineWasDestroyed && previous?.mp4 === ls.mp4 && previous?.hls === ls.hls && previous?.viaRelay === ls.viaRelay
+          ? previous : ls.mp4 ? { mp4: ls.mp4, viaRelay: ls.viaRelay } : { hls: ls.hls, viaRelay: ls.viaRelay };
+      });
       setSubtitles(lampac.subtitles || []);
       setAudioNames(lampac.audioNames || []);
       setMeta(lampac.meta || "");
