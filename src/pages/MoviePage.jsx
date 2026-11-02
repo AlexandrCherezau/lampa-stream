@@ -225,6 +225,7 @@ export default function MoviePage({
 
   // Age rating
   const [rating, setRating] = useState({ cert: null, minAge: null });
+  const [ratingKnown, setRatingKnown] = useState(false);
   const ageLimitSetting = useMemo(() => getAgeLimitSetting(storage), []);
   const ratingCountry = useMemo(() => getRatingCountry(storage), []);
   const restricted = isRestricted(rating.minAge, ageLimitSetting);
@@ -296,7 +297,10 @@ export default function MoviePage({
   useEffect(() => {
     let mounted = true;
     fetchMovieRating(item.id, apiKey, ratingCountry).then((r) => {
-      if (mounted) setRating(r);
+      if (mounted) {
+        setRating(r);
+        setRatingKnown(true);
+      }
     });
     return () => {
       mounted = false;
@@ -757,13 +761,19 @@ export default function MoviePage({
     return new Date(d.release_date) > today;
   }, [d.release_date]);
   const canPrebuffer = webMode && Boolean(details) && !restricted && !isUnreleased
+    && (ageLimitSetting == null || ratingKnown)
     && (playerSource === "online" || playerSource === "lampac") && prebufferAllowed();
   const [prebufferIntent, setPrebufferIntent] = useState(false);
+  // Mount only after the chunk loaded: nothing above this page catches a failed
+  // lazy(), and lazy() would keep that failure for the viewer's later click.
+  const startPrebuffer = useCallback(() => {
+    loadOnlinePlayer().then(() => setPrebufferIntent(true), () => {});
+  }, []);
   useEffect(() => {
     if (!canPrebuffer) return;
-    const timer = setTimeout(() => setPrebufferIntent(true), PREBUFFER_DWELL_MS);
+    const timer = setTimeout(startPrebuffer, PREBUFFER_DWELL_MS);
     return () => clearTimeout(timer);
-  }, [canPrebuffer]);
+  }, [canPrebuffer, startPrebuffer]);
   const prebufferOnlinePlayer = canPrebuffer && prebufferIntent;
   const dropPrebuffer = useCallback(() => setPrebufferIntent(false), []);
   useEffect(() => {
@@ -905,11 +915,11 @@ export default function MoviePage({
                   className="btn btn-primary"
                   onPointerEnter={() => {
                     if (playerSource === "online" || playerSource === "lampac") void preloadOnlinePlayer();
-                    if (canPrebuffer) setPrebufferIntent(true);
+                    if (canPrebuffer) startPrebuffer();
                   }}
                   onFocus={() => {
                     if (playerSource === "online" || playerSource === "lampac") void preloadOnlinePlayer();
-                    if (canPrebuffer) setPrebufferIntent(true);
+                    if (canPrebuffer) startPrebuffer();
                   }}
                   onClick={handlePlay}
                 >

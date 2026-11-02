@@ -287,6 +287,70 @@ test("web movie detail does not prebuffer a glanced card or with data saver on",
   await expect(page.locator("video")).toHaveCount(0);
 });
 
+test("a failed player chunk leaves the movie page working and the click still plays", async ({ page }) => {
+  const counts = await prebufferRoutes(page);
+  const blockChunk = (route) => route.abort();
+  await page.route(/\/OnlinePlayer-[^/]*\.js/, blockChunk);
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  const watch = page.getByRole("button", { name: "Смотреть", exact: true });
+  await expect(watch).toBeVisible();
+  // Both hidden starts meet the failure: the dwell, then intent on the button.
+  await page.waitForTimeout(2000);
+  await expect(watch).toBeVisible();
+  await watch.hover();
+  await page.waitForTimeout(500);
+  await expect(watch).toBeVisible();
+  await expect(page.locator(".torrplayer-stage")).toHaveCount(0);
+  expect(counts.discover).toBe(0);
+  await page.unroute(/\/OnlinePlayer-[^/]*\.js/, blockChunk);
+  await watch.click();
+  const video = page.locator("video");
+  await expect.poll(() => video.evaluate((v) => !v.paused && v.currentTime > 0).catch(() => false), { timeout: 20_000 }).toBe(true);
+  expect(counts.discover).toBe(1);
+});
+
+const heldMovieRating = async (page, { ageLimit, certification }) => {
+  await page.addInitScript((limit) => localStorage.setItem("streambert_ageLimit", JSON.stringify(limit)), ageLimit);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  // Registered last, so it wins over the generic metadata route of the helper.
+  await page.route("**/api/tmdb/**/release_dates*", async (route) => {
+    await gate;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      results: [{ iso_3166_1: "US", release_dates: [{ type: 3, certification }] }],
+    }) });
+  });
+  return release;
+};
+
+test("a movie above the age limit starts nothing while its rating is still loading", async ({ page }) => {
+  const counts = await prebufferRoutes(page);
+  const releaseRating = await heldMovieRating(page, { ageLimit: 12, certification: "R" });
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  const watch = page.getByRole("button", { name: "Смотреть", exact: true });
+  await expect(watch).toBeVisible();
+  await watch.hover();
+  await page.waitForTimeout(1500);
+  expect(counts.discover).toBe(0);
+  await expect(page.locator(".torrplayer-stage")).toHaveCount(0);
+  releaseRating();
+  await expect(page.getByRole("button", { name: "Ограничен по возрасту" })).toBeVisible();
+  await page.waitForTimeout(1500);
+  expect(counts.discover).toBe(0);
+  await expect(page.locator(".torrplayer-stage")).toHaveCount(0);
+});
+
+test("a movie within the age limit prebuffers once its rating arrives", async ({ page }) => {
+  const counts = await prebufferRoutes(page);
+  const releaseRating = await heldMovieRating(page, { ageLimit: 18, certification: "PG-13" });
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("button", { name: "Смотреть", exact: true })).toBeVisible();
+  await page.waitForTimeout(1500);
+  expect(counts.discover).toBe(0);
+  releaseRating();
+  await expect.poll(() => counts.discover).toBe(1);
+});
+
 test("a source failing during hidden prebuffer falls over silently and the click plays the next one", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
