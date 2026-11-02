@@ -288,7 +288,7 @@ Runtime22af08d18571bc774b0d3a9be0a8db25d4311955 отправлен вorigin/main
 Post-deploy /tmp/lampa-postdeploy-smoke-report.json: HaikyuuS1E14 иFightClub × HabsterCollaps/Kinoarc =4 cases;8/8 повторных resolve одногоcandidate+Auto HTTP200,4/4 media roots200. Haikyuu variants200 и первые TS segment prefixes206; FightClub directplaylist checked rootprefix only. Discovery намеренно отменялось сразу после нужногоcandidate, complete:false не означает failure. Не заявлять decode/полный фильм по prefix smoke. Private deployment payload/manifest/result captures удалены после сверки; безопасные QA отчёты и screenshots остались /tmp.
 
 
-## Мгновенный старт фильма — 2 ноября 2026 (готово локально, не выложено)
+## Мгновенный старт фильма — 2 ноября 2026 (опубликовано)
 
 Цель: click «Смотреть» → первый кадр без ожидания. Продолжение незавершённого prebuffer из `lampa-stream-oct29-unpublished`, перенесённого на `876e4a5`.
 
@@ -298,4 +298,10 @@ Post-deploy /tmp/lampa-postdeploy-smoke-report.json: HaikyuuS1E14 иFightClub ×
 
 Ограничения: метаданные фильма в замере подставные, один тайтл, Safari/iOS/реальный телефон и полный фильм не проверялись. Трафик через relay: 1–14 МБ на каждую карточку, где пользователь задержался; следить за квотой Vercel после выкладки. Полный discover теперь идёт на каждую такую карточку и держит слот сервера до 50 с. Сериалы не ускорены: TVPage не передаёт prebuffer. Мобильная адаптация от 1 ноября лежит только в августовской копии `lampa-stream-vercel/src` и в этот репозиторий не перенесена.
 
-Следующий шаг: коммит, push и выкладка frontend по запросу пользователя; затем тот же замер на production и проверка на реальном телефоне.
+Публикация: frontend `dpl_9wJnhrfDD9zWAAgzPa7Z7mAyHPQo` READY, алиас https://lampa-stream-six.vercel.app подтверждён API; откат на `dpl_k2biW2hyJMBtGucysWumXjaAg78X`. Backend не менялся. Runtime-коммит `7a2da63` лежит только в локальной ветке `feat/video-prebuffer`: токен `gh` недействителен, GitHub-коннектора в сессии не было, в origin он НЕ отправлен.
+
+**Особенность этой выкладки.** CLI Vercel не залогинен, поэтому файлы шли через коннектор: 111 файлов базы `876e4a5` по SHA + `video-prebuffer.diff` + `vercel.json` с `buildCommand: git apply video-prebuffer.diff && npm run build`. Исходники в манифесте deployment поэтому старые, правка применяется при сборке; сверять манифест с коммитом по SHA для этой выкладки нельзя, четыре файла и vercel.json будут отличаться. Локально diff воспроизводит коммит побайтно, SHA diff на Vercel совпал (`1fc5fda…`). **Следующий deploy делать из ветки с этим коммитом:** выкладка из `main` без него откатит ускорение, а копировать `vercel.json` с `git apply` в репозиторий не нужно.
+
+Проверка после публикации: пробная сборка `dpl_E997qqm2paK8jz2TnsmJiGTaCk5H` (без ворот пароля, собрана из тех же файлов), настоящий API, метаданные TMDB подставные, Fight Club, 720p, 4 запуска: клик → движущийся кадр 261–263 мс; до клика paused/muted, буфер 8–12 с, история пуста; после клика volume 1, muted false, позиция 40,05 при resume; ошибок страницы нет. Чанки OnlinePlayer и MoviePage production и пробной сборки сверены после нормализации хешей имён. На самом production клик не проверялся: сайт закрыт паролем, вводить и обходить его агент не должен. Там подтверждены только HTTP 200 страниц, discover 200 и наличие правок в опубликованных чанках.
+
+Следующий шаг: отправить ветку в origin и влить в main, когда восстановится доступ к GitHub; проверить вход с паролем и реальный телефон; следить за квотой Vercel. Пробную сборку без пароля можно удалить в панели Vercel.
