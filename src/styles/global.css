@@ -6368,7 +6368,8 @@ h1, h2, h3 {
     inset: -11px -3px;
   }
   .carousel-dot { position: relative; }
-  .episode-desc-toggle { min-height: 44px; }
+  /* Only its own text: the rest of the card must keep starting the episode. */
+  .episode-desc-toggle { display: inline-flex; align-items: center; width: fit-content; min-height: 44px; margin-block: -8px; }
   .settings-content button.btn-ghost { min-height: 44px; }
   .settings-search-toggle { white-space: nowrap; min-width: 0; }
   .settings-search-toggle + * { flex-shrink: 0; }
