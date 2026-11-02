@@ -120,31 +120,31 @@ export default function SetupScreen({ onSave, onSkip }) {
         <div className="apikey-logo">
           <StreambertLogo />
         </div>
-        <div className="apikey-title">STREAMBERT</div>
+        <div className="apikey-title">LAMPA-STREAM</div>
         <p className="apikey-sub">
-          Enter your <strong>free</strong> TMDB{" "}
-          <strong>Read Access Token</strong> to get started.
+          Чтобы начать, введите <strong>бесплатный</strong> токен TMDB{" "}
+          <strong>Read Access Token</strong>.
           <br />
-          Go to{" "}
+          Откройте{" "}
           <ExternalLink
             className="apikey-link"
             href="https://www.themoviedb.org/settings/api"
           >
             themoviedb.org → Settings → API
           </ExternalLink>{" "}
-          and copy the <em>API Read Access Token</em> (the long JWT, not the
-          shorter API Key below).
+          и скопируйте <em>API Read Access Token</em>: это длинный токен, а не
+          короткий API Key под ним.
           <br />
           <ExternalLink
             className="apikey-link"
             href="https://github.com/truelockmc/streambert/blob/main/tmdb-tutorial.md"
           >
-            Step-by-step guide on how to get that Token
+            Пошаговая инструкция, как получить токен
           </ExternalLink>
         </p>
         <input
           className={`apikey-input${error ? " apikey-input-error" : ""}`}
-          placeholder="Paste your TMDB Read Access Token (eyJ...)..."
+          placeholder="Токен TMDB (eyJ…)"
           value={key}
           onChange={(e) => {
             setKey(e.target.value);
@@ -184,7 +184,7 @@ export default function SetupScreen({ onSave, onSkip }) {
             </>
           ) : (
             <>
-              <PlayIcon /> Let's go
+              <PlayIcon /> Начать
             </>
           )}
         </button>
@@ -207,7 +207,7 @@ export default function SetupScreen({ onSave, onSkip }) {
             onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text2)")}
             onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text3)")}
           >
-            Skip for now
+            Пока пропустить
           </button>
         )}
       </div>

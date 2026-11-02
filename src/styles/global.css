@@ -4642,7 +4642,7 @@ html[data-win-titlebar][data-maximized] .main {
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
 }
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-width: 1024px) and (max-height: 500px) and (pointer: coarse) {
     .torrplayer-cast { bottom: 70px; padding: 0 10px 10px; }
     .torrplayer-cast-card { width: 70px; }
     .torrplayer-cast-photo { width: 70px; height: 98px; }
@@ -4757,9 +4757,11 @@ html[data-win-titlebar][data-maximized] .main {
    phones (≤480px). The app is web-capable; Electron ignores these.
    ════════════════════════════════════════════════════════════════════════════ */
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-width: 1024px) and (max-height: 500px) and (pointer: coarse) {
   :root {
     --sidebar: 0px;
+    --mobile-topbar-height: calc(57px + env(safe-area-inset-top, 0px));
+    --mobile-dock-height: calc(65px + env(safe-area-inset-bottom, 0px));
   }
 
   /* Sidebar becomes a bottom dock (horizontal icon bar). */
@@ -4770,7 +4772,7 @@ html[data-win-titlebar][data-maximized] .main {
     left: 0 !important;
     right: 0 !important;
     width: 100% !important;
-    height: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+    height: var(--mobile-dock-height) !important;
     flex-direction: row !important;
     align-items: center !important;
     justify-content: space-around !important;
@@ -4779,7 +4781,9 @@ html[data-win-titlebar][data-maximized] .main {
     border-top: 1px solid var(--border) !important;
     border-right: none !important;
     z-index: 400 !important;
-    overflow-x: auto;
+    overflow: visible;
+    padding-left: env(safe-area-inset-left, 0px) !important;
+    padding-right: env(safe-area-inset-right, 0px) !important;
   }
   .sidebar > * { flex-shrink: 0; }
   .sidebar-logo,
@@ -4798,7 +4802,7 @@ html[data-win-titlebar][data-maximized] .main {
   /* Main content fills width, sits above the bottom dock. */
   .main {
     margin-left: 0 !important;
-    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: calc(var(--mobile-dock-height) + 20px) !important;
   }
 
   /* Hide the custom desktop window titlebar on small/web. */
@@ -4814,27 +4818,13 @@ html[data-win-titlebar][data-maximized] .main {
   }
   .card-title { font-size: 12px !important; }
 
-  /* Modals: full-screen on phone. */
-  .apikey-modal,
-  .modal,
-  [class*="modal"][class*="overlay"] > * {
-    width: 100% !important;
-    max-width: 100% !important;
-    height: 100% !important;
-    max-height: 100dvh !important;
-    border-radius: 0 !important;
-    margin: 0 !important;
+  /* Setup remains scrollable when the keyboard or landscape reduces height. */
+  .apikey-modal {
+    padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    align-items: flex-start;
   }
-  .apikey-box { max-width: 100% !important; width: 100% !important; height: 100% !important; }
-
-  /* Trending carousel / hero: swipeable. */
-  .trending-carousel,
-  [class*="carousel"] {
-    overflow-x: auto !important;
-    -webkit-overflow-scrolling: touch;
-  }
-  .trending-carousel .card,
-  [class*="carousel"] .card { min-width: 140px !important; }
+  .apikey-box { margin: auto; padding: 28px 20px; }
 
   /* Player controls: wrap, bigger touch targets, full-width seek. */
   .torrplayer-controls {
@@ -4861,24 +4851,24 @@ html[data-win-titlebar][data-maximized] .main {
   .torrplayer-stage { height: 100% !important; }
 
   /* Section/page padding tighter. */
-  .section, .main { padding-left: 12px !important; padding-right: 12px !important; }
-  .page-pad { padding-left: 12px !important; padding-right: 12px !important; }
+  .main { padding-left: env(safe-area-inset-left, 0px) !important; padding-right: env(safe-area-inset-right, 0px) !important; }
+  .page-pad { padding-left: 16px !important; padding-right: 16px !important; }
   .section-title { font-size: 18px !important; }
 }
 
 /* ── Additional mobile overrides (perf + phone usability) ─────────────────── */
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-width: 1024px) and (max-height: 500px) and (pointer: coarse) {
   /* 100vh on mobile includes the dynamically-hiding URL bar, hiding the bottom
      dock / chat input behind it. 100dvh tracks the real viewport. */
   .main { height: 100dvh !important; }
 
   /* Hero: 500px + 64px title + 48px padding overflows a 360px phone. */
-  .hero { height: 340px !important; }
-  .hero-content { padding: 20px 16px !important; max-width: 100% !important; }
+  .hero { height: auto !important; min-height: 340px; display: flex; align-items: flex-end; }
+  .hero-content { position: relative; padding: 32px 16px 24px !important; max-width: 100% !important; min-width: 0; }
   .hero-title { font-size: 32px !important; margin-bottom: 10px !important; }
   .hero-overview { font-size: 13px !important; -webkit-line-clamp: 2; margin-bottom: 14px !important; }
   .hero-meta { gap: 10px !important; font-size: 12px !important; margin-bottom: 12px !important; }
-  .hero-actions { gap: 8px !important; }
+  .hero-actions { gap: 8px !important; flex-wrap: wrap; }
 
   /* Search modal on phone: lift it above the mobile top bar (z-index 300) AND
      the bottom dock (z-index 400) so neither can overlap the input, and pad the
@@ -4887,26 +4877,34 @@ html[data-win-titlebar][data-maximized] .main {
      painted over). */
   .modal-overlay {
     z-index: 410 !important;
-    padding-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
-    align-items: stretch !important;
+    height: 100dvh;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    align-items: stretch;
   }
   .modal-overlay .search-box {
     max-width: 100vw !important;
-    border-radius: 0 0 12px 12px !important;
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-radius: 0;
   }
   /* Results pane must fit a phone viewport, not the desktop 480px cap. */
   .modal-overlay .search-results {
-    max-height: calc(100dvh - 140px) !important;
+    max-height: none;
+    min-height: 0;
+    flex: 1;
   }
 
   /* Trending coverflow: smaller padding/posters so it fits a 360px viewport.
      Sized on the wrapper — it owns the poster box now (see .carousel-poster-wrap)
      and the img/placeholder inside it fill 100 %. aspect-ratio 2/3 keeps the
      old 120 × 180. */
-  .carousel-section { padding: 12px 12px !important; }
+  .carousel-section { padding: 16px !important; --carousel-step: clamp(104px, 29vw, 180px); }
   .carousel-wrapper { height: 240px !important; }
   .carousel-poster-wrap { width: 120px !important; }
-  .carousel-btn { width: 36px !important; height: 36px !important; }
+  .carousel-btn { width: 44px !important; height: 44px !important; }
 
   /* Horizontal scroll rows: momentum + snap. */
   .scroll-row {
@@ -4928,7 +4926,7 @@ html[data-win-titlebar][data-maximized] .main {
 }
 
 @media (max-width: 420px) {
-  .hero { height: 280px !important; }
+  .hero { min-height: 300px; }
   .hero-title { font-size: 26px !important; }
 }
 
@@ -4954,7 +4952,7 @@ html[data-web] .window-titlebar {
 /* Mobile top bar — hidden on desktop, shown only at ≤768px (see media block). */
 .mobile-topbar { display: none; }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-width: 1024px) and (max-height: 500px) and (pointer: coarse) {
   .mobile-topbar {
     display: flex !important;
     align-items: center;
@@ -4964,6 +4962,7 @@ html[data-web] .window-titlebar {
     z-index: 300;
     padding: 6px 8px;
     padding-top: calc(6px + env(safe-area-inset-top, 0px));
+    height: var(--mobile-topbar-height);
     /* No backdrop-filter: a full-width blur on a sticky layer re-composites on
        every scroll frame. A near-opaque background reads the same and is free. */
     background: var(--bg);
@@ -4971,8 +4970,8 @@ html[data-web] .window-titlebar {
   }
   .mobile-topbar-btn {
     flex: 0 0 auto;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -5020,7 +5019,7 @@ html[data-web] .window-titlebar {
    Mobile detail page (MoviePage / TVPage) + player + source menu
    ════════════════════════════════════════════════════════════════════════════ */
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-width: 1024px) and (max-height: 500px) and (pointer: coarse) {
   /* ── Detail hero: shorter, less padding ──────────────────────────────── */
   .detail-hero {
     min-height: 280px !important;
@@ -5241,7 +5240,7 @@ html[data-web] .window-titlebar {
 
   /* Sections in detail page (similar, cast, etc.) */
   .section {
-    padding: 12px !important;
+    padding: 16px !important;
   }
   .section-title {
     font-size: 16px !important;
@@ -5274,7 +5273,7 @@ html[data-web] .window-titlebar {
    button order in the DOM.
    ════════════════════════════════════════════════════════════════════════════ */
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-width: 1024px) and (max-height: 500px) and (pointer: coarse) {
   /* Player fills its container (the .player-wrap aspect-ratio box). */
   .torrplayer,
   .torrplayer-stage {
@@ -5407,8 +5406,8 @@ html[data-web] .window-titlebar {
   }
 
   .torrplayer-btn {
-    min-width: 36px !important;
-    min-height: 36px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
     padding: 6px 8px !important;
     border-radius: 6px !important;
     font-size: 12px !important;
@@ -5817,7 +5816,7 @@ html[data-web] .window-titlebar {
   padding: 2px 6px;
   border-radius: 4px;
 }
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-width: 1024px) and (max-height: 500px) and (pointer: coarse) {
   .wt-eppicker-head { padding: 8px 12px; }
   .wt-eppicker-list { grid-template-columns: 1fr; padding: 8px 12px; }
 }
@@ -5832,7 +5831,7 @@ html[data-web] .window-titlebar {
    media block. The fade-in animation is disabled on mobile so its transform
    doesn't trap the fixed input bar in a transient containing block.
    ════════════════════════════════════════════════════════════════════════════ */
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-width: 1024px) and (max-height: 500px) and (pointer: coarse) {
   .wt-room {
     position: fixed;
     inset: 0;
@@ -6173,4 +6172,294 @@ h1, h2, h3 {
 .detail-meta,
 .episode-info {
   font-variant-numeric: tabular-nums;
+}
+
+/* Shared settings hooks preserve desktop geometry and allow phone reflow. */
+.sidebar-label { display: none; }
+.settings-topbar { top: 0; padding: 0 48px; }
+.settings-content { padding: 40px 48px 80px; }
+.settings-title { font-size: 48px; }
+
+@media (max-width: 768px), (max-width: 1024px) and (max-height: 500px) and (pointer: coarse) {
+  .main {
+    scroll-padding-top: calc(var(--mobile-topbar-height) + 16px);
+    scroll-padding-bottom: calc(var(--mobile-dock-height) + 16px);
+  }
+  .sidebar > .sidebar-btn {
+    flex: 1 1 0;
+    min-width: 0 !important;
+    height: 56px;
+    flex-direction: column;
+    gap: 4px;
+    border-radius: 10px;
+    margin: 0 2px;
+  }
+  .sidebar-label { display: block; font-size: 10px; font-weight: 500; letter-spacing: 0; }
+  .sidebar .tooltip { display: none; }
+  .sidebar-btn.active { box-shadow: none; }
+  .sidebar-btn.active::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    width: 20px;
+    height: 2px;
+    background: currentColor;
+    border-radius: 2px;
+  }
+  .mobile-topbar-btn:focus-visible, .sidebar-btn:focus-visible,
+  .btn:focus-visible, .settings-content button:focus-visible {
+    outline: 2px solid var(--red);
+    outline-offset: 2px;
+  }
+  .btn, .icon-btn { min-height: 44px; justify-content: center; }
+  .btn svg { flex-shrink: 0; }
+  input:not([type="range"]):not([type="checkbox"]), textarea, select {
+    font-size: 16px !important;
+    max-width: 100%;
+  }
+  .hero-title, .detail-title, .section-title, .search-result-title { overflow-wrap: anywhere; }
+  .hero-meta { flex-wrap: wrap; }
+  .cards-grid { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)) !important; gap: 12px !important; }
+  .card-title { font-size: 13px !important; }
+  .card-info { padding: 10px; }
+  .library-header { padding: 24px 16px 0; }
+  .library-title { font-size: 36px; }
+  .library-section { padding: 24px 16px; }
+  .section-title { font-size: 22px !important; }
+  .discover-filters > * { flex: 1 1 130px; min-width: 0 !important; }
+  .discover-filters > div:first-child { flex-basis: 100%; }
+  .discover-filters > div:first-child > button { flex: 1; min-height: 44px; }
+  .discover-filters select { min-height: 44px; }
+  .discover-pager { flex-wrap: wrap; gap: 10px !important; }
+  .discover-pager .btn { padding: 10px 16px; }
+  .episodes-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
+  .season-btn { flex-shrink: 0; }
+  .episode-info { min-width: 0; overflow-wrap: anywhere; }
+  .detail-actions { flex-wrap: wrap; }
+  .detail-title { font-size: clamp(24px, 6vw, 36px) !important; }
+  .search-input-wrap { gap: 8px; padding: 12px; flex-shrink: 0; }
+  .search-input { min-width: 0; }
+  .search-input::-webkit-search-cancel-button { display: none; }
+  .search-input-wrap .btn { flex-shrink: 0; min-width: 44px; }
+  .search-result { gap: 10px; padding: 10px 8px; }
+  .search-result-type { flex-shrink: 0; }
+  .search-history-remove, .history-remove-btn { opacity: 1; min-width: 44px; min-height: 44px; }
+  .modal-backdrop, .blocked-modal-overlay, .trailer-overlay {
+    padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  }
+  .download-modal, .blocked-modal, .trailer-modal {
+    max-width: 100%;
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+  }
+  .download-modal-header, .trailer-modal-header { padding: 12px; gap: 8px; }
+  .download-modal-header > span, .trailer-modal-title { min-width: 0; overflow-wrap: anywhere; }
+  .toast { left: 16px; right: 16px; bottom: calc(var(--mobile-dock-height) + 12px); overflow-wrap: anywhere; }
+  .api-status-banner { flex-wrap: wrap; }
+
+  .settings-topbar { top: var(--mobile-topbar-height); padding: 0 16px; }
+  .settings-content { padding: 24px 16px 40px; overflow-wrap: anywhere; }
+  .settings-title { font-size: 36px; }
+  .settings-group-title { min-width: 0; white-space: normal !important; overflow-wrap: anywhere; }
+  .settings-toolbar { flex-wrap: wrap; }
+  .settings-toolbar--searching .settings-search-area { flex-basis: 100% !important; }
+  .settings-search-field { min-width: 0; flex-wrap: wrap; }
+  .settings-search-field > input { flex-basis: calc(100% - 32px) !important; min-height: 36px; }
+  .settings-search-count { margin-right: auto !important; }
+  .settings-topbar button { min-height: 44px; }
+  .settings-search-field button { min-width: 44px; }
+  .settings-keyboard-hint { display: none; }
+  .settings-toolbar--searching .settings-section-menu { left: 0; right: auto !important; }
+  .settings-section-menu {
+    max-height: calc(100dvh - var(--mobile-topbar-height) - var(--mobile-dock-height) - 148px);
+    max-width: calc(100vw - 32px);
+    overflow-y: auto;
+  }
+  .settings-select { max-width: 100%; }
+  .settings-select-trigger { width: 100%; min-height: 44px; white-space: normal !important; }
+  .settings-select-menu { max-width: calc(100vw - 32px); }
+  .settings-select-menu > div { min-height: 44px; white-space: normal !important; }
+  .settings-form-row, .settings-font-options { flex-wrap: wrap; }
+  .settings-form-row > input { min-width: 0; flex-basis: 180px !important; }
+  .settings-font-options > button { flex: 1; padding: 10px !important; }
+  .settings-dialog-overlay { padding: max(12px, env(safe-area-inset-top, 0px)) 12px max(12px, env(safe-area-inset-bottom, 0px)); }
+  .settings-dialog { padding: 24px 20px !important; max-height: calc(100dvh - 48px); overflow-y: auto; }
+  .settings-dialog-actions { flex-wrap: wrap; }
+  .settings-dialog-actions > button { flex-basis: 100% !important; }
+  .settings-content [style*="scroll-margin-top"] { scroll-margin-top: calc(var(--mobile-topbar-height) + 148px) !important; }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .card:hover { transform: none; }
+}
+
+@media (max-width: 768px), (max-width: 1024px) and (max-height: 500px) and (pointer: coarse) {
+  .wt-landing { padding-top: 24px !important; overflow-wrap: anywhere; }
+  .wt-landing input { min-width: 0; }
+}
+
+/* ── Phone layout ─────────────────────────────────────────────────────────────
+   Thumb-first: the play action sits above the fold, targets are finger-sized,
+   and landscape gives the height back to the content. */
+.settings-toggle { position: relative; }
+.search-input::-webkit-search-cancel-button, .search-input::-webkit-search-decoration { display: none; }
+
+@media (max-width: 768px), (max-width: 1024px) and (max-height: 500px) and (pointer: coarse) {
+  html, body { overscroll-behavior-y: none; }
+  button, a, select { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+  /* Detail page (movie and series): poster beside the title, then the actions,
+     then the full description, so the play button never scrolls away. */
+  .detail-hero { min-height: 0 !important; }
+  .detail-content {
+    display: grid !important;
+    grid-template-columns: 104px minmax(0, 1fr);
+    column-gap: 14px;
+    row-gap: 0 !important;
+    align-items: start !important;
+  }
+  .detail-poster { grid-column: 1; grid-row: 1 / span 4; width: 104px !important; margin-bottom: 12px; }
+  .detail-info { display: contents; }
+  .detail-info > * { grid-column: 1 / -1; order: 1; }
+  .detail-info > .detail-type { grid-column: 2; grid-row: 1; margin-bottom: 4px; }
+  .detail-info > .detail-title { grid-column: 2; grid-row: 2; font-size: clamp(20px, 5.6vw, 28px) !important; margin-bottom: 8px; }
+  .detail-info > .genres { grid-column: 2; grid-row: 3; margin-bottom: 8px; }
+  .detail-info > .detail-meta { grid-column: 2; grid-row: 4; margin-bottom: 0; }
+  .detail-info > .progress-bar-row { order: 2; margin: 14px 0 0 !important; }
+  .detail-info > .detail-actions { order: 3; }
+  .detail-info > .detail-overview { order: 4; margin: 16px 0 0; }
+  .detail-overview {
+    display: block !important;
+    -webkit-line-clamp: unset !important;
+    overflow: visible !important;
+    font-size: 14px !important;
+  }
+  .detail-actions {
+    display: flex !important;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    margin-bottom: 0;
+  }
+  .detail-actions > .btn, .detail-actions > button {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    white-space: normal;
+    line-height: 1.2;
+    text-align: center;
+  }
+  .detail-actions > .btn-primary { flex-basis: 100%; min-height: 50px !important; font-size: 15px !important; }
+
+  /* Downloads */
+  .dl-page { padding: 24px 16px calc(var(--mobile-dock-height) + 24px); }
+  .dl-page__title { font-size: 36px; }
+  .dl-toolbar { width: 100%; box-sizing: border-box; }
+  .dl-toolbar__sort-btn, .dl-toolbar__dir-btn, .dl-toolbar__toggle, .dl-toolbar__search-hint { min-height: 40px; }
+  .dl-toolbar__search-hint-key { display: none; }
+  .dl-page__local-header { flex-direction: column; align-items: stretch; gap: 10px; }
+  .dl-page__scan-controls { flex-wrap: wrap; }
+  .dl-page__scan-input { flex: 1 1 100%; width: auto; min-height: 44px; box-sizing: border-box; }
+  .dl-page__scan-controls .btn { flex: 1 1 0; }
+
+  /* Finger-sized hit areas for controls that must stay visually small. */
+  .settings-toggle::after,
+  .carousel-dot::after {
+    content: "";
+    position: absolute;
+    inset: -11px -3px;
+  }
+  .carousel-dot { position: relative; }
+  .episode-desc-toggle { min-height: 44px; }
+  .settings-content button.btn-ghost { min-height: 44px; }
+  .settings-search-toggle { white-space: nowrap; min-width: 0; }
+  .settings-search-toggle + * { flex-shrink: 0; }
+  .apikey-input { box-sizing: border-box; min-height: 48px; }
+  .apikey-link { display: inline-block; padding-block: 4px; }
+
+  .now-playing-row { flex-wrap: wrap; overflow-wrap: anywhere; }
+  .now-playing-row > span { min-width: 0; }
+
+  /* Watch together */
+  .wt-landing input { width: 100%; box-sizing: border-box; min-height: 44px; }
+
+  .dl-toolbar__label { flex-basis: 100%; }
+  .dl-toolbar__dir-btn, .dl-toolbar__search-hint, .dl-toolbar__sort-btn { min-width: 44px; min-height: 44px; }
+  .settings-content button:not(.settings-toggle) { min-height: 40px; }
+  .apikey-box button { min-height: 44px; }
+
+  /* A short page must still have room to pin the player under the top bar. The
+     room goes after the page, never between the player and what follows it. */
+  .main:has(.section:not([aria-hidden="true"]) .player-wrap) > :last-child::after {
+    content: "";
+    display: block;
+    height: calc(100dvh - var(--mobile-topbar-height) - var(--mobile-dock-height) - 56.25vw);
+  }
+
+  /* The seek bar stays thin but takes a thumb-sized drag area. */
+  .torrplayer-seek::before { content: ""; position: absolute; inset: -14px 0; }
+}
+
+/* Portrait phones: two control rows, with the time above the seek bar so it
+   costs no row of its own. The quality button has no icon, so it keeps its text. */
+@media (max-width: 480px) {
+  .torrplayer-controls { padding: 6px 4px 8px !important; }
+  .torrplayer-time {
+    display: block !important;
+    position: absolute;
+    top: 8px;
+    left: 56px;
+    font-size: 11px !important;
+    line-height: 1;
+    pointer-events: none;
+  }
+  .torrplayer-btn--pip { display: none !important; }
+  .torrplayer-btn { min-width: 38px !important; min-height: 44px !important; padding: 0 !important; }
+  .torrplayer-controls > .torrplayer-audio,
+  .torrplayer-btn--seekback, .torrplayer-btn--seekfwd, .torrplayer-btn--mute { margin: 0 !important; }
+  .torrplayer-btn:not(:has(svg)) .torrplayer-audio-label { display: inline !important; }
+}
+@media (max-width: 350px) {
+  .torrplayer-btn { min-width: 34px !important; }
+}
+@media (max-height: 350px) and (pointer: coarse) {
+  .detail-info > .genres { display: none; }
+  .detail-content { padding-block: 8px !important; }
+}
+
+@media (max-height: 500px) and (max-width: 1024px) and (pointer: coarse) {
+  :root {
+    --mobile-topbar-height: calc(44px + env(safe-area-inset-top, 0px));
+    --mobile-dock-height: calc(48px + env(safe-area-inset-bottom, 0px));
+  }
+  .mobile-topbar {
+    padding: 0 max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px));
+  }
+  .mobile-topbar-btn { width: 40px; height: 40px; }
+  .sidebar {
+    padding-left: max(8px, env(safe-area-inset-left, 0px)) !important;
+    padding-right: max(8px, env(safe-area-inset-right, 0px)) !important;
+  }
+  .sidebar > .sidebar-btn { height: 44px; }
+  .sidebar-label { display: none; }
+  .hero { min-height: 0 !important; height: auto !important; }
+  .hero-overview { -webkit-line-clamp: 2; }
+
+  /* Wide and short: everything sits beside the poster. */
+  .detail-content { grid-template-columns: 120px minmax(0, 1fr); column-gap: 20px; }
+  .detail-poster { grid-row: 1 / span 12; width: 120px !important; }
+  .detail-info > * { grid-column: 2; }
+  .detail-actions > .btn, .detail-actions > button { flex: 1 1 auto; }
+
+  .main { scroll-padding-top: calc(var(--mobile-topbar-height) + 4px); }
+
+  /* The whole player, controls included, fits between the two bars. */
+  .player-wrap:not(.player-wrap--fullscreen) {
+    width: min(100%, calc((100dvh - var(--mobile-topbar-height) - var(--mobile-dock-height) - 8px) * 16 / 9));
+    margin-inline: auto;
+  }
+
+  /* One line for search: a tall sticky bar would cover the match it scrolls to. */
+  .settings-toolbar, .settings-search-field { flex-wrap: nowrap; }
+  .settings-toolbar--searching .settings-search-area { flex-basis: auto !important; }
+  .settings-search-field > input { flex-basis: 0 !important; flex-grow: 1; }
+  .settings-toolbar--searching .settings-section-nav { display: none; }
 }

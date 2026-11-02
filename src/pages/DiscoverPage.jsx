@@ -265,7 +265,7 @@ export default function DiscoverPage({
       )}
       {!loading && !error && visible.length === 0 && (
         <div style={{ padding: 40, textAlign: "center", color: "var(--text3)" }}>
-          No titles match these filters.
+          По этим фильтрам ничего не нашлось.
         </div>
       )}
       {!loading && !error && visible.length > 0 && (

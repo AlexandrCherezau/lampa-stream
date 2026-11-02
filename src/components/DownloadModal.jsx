@@ -119,7 +119,7 @@ export function SubtitleBrowser({
               ? ` · ${selectedSubs.length} selected`
               : ""}
           </span>
-          <button className="icon-btn" onClick={() => onClose()}>
+          <button className="icon-btn" aria-label="Закрыть" onClick={() => onClose()}>
             <CloseIcon />
           </button>
         </div>
@@ -294,7 +294,7 @@ export function SubtitleBrowser({
                       {r.hearing_impaired && (
                         <span
                           style={{ fontSize: 10, color: "var(--text3)" }}
-                          title="Hearing impaired"
+                          title="Для слабослышащих"
                         >
                           ♿
                         </span>
@@ -302,7 +302,7 @@ export function SubtitleBrowser({
                       {r.ai_translated && (
                         <span
                           style={{ fontSize: 10, color: "var(--text3)" }}
-                          title="AI translated"
+                          title="Перевод ИИ"
                         >
                           🤖
                         </span>
@@ -310,7 +310,7 @@ export function SubtitleBrowser({
                       {r.from_trusted && (
                         <span
                           style={{ fontSize: 10, color: "#4caf50" }}
-                          title="Trusted"
+                          title="Проверенные"
                         >
                           ✓
                         </span>
@@ -594,7 +594,7 @@ export default function DownloadModal({
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <DownloadIcon /> Set Download Folder
             </span>
-            <button className="icon-btn" onClick={onClose}>
+            <button className="icon-btn" aria-label="Закрыть" onClick={onClose}>
               <CloseIcon />
             </button>
           </div>
@@ -694,7 +694,7 @@ export default function DownloadModal({
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <DownloadIcon /> Download
             </span>
-            <button className="icon-btn" onClick={onClose}>
+            <button className="icon-btn" aria-label="Закрыть" onClick={onClose}>
               <CloseIcon />
             </button>
           </div>
@@ -966,7 +966,7 @@ export default function DownloadModal({
                                         ),
                                       )
                                     }
-                                    title="Remove"
+                                    title="Убрать"
                                   >
                                     ✕
                                   </button>
@@ -1002,9 +1002,9 @@ export default function DownloadModal({
                                   color: "var(--text3)",
                                 }}
                                 onClick={() => setSelectedSubs([])}
-                                title="Clear all"
+                                title="Убрать все"
                               >
-                                Clear all
+                                Убрать все
                               </button>
                             )}
                           </div>

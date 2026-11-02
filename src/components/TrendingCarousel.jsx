@@ -117,7 +117,6 @@ const CarouselSlot = memo(function CarouselSlot({
 
   const scale = isCenter ? 1 : abs === 1 ? 0.75 : 0.54;
   const opacity = isCenter ? 1 : abs === 1 ? 0.65 : 0.35;
-  const tx = offset * 230;
 
   // Stable date comparison — avoids new Date() on every render by caching today
   const rawDate = item.release_date || item.first_air_date;
@@ -144,7 +143,7 @@ const CarouselSlot = memo(function CarouselSlot({
     <div
       className={`carousel-item${isCenter ? " carousel-item--active" : ""}${animating ? " carousel-item--animating" : ""}`}
       style={{
-        transform: `translateX(${tx}px) scale(${scale})`,
+        transform: `translateX(calc(var(--carousel-step, 230px) * ${offset})) scale(${scale})`,
         opacity,
         zIndex: isCenter ? 10 : abs === 1 ? 6 : 2,
         cursor: "pointer",

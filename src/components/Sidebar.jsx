@@ -107,11 +107,11 @@ const Sidebar = memo(function Sidebar({
   };
 
   return (
-    <div className="sidebar">
+    <nav className="sidebar" aria-label="Основная навигация">
       <div
         className="sidebar-logo"
         onClick={() => onNavigate("home")}
-        title="Streambert"
+        title="Lampa-Stream"
         style={{ position: "relative" }}
       >
         <StreambertLogo />
@@ -127,30 +127,35 @@ const Sidebar = memo(function Sidebar({
         onClick={() => onNavigate("home")}
         icon={<HomeIcon />}
         label="Главная"
+        mobileLabel="Главная"
       />
       <SideBtn
         active={page === "discover"}
         onClick={() => onNavigate("discover")}
         icon={<FilmIcon />}
         label="Каталог"
+        mobileLabel="Каталог"
       />
       <SideBtn
         active={page === "together"}
         onClick={() => onNavigate("together")}
         icon={<UsersIcon />}
         label="Смотрим вместе"
+        mobileLabel="Вместе"
       />
       <SideBtn
         active={page === "history"}
         onClick={() => onNavigate("history")}
         icon={<HistoryIcon />}
         label="Библиотека и история"
+        mobileLabel="Библиотека"
       />
       <SideBtn
         active={page === "downloads"}
         onClick={() => onNavigate("downloads")}
         icon={<DownloadsQueueIcon />}
         label="Загрузки"
+        mobileLabel="Загрузки"
         badge={activeDownloads > 0 ? activeDownloads : null}
       />
 
@@ -233,7 +238,7 @@ const Sidebar = memo(function Sidebar({
               setContextMenu(null);
             }}
           >
-            Remove
+            Удалить
           </div>
         </div>
       )}
@@ -260,18 +265,21 @@ const Sidebar = memo(function Sidebar({
           <span className="tooltip">Выйти из приложения</span>
         </button>
       </div>
-    </div>
+    </nav>
   );
 });
 
-function SideBtn({ active, onClick, icon, label, badge, className = "" }) {
+function SideBtn({ active, onClick, icon, label, mobileLabel, badge, className = "" }) {
   return (
     <button
       className={`sidebar-btn ${active ? "active" : ""} ${className}`}
       onClick={onClick}
+      aria-label={badge ? `${label}: ${badge}` : label}
+      aria-current={active ? "page" : undefined}
       style={{ position: "relative" }}
     >
       {icon}
+      {mobileLabel && <span className="sidebar-label">{mobileLabel}</span>}
       <span className="tooltip">{label}</span>
       {badge && (
         <span

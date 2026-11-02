@@ -249,18 +249,18 @@ export default function HomePage({
         >
           <div style={{ fontSize: 48 }}>📡</div>
           <div style={{ fontSize: 20, fontWeight: 600, color: "var(--text)" }}>
-            No internet connection
+            Нет подключения к интернету
           </div>
           <div style={{ fontSize: 14, color: "var(--text3)" }}>
-            Trending and search require an internet connection. Your downloads
-            and library still work offline.
+            Для подборок и поиска нужен интернет. Загрузки и библиотека работают
+            и без него.
           </div>
           <button
             className="btn btn-primary"
             style={{ marginTop: 8 }}
             onClick={onRetry}
           >
-            Retry
+            Повторить
           </button>
         </div>
       )}
@@ -313,13 +313,13 @@ export default function HomePage({
                 className="btn btn-primary"
                 onClick={() => onSelect(hero)}
               >
-                <PlayIcon /> Watch Now
+                <PlayIcon /> Смотреть
               </button>
               <button
                 className="btn btn-secondary"
                 onClick={() => onSelect(hero)}
               >
-                More Info
+                Подробнее
               </button>
             </div>
           </div>

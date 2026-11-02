@@ -54,11 +54,14 @@ function SettingsSelect({ value, onChange, options, style }) {
   return (
     <div
       ref={ref}
+      className="settings-select"
       style={{ position: "relative", display: "inline-block", ...style }}
     >
       {/* Trigger button */}
       <button
         type="button"
+        className="settings-select-trigger"
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         style={{
           display: "flex",
@@ -110,6 +113,7 @@ function SettingsSelect({ value, onChange, options, style }) {
       {/* Dropdown panel */}
       {open && (
         <div
+          className="settings-select-menu"
           style={{
             position: "absolute",
             top: "calc(100% + 6px)",
@@ -182,6 +186,7 @@ const AGE_LIMIT_OPTIONS = [
 function ResetConfirmDialog({ onConfirm, onCancel }) {
   return (
     <div
+      className="settings-dialog-overlay"
       style={{
         position: "fixed",
         inset: 0,
@@ -194,6 +199,7 @@ function ResetConfirmDialog({ onConfirm, onCancel }) {
       }}
     >
       <div
+        className="settings-dialog"
         style={{
           background: "var(--surface)",
           border: "1px solid var(--border)",
@@ -229,7 +235,7 @@ function ResetConfirmDialog({ onConfirm, onCancel }) {
             marginBottom: 10,
           }}
         >
-          RESET STREAMBERT?
+          СБРОСИТЬ LAMPA-STREAM?
         </div>
         <div
           style={{
@@ -251,7 +257,7 @@ function ResetConfirmDialog({ onConfirm, onCancel }) {
           </span>
         </div>
 
-        <div style={{ display: "flex", gap: 12 }}>
+        <div className="settings-dialog-actions" style={{ display: "flex", gap: 12 }}>
           <button
             className="btn btn-ghost"
             style={{ flex: 1 }}
@@ -288,6 +294,7 @@ function ConfirmDialog({
 }) {
   return (
     <div
+      className="settings-dialog-overlay"
       style={{
         position: "fixed",
         inset: 0,
@@ -300,6 +307,7 @@ function ConfirmDialog({
       }}
     >
       <div
+        className="settings-dialog"
         style={{
           background: "var(--surface)",
           border: "1px solid var(--border)",
@@ -350,7 +358,7 @@ function ConfirmDialog({
             This action cannot be undone.
           </span>
         </div>
-        <div style={{ display: "flex", gap: 12 }}>
+        <div className="settings-dialog-actions" style={{ display: "flex", gap: 12 }}>
           <button
             className="btn btn-ghost"
             style={{ flex: 1 }}
@@ -381,6 +389,7 @@ function ConfirmDialog({
 function Toggle({ value, onChange, title }) {
   return (
     <button
+      className="settings-toggle"
       onClick={() => onChange(!value)}
       title={title}
       style={{
@@ -1116,7 +1125,7 @@ function ScheduledBackupSection() {
             >
               Backup Folder
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div className="settings-form-row" style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input
                 className="apikey-input"
                 style={{ flex: 1, marginBottom: 0 }}
@@ -1676,7 +1685,7 @@ function AppearanceSection() {
         >
           Font Size
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="settings-font-options" style={{ display: "flex", gap: 8 }}>
           {[
             { id: "sm", label: "Мелкий" },
             { id: "normal", label: "Обычный" },
@@ -2289,7 +2298,7 @@ function SubtitleSettingsSection() {
               (нужен ключ Wyzie API выше). Добавьте ключ SubDL, чтобы выбрать
               SubDL основным источником.
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div className="settings-form-row" style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input
                 className="apikey-input"
                 style={{ flex: 1, maxWidth: 400, marginBottom: 0 }}
@@ -2447,6 +2456,7 @@ function SectionGroupHeader({ title, subtitle }) {
         }}
       >
         <div
+          className="settings-group-title"
           style={{
             fontFamily: "var(--font-display)",
             fontSize: 16,
@@ -2859,7 +2869,11 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
   useEffect(() => {
     if (!searchOpen) return;
     const handler = (e) => {
-      if (searchBarRef.current && !searchBarRef.current.contains(e.target)) {
+      if (
+        searchBarRef.current &&
+        !searchBarRef.current.contains(e.target) &&
+        !navRef.current?.contains(e.target)
+      ) {
         clearHighlights();
         setSearchOpen(false);
         setQuery("");
@@ -2899,17 +2913,17 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
 
   return (
     <div
+      className="settings-topbar"
       style={{
         position: "sticky",
-        top: 0,
         zIndex: 100,
         background: "var(--bg, #141414)",
         borderBottom: "1px solid var(--border)",
-        padding: "0 48px",
         backdropFilter: "blur(12px)",
       }}
     >
       <div
+        className={`settings-toolbar${searchOpen ? " settings-toolbar--searching" : ""}`}
         style={{
           display: "flex",
           alignItems: "center",
@@ -2918,10 +2932,11 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
         }}
       >
         {/* ── Search area ── */}
-        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="settings-search-area" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
           {searchOpen ? (
             <div
               ref={searchBarRef}
+              className="settings-search-field"
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -2955,6 +2970,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
               {/* Input */}
               <input
                 ref={inputRef}
+                aria-label="Поиск по настройкам"
                 value={query}
                 onChange={handleQueryChange}
                 placeholder="Поиск по этой странице…"
@@ -2973,6 +2989,8 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
               {/* Match counter */}
               {hasQuery && (
                 <span
+                  className="settings-search-count"
+                  aria-live="polite"
                   style={{
                     fontSize: 12,
                     color: noMatch ? "#ff3860" : "var(--text3)",
@@ -3083,6 +3101,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
               {/* Esc button */}
               <button
                 onClick={closeSearch}
+                aria-label="Закрыть поиск по настройкам"
                 title="Закрыть (Esc)"
                 style={{
                   background: "none",
@@ -3102,6 +3121,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
             </div>
           ) : (
             <button
+              className="settings-search-toggle"
               onClick={() => setSearchOpen(true)}
               style={{
                 display: "flex",
@@ -3139,6 +3159,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
               </svg>
               Поиск по настройкам…
               <span
+                className="settings-keyboard-hint"
                 style={{
                   fontSize: 10,
                   color: "var(--text3)",
@@ -3157,9 +3178,11 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
         </div>
 
         {/* ── Jump to section dropdown ── */}
-        <div ref={navRef} style={{ position: "relative", flexShrink: 0 }}>
+        <div ref={navRef} className="settings-section-nav" style={{ position: "relative", flexShrink: 0 }}>
           <button
             onClick={() => setNavOpen((o) => !o)}
+            aria-expanded={navOpen}
+            aria-controls="settings-section-menu"
             style={{
               display: "flex",
               alignItems: "center",
@@ -3193,7 +3216,7 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
               <circle cx="3" cy="12" r="1" fill="currentColor" />
               <circle cx="3" cy="18" r="1" fill="currentColor" />
             </svg>
-            Jump to Section
+            Разделы
             <svg
               width="12"
               height="12"
@@ -3214,6 +3237,8 @@ function SettingsTopBar({ sectionRefs, contentRef }) {
 
           {navOpen && (
             <div
+              id="settings-section-menu"
+              className="settings-section-menu"
               style={{
                 position: "absolute",
                 top: "calc(100% + 6px)",
@@ -3579,22 +3604,21 @@ export default function SettingsPage({
 
       <div
         ref={contentRef}
-        className="fade-in"
-        style={{ padding: "40px 48px 80px" }}
+        className="fade-in settings-content"
       >
         {/* Page title */}
         <div
+          className="settings-title"
           style={{
             fontFamily: "var(--font-display)",
-            fontSize: 48,
             letterSpacing: 1,
             marginBottom: 6,
           }}
         >
-          SETTINGS
+          НАСТРОЙКИ
         </div>
         <div style={{ color: "var(--text3)", fontSize: 14, marginBottom: 48 }}>
-         Настройки Streambert
+         Настройки Lampa-Stream
         </div>
 
         {/* ══════════════════════════════════════════════════════════════════ */}
@@ -3780,7 +3804,7 @@ export default function SettingsPage({
             >
               <input
                 className="apikey-input"
-                style={{ flex: 1, minWidth: 260, marginBottom: 0 }}
+                style={{ flex: 1, minWidth: "min(260px, 100%)", marginBottom: 0 }}
                 placeholder={DEFAULT_INVIDIOUS_BASE}
                 value={invidiousBase}
                 onChange={(e) => {
@@ -4182,7 +4206,7 @@ export default function SettingsPage({
             >
               <input
                 className="apikey-input"
-                style={{ flex: 1, minWidth: 260, marginBottom: 0 }}
+                style={{ flex: 1, minWidth: "min(260px, 100%)", marginBottom: 0 }}
                 placeholder="/home/you/Movies"
                 value={downloadPath}
                 onChange={(e) => setDownloadPath(e.target.value)}

@@ -17,6 +17,8 @@ const TITLES = {
   recap: "Итоги месяца",
   tonight: "На вечер",
   settings: "Настройки",
+  movie: "Фильм",
+  tv: "Сериал",
 };
 
 const MORE_PAGES = [

@@ -69,6 +69,7 @@ const prebufferAllowed = () => {
   return !connection?.saveData && !/(^|-)2g$/.test(connection?.effectiveType || "");
 };
 import { useBlockedStats } from "../utils/useBlockedStats";
+import { playerScrollBlock } from "../utils/playerScroll";
 import useElementWidth from "../utils/useElementWidth";
 import MediaCard from "../components/MediaCard";
 import {
@@ -199,7 +200,7 @@ export default function MoviePage({
     const raf = requestAnimationFrame(() => {
       playerWrapRef.current?.scrollIntoView({
         behavior: "smooth",
-        block: "center",
+        block: playerScrollBlock(),
       });
     });
     return () => cancelAnimationFrame(raf);
@@ -972,13 +973,13 @@ export default function MoviePage({
                           storage.set("dlTime_" + progressKey, null);
                         }}
                       >
-                        ⊘ Not Started
+                        ⊘ Сбросить прогресс
                       </button>
                     )}
                   </>
                 ))}
               <button className="btn btn-ghost" onClick={onBack}>
-                <BackIcon /> Back
+                <BackIcon /> Назад
               </button>
             </div>
           </div>

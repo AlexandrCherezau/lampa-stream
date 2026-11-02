@@ -116,7 +116,7 @@ const MediaCard = memo(function MediaCard({
             <div className="no-poster">
               {isTV ? <TVIcon /> : <FilmIcon />}
               <span style={{ fontSize: 10, color: "var(--text3)" }}>
-                No Image
+                Нет постера
               </span>
             </div>
           )}

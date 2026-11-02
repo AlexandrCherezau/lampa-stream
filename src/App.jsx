@@ -43,6 +43,16 @@ const MonthlyRecapPage = lazy(() => import("./pages/MonthlyRecapPage"));
 const TonightPage = lazy(() => import("./pages/TonightPage"));
 
 const ROUTE_PAGES = new Set(["home", "discover", "history", "settings", "together", "downloads", "devices", "recap", "tonight", "movie", "tv"]);
+const PAGE_TITLES = {
+  discover: "Каталог",
+  history: "Библиотека и история",
+  settings: "Настройки",
+  together: "Смотрим вместе",
+  downloads: "Загрузки",
+  devices: "Устройства",
+  recap: "Итоги месяца",
+  tonight: "На вечер",
+};
 function catalogMetadata(item) {
   if (!["vi3000", "habster", "zona"].includes(item?.catalogSource)) return {};
   const kinopoiskId = [item.kinopoisk_id, item.kinopoiskId]
@@ -187,6 +197,11 @@ export default function App() {
     });
     return () => window.electron.offScheduledBackupRequested(handler);
   }, []);
+
+  useEffect(() => {
+    const name = page === "movie" || page === "tv" ? selected?.title || selected?.name : PAGE_TITLES[page];
+    document.title = name ? `${name} — Lampa-Stream` : "Lampa-Stream";
+  }, [page, selected?.title, selected?.name]);
 
   // Hydrate direct movie/TV links after the private TMDB token is available.
   useEffect(() => {

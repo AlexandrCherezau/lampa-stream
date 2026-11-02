@@ -305,7 +305,7 @@ const pushTimerRef = useRef(null);
   // ── Landing ─────────────────────────────────────────────────────────────────
   if (screen === "landing" || screen === "joining") {
     return (
-      <div className="fade-in page-pad" style={{ paddingTop: 48 }}>
+      <div className="fade-in page-pad wt-landing" style={{ paddingTop: 48 }}>
         <div className="library-header" style={{ padding: "0 0 16px" }}>
           <div className="library-title">Смотрим вместе</div>
           <div className="library-sub">Смотрите фильм или сериал одновременно с друзьями</div>
@@ -333,14 +333,14 @@ const pushTimerRef = useRef(null);
           <div style={cardStyle}>
             <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Создать комнату</div>
             <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.5 }}>
-              Start a new session, pick a title, and share the link with a friend.
+              Создайте комнату, выберите фильм и отправьте ссылку другу.
             </div>
             <button className="btn btn-primary" onClick={doCreate} disabled={!apiKey}>Создать комнату</button>
           </div>
           <div style={cardStyle}>
             <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Войти в комнату</div>
             <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16, lineHeight: 1.5 }}>
-              Enter the 6-character code a friend shared with you.
+              Введите код из 6 символов, который прислал друг.
             </div>
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
               <input

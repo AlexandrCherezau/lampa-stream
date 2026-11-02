@@ -298,7 +298,7 @@ export default function SubtitleDownloaderModal({
                       className="icon-btn"
                       disabled={deletingPath === sp.path}
                       onClick={() => handleDeleteSub(sp)}
-                      title="Delete this subtitle file"
+                      title="Удалить файл субтитров"
                       style={{
                         flexShrink: 0,
                         opacity: deletingPath === sp.path ? 0.4 : 1,

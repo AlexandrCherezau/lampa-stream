@@ -184,7 +184,7 @@ export default function TrailerModal({ trailerKey, title, onClose }) {
               }}
             >
               <ExternalLinkIcon size={13} />
-              Open in Browser
+              Открыть в браузере
             </button>
             <button
               className="trailer-close-btn"

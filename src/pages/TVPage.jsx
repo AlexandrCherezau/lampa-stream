@@ -79,6 +79,7 @@ const prebufferAllowed = () => {
   return !connection?.saveData && !/(^|-)2g$/.test(connection?.effectiveType || "");
 };
 import { useBlockedStats } from "../utils/useBlockedStats";
+import { playerScrollBlock } from "../utils/playerScroll";
 import useElementWidth from "../utils/useElementWidth";
 import ProgressiveGrid from "../utils/useProgressiveList.jsx";
 import {
@@ -1207,7 +1208,7 @@ export default function TVPage({
     const raf = requestAnimationFrame(() => {
       playerWrapRef.current?.scrollIntoView({
         behavior: "smooth",
-        block: "center",
+        block: playerScrollBlock(),
       });
     });
     return () => cancelAnimationFrame(raf);
@@ -1935,6 +1936,7 @@ export default function TVPage({
               } : undefined}
             >
               {playing && <div
+                className="now-playing-row"
                 style={{
                   marginBottom: 12,
                   display: "flex",

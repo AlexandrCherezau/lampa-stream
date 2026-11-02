@@ -130,12 +130,14 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
       className="modal-overlay"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="search-box">
+      <div className="search-box" role="dialog" aria-modal="true" aria-label="Поиск фильмов и сериалов">
         <div className="search-input-wrap">
           <SearchIcon />
           <input
             ref={inputRef}
             className="search-input"
+            aria-label="Поиск фильмов и сериалов"
+            type="search"
             placeholder="Поиск фильмов и сериалов..."
             value={query}
             onChange={(e) => updateQuery(e.target.value)}
@@ -144,12 +146,13 @@ export default function SearchModal({ apiKey, onSelect, onClose, offline }) {
           {query ? (
             <button
               className="btn btn-ghost btn-icon"
+              aria-label="Очистить поиск"
               onClick={() => updateQuery("")}
             >
               <CloseIcon />
             </button>
           ) : (
-            <button className="btn btn-ghost btn-icon" onClick={onClose}>
+            <button className="btn btn-ghost btn-icon" aria-label="Закрыть поиск" onClick={onClose}>
               <CloseIcon />
             </button>
           )}

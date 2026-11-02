@@ -173,6 +173,28 @@ test("deep-linked movie URL renders the requested movie after reload", async ({ 
   await expect(page.locator(".detail-title")).toHaveText("Movie 550");
 });
 
+test("tab title and page language follow the current page", async ({ page }) => {
+  await mockTmdb(page);
+  await page.addInitScript(() => localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token"));
+  await page.goto("/");
+  await expect(page).toHaveTitle("Lampa-Stream");
+  await expect(page.locator("html")).toHaveAttribute("lang", "ru");
+  await page.getByRole("button", { name: "Каталог", exact: true }).click();
+  await expect(page).toHaveTitle("Каталог — Lampa-Stream");
+  await page.goto("/movie/550");
+  await expect(page).toHaveTitle("Movie 550 — Lampa-Stream");
+});
+
+test("search close and clear buttons are named for assistive tech", async ({ page }) => {
+  await mockTmdb(page);
+  await page.addInitScript(() => localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token"));
+  await page.goto("/");
+  await page.getByRole("button", { name: /^Поиск/ }).first().click();
+  await expect(page.getByRole("button", { name: "Закрыть поиск" })).toBeVisible();
+  await page.getByRole("searchbox").fill("а");
+  await expect(page.getByRole("button", { name: "Очистить поиск" })).toBeVisible();
+});
+
 test("section URLs survive reload and browser back/forward", async ({ page }) => {
   await mockTmdb(page);
   await page.addInitScript(() => localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token"));
