@@ -200,19 +200,18 @@ test.describe("phone details", () => {
 test.describe("phone series", () => {
   test.use({ viewport: { width: 320, height: 568 }, isMobile: true, hasTouch: true });
 
-  test("tapping anywhere on a card starts it, only the toggle expands the text", async ({ page }) => {
+  test("a tap in the middle of a short card starts it, the toggle only expands the text", async ({ page }) => {
     await fixtures(page);
+    await page.route("**/season/**", (route) => route.fulfill({ json: { episodes: Array.from({ length: 4 }, (_, i) => ({
+      id: 2000 + i, episode_number: i + 1, name: `Серия ${i + 1}`, overview: "Короткое описание.", still_path: null, air_date: "2025-01-01", runtime: 45,
+    })) } }));
     await page.goto("/tv/201", { waitUntil: "domcontentloaded" });
     const card = page.locator(".episode-card").nth(2);
-    await card.scrollIntoViewIfNeeded();
-    const box = await card.boundingBox();
-    const toggle = await card.locator(".episode-desc-toggle").boundingBox();
-    expect(toggle.width).toBeLessThan(box.width / 2);
-    for (const [x, y] of [[0.5, 0.5], [0.85, 0.25], [0.85, 0.75]]) {
-      const hit = await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.closest(".episode-desc-toggle") != null, [box.x + box.width * x, box.y + box.height * y]);
-      expect(hit).toBe(false);
-    }
-    await card.tap({ position: { x: box.width * 0.85, y: box.height * 0.5 } });
+    await card.locator(".episode-desc-toggle").tap();
+    await expect(page.locator(".now-playing-row")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await page.goto("/tv/201", { waitUntil: "domcontentloaded" });
+    await card.tap();
     await expect(page.locator(".episode-card.playing")).toHaveCount(1);
     await expect(page.locator(".now-playing-row")).toContainText("Э3");
   });

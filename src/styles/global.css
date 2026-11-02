@@ -6368,8 +6368,9 @@ h1, h2, h3 {
     inset: -11px -3px;
   }
   .carousel-dot { position: relative; }
-  /* Only its own text: the rest of the card must keep starting the episode. */
-  .episode-desc-toggle { display: inline-flex; align-items: center; width: fit-content; min-height: 44px; margin-block: -8px; }
+  /* Deliberately not 44 px: at that height it reaches the middle of a short card
+     and takes the taps that should start the episode. */
+  .episode-desc-toggle { padding-block: 6px; margin-block: -6px; width: fit-content; }
   .settings-content button.btn-ghost { min-height: 44px; }
   .settings-search-toggle { white-space: nowrap; min-width: 0; }
   .settings-search-toggle + * { flex-shrink: 0; }
