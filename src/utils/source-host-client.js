@@ -9,6 +9,7 @@ const MAX_AUTO_RESOLVES = 2;
 const REFRESH_TIMEOUT_MS = 20_000;
 const MAX_AUTO_REFRESHES = 2;
 const PROVIDER_COOLDOWN_MS = 30_000;
+const DISCOVER_BUSY_RETRY_MS = [800, 2_000, 4_000];
 const preparedSources = new Map();
 const providerCooldowns = new Map();
 
@@ -38,11 +39,28 @@ async function request(op, body, signal) {
   return response;
 }
 
-export async function discoverSources(title, { signal, onEvent, prepareOnly = false }) {
-  const response = await request("discover", {
+// The server caps concurrent discoveries and answers 429 before the stream
+// starts, so a retry is safe and spares the viewer a hard error on a busy moment.
+async function requestDiscovery(body, signal, delays = DISCOVER_BUSY_RETRY_MS) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await request("discover", body, signal);
+    } catch (error) {
+      if (error.status !== 429 || attempt >= delays.length || signal?.aborted) throw error;
+      await new Promise((resolve, reject) => {
+        const onAbort = () => { clearTimeout(timer); reject(signal.reason); };
+        const timer = setTimeout(() => { signal?.removeEventListener("abort", onAbort); resolve(); }, delays[attempt]);
+        signal?.addEventListener("abort", onAbort, { once: true });
+      });
+    }
+  }
+}
+
+export async function discoverSources(title, { signal, onEvent, prepareOnly = false, busyRetryDelays }) {
+  const response = await requestDiscovery({
     ...title,
     ...(prepareOnly ? { prepareOnly: true } : {}),
-  }, signal);
+  }, signal, busyRetryDelays);
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let pending = "";

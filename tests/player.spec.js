@@ -2,10 +2,11 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test, expect } from "@playwright/test";
+import { test, expect, devices } from "@playwright/test";
 
 let fixtureDir;
 let animeFixtureDir;
+let prebufferFixtureDir;
 
 test.beforeAll(() => {
   fixtureDir = mkdtempSync(join(tmpdir(), "streambert-player-"));
@@ -28,17 +29,31 @@ test.beforeAll(() => {
     "-hls_segment_filename", join(animeFixtureDir, "anime-fixture%03d.ts"),
     join(animeFixtureDir, "anime-fixture.m3u8"),
   ]);
+  prebufferFixtureDir = mkdtempSync(join(tmpdir(), "streambert-prebuffer-player-"));
+  execFileSync("ffmpeg", [
+    "-hide_banner", "-loglevel", "error", "-y",
+    "-f", "lavfi", "-i", "color=c=black:s=160x90:r=10:d=180",
+    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+    "-pix_fmt", "yuv420p", "-g", "20", "-sc_threshold", "0",
+    "-hls_time", "2", "-hls_list_size", "0",
+    "-hls_segment_filename", join(prebufferFixtureDir, "prebuffer%03d.ts"),
+    join(prebufferFixtureDir, "prebuffer.m3u8"),
+  ]);
 });
 
 test.afterAll(() => {
   if (fixtureDir) rmSync(fixtureDir, { recursive: true, force: true });
   if (animeFixtureDir) rmSync(animeFixtureDir, { recursive: true, force: true });
+  if (prebufferFixtureDir) rmSync(prebufferFixtureDir, { recursive: true, force: true });
 });
 
-test("web movie detail prepares Habster resolve before click without attaching video or progress", async ({ page }) => {
+test("web movie detail prebuffers silently, then starts the same player at the saved position", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
     localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
+    localStorage.setItem("streambert_resumeTime", JSON.stringify({ movie_550: 30 }));
+    localStorage.setItem("streambert_progress", JSON.stringify({}));
+    localStorage.setItem("streambert_history", JSON.stringify([]));
   });
   await page.route("**/api/tmdb/**", (route) => route.fulfill({
     status: 200,
@@ -53,7 +68,7 @@ test("web movie detail prepares Habster resolve before click without attaching v
   await page.route("**/api/source-host?op=discover", (route) => {
     const body = route.request().postDataJSON();
     const candidateEvent = `event: candidate\ndata: ${JSON.stringify({
-      id: body.prepareOnly ? "prepared-id" : "playback-id",
+      id: "playback-id",
       providerId: "habster:alloha", providerName: "Habster · Alloha",
       voiceId: "voice-original", voiceName: "Original", qualityHint: "Auto",
     })}\n\n`;
@@ -62,9 +77,26 @@ test("web movie detail prepares Habster resolve before click without attaching v
   await page.route("**/api/source-host?op=resolve", (route) => {
     resolveRequests.push(route.request().postDataJSON());
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
-      kind: "hls", selected: { url: "https://media.test/film.m3u8", label: "720p" },
-      qualities: [{ label: "720p", height: 720 }], subtitles: [], audioNames: [],
+      kind: "hls", selected: { url: "https://media.test/master.m3u8", label: "360p" },
+      qualities: [{ label: "360p", height: 360, url: "https://media.test/master.m3u8" }], subtitles: [], audioNames: [],
     }) });
+  });
+  const mediaRequests = [];
+  await page.route("https://media.test/**", (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    mediaRequests.push(pathname);
+    if (pathname === "/master.m3u8") return route.fulfill({
+      status: 200, contentType: "application/vnd.apple.mpegurl",
+      body: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=350000,RESOLUTION=160x90\nprebuffer.m3u8\n",
+    });
+    if (pathname === "/prebuffer.m3u8") return route.fulfill({
+      status: 200, contentType: "application/vnd.apple.mpegurl",
+      body: readFileSync(join(prebufferFixtureDir, "prebuffer.m3u8")),
+    });
+    return route.fulfill({
+      status: 200, contentType: "video/mp2t",
+      body: readFileSync(join(prebufferFixtureDir, pathname.split("/").pop())),
+    });
   });
 
   await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
@@ -72,23 +104,232 @@ test("web movie detail prepares Habster resolve before click without attaching v
   await expect(watch).toBeVisible();
   await expect.poll(() => sourceRequests.length).toBe(1);
   expect(new URL(sourceRequests[0].url).searchParams.get("op")).toBe("discover");
-  expect(sourceRequests[0].body).toMatchObject({ prepareOnly: true, type: "movie", title: "Movie 550", year: 1994, runtimeMinutes: 94 });
+  expect(sourceRequests[0].body).not.toHaveProperty("prepareOnly");
   await expect.poll(() => resolveRequests.length).toBe(1);
-  expect(resolveRequests[0]).toEqual({ id: "prepared-id" });
+  expect(resolveRequests[0].id).toBe("playback-id");
 
-  const playerChunk = page.waitForRequest((request) => /\/assets\/OnlinePlayer-[^/]+\.js$/.test(new URL(request.url()).pathname));
-  const hlsChunk = page.waitForRequest((request) => /\/assets\/hls-[^/]+\.js$/.test(new URL(request.url()).pathname));
-  await watch.focus();
-  await Promise.all([playerChunk, hlsChunk]);
-
-  await expect(page.locator("video")).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => localStorage.getItem("streambert_resumeTime"))).toBeNull();
+  const video = page.locator("video");
+  await expect(video).toHaveCount(1);
+  await expect.poll(() => mediaRequests.some((path) => path.endsWith(".ts"))).toBe(true);
+  await expect.poll(() => video.evaluate((element) => element.buffered.length > 0)).toBe(true);
+  const before = await page.evaluate(() => {
+    const video = document.querySelector("video");
+    return {
+      src: video.currentSrc,
+      paused: video.paused,
+      currentTime: video.currentTime,
+      bufferedAhead: video.buffered.length ? video.buffered.end(video.buffered.length - 1) - video.currentTime : 0,
+      resume: localStorage.getItem("streambert_resumeTime"),
+      progress: localStorage.getItem("streambert_progress"),
+      history: localStorage.getItem("streambert_history"),
+    };
+  });
+  expect(before.paused).toBe(true);
+  expect(before.currentTime).toBeGreaterThanOrEqual(29.5);
+  expect(before.currentTime).toBeLessThanOrEqual(30.5);
+  expect(before.bufferedAhead).toBeLessThanOrEqual(10);
+  expect(before.resume).toBe(JSON.stringify({ movie_550: 30 }));
+  expect(before.progress).toBe(JSON.stringify({}));
+  expect(before.history).toBe(JSON.stringify([]));
+  expect(mediaRequests.filter((path) => path.endsWith(".ts")).length).toBeLessThanOrEqual(5);
+  await page.evaluate(() => { window.__prebufferVideo = document.querySelector("video"); });
+  const discoversBeforeActivation = sourceRequests.length;
 
   await watch.click();
-  await expect.poll(() => sourceRequests.length).toBe(2);
-  expect(sourceRequests[1].body).not.toHaveProperty("prepareOnly");
-  await expect.poll(() => resolveRequests.length).toBe(1);
-  await expect(page.locator("video")).toHaveCount(1);
+  await expect.poll(() => sourceRequests.length).toBe(discoversBeforeActivation);
+  await expect.poll(() => video.evaluate((element) => !element.paused && element.currentTime >= 30)).toBe(true);
+  await expect.poll(() => video.evaluate((element) => element.getVideoPlaybackQuality().totalVideoFrames)).toBeGreaterThan(0);
+  const after = await page.evaluate(() => {
+    const video = document.querySelector("video");
+    return { sameNode: window.__prebufferVideo === video, src: video.currentSrc };
+  });
+  expect(after.sameNode).toBe(true);
+  expect(after.src).toBe(before.src);
+  expect(resolveRequests).toHaveLength(1);
+  expect(await video.evaluate((element) => ({ muted: element.muted, volume: element.volume }))).toEqual({ muted: false, volume: 1 });
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("streambert_history") || "[]").some((entry) => entry.id === 550))).toBe(true);
+
+  // "Сначала" must not lift a deliberate pause.
+  await page.locator(".torrplayer-stage video").click();
+  await expect.poll(() => video.evaluate((element) => element.paused)).toBe(true);
+  await page.getByRole("button", { name: "Сначала", exact: true }).click();
+  await page.waitForTimeout(300);
+  expect(await video.evaluate((element) => element.paused)).toBe(true);
+  await page.goto("/");
+  await expect(page.locator("video")).toHaveCount(0);
+});
+
+const prebufferRoutes = async (page, { discover } = {}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
+    localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
+  });
+  await page.route("**/api/tmdb/**", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ id: 550, title: "Movie 550", release_date: "1994-01-01", runtime: 94, overview: "", genres: [] }),
+  }));
+  const counts = { discover: 0, resolve: 0, segments: 0 };
+  await page.route("**/api/source-host?op=discover", (route) => {
+    counts.discover++;
+    if (discover && discover(counts.discover)) return route.fulfill(discover(counts.discover));
+    return route.fulfill({ status: 200, contentType: "text/event-stream", body: `event: candidate\ndata: ${JSON.stringify({
+      id: "a", providerId: "habster:alloha", providerName: "Habster · Alloha", voiceId: "v", voiceName: "Original",
+    })}\n\nevent: done\ndata: {}\n\n` });
+  });
+  await page.route("**/api/source-host?op=resolve", (route) => {
+    counts.resolve++;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      kind: "hls", selected: { url: "https://media.test/prebuffer.m3u8", label: "360p" },
+      qualities: [{ label: "360p", height: 360 }], subtitles: [], audioNames: [],
+    }) });
+  });
+  await page.route("https://media.test/**", (route) => {
+    const file = new URL(route.request().url()).pathname.split("/").pop();
+    if (file.endsWith(".ts")) counts.segments++;
+    return route.fulfill({
+      status: 200, contentType: file.endsWith(".ts") ? "video/mp2t" : "application/vnd.apple.mpegurl",
+      body: readFileSync(join(prebufferFixtureDir, file)),
+    });
+  });
+  return counts;
+};
+
+test("a hidden prebuffer failure does not greet the click: it retries from scratch", async ({ page }) => {
+  const counts = await prebufferRoutes(page, {
+    discover: (attempt) => (attempt === 1 ? { status: 502, contentType: "application/json", body: "{}" } : null),
+  });
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  await expect.poll(() => counts.discover).toBe(1);
+  await expect(page.locator("video")).toHaveCount(0);
+  await page.waitForTimeout(1500);
+  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  const video = page.locator("video");
+  await expect.poll(() => video.evaluate((v) => !v.paused && v.currentTime > 0).catch(() => false), { timeout: 20_000 }).toBe(true);
+  expect(counts.discover).toBe(2);
+  await expect(page.getByText("Не удалось получить рабочий поток")).toHaveCount(0);
+});
+
+test("an old unused prebuffer is dropped, and intent on the button starts a fresh one", async ({ page }) => {
+  const counts = await prebufferRoutes(page);
+  await page.clock.install();
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  const video = page.locator("video");
+  await expect(page.getByRole("button", { name: "Смотреть", exact: true })).toBeVisible();
+  await page.clock.fastForward(1300);
+  await expect(video).toHaveCount(1);
+  await expect.poll(() => counts.resolve).toBe(1);
+  await page.clock.fastForward(4 * 60_000 + 1000);
+  await expect(video).toHaveCount(0);
+  await page.getByRole("button", { name: "Смотреть", exact: true }).hover();
+  await expect(video).toHaveCount(1);
+  await expect.poll(() => counts.resolve).toBe(2);
+});
+
+test("leaving the card inside the app stops the prebuffer", async ({ page }) => {
+  const counts = await prebufferRoutes(page);
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  const video = page.locator("video");
+  await expect.poll(() => counts.segments, { timeout: 20_000 }).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Каталог", exact: true }).click();
+  await expect(page).toHaveURL(/\/discover$/);
+  await expect(video).toHaveCount(0);
+  const stopped = counts.segments;
+  await page.waitForTimeout(1500);
+  expect(counts.segments).toBe(stopped);
+});
+
+test("rotating a phone on the card does not open the hidden player fullscreen", async ({ browser }, testInfo) => {
+  const context = await browser.newContext({ ...devices["Pixel 7 landscape"], baseURL: testInfo.project.use.baseURL, serviceWorkers: "block" });
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    window.__fullscreenCalls = 0;
+    Element.prototype.requestFullscreen = async function requestFullscreen() { window.__fullscreenCalls++; };
+  });
+  const counts = await prebufferRoutes(page);
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  await expect.poll(() => counts.segments, { timeout: 20_000 }).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.__fullscreenCalls)).toBe(0);
+  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__fullscreenCalls)).toBeGreaterThan(0);
+  await context.close();
+});
+
+test("web movie detail does not prebuffer a glanced card or with data saver on", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
+    localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
+    if (location.search.includes("saver")) Object.defineProperty(navigator, "connection", { value: { saveData: true } });
+  });
+  await page.route("**/api/tmdb/**", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ id: 550, title: "Movie 550", release_date: "1994-01-01", runtime: 94, overview: "", genres: [] }),
+  }));
+  const discovers = [];
+  await page.route("**/api/source-host?op=discover", (route) => {
+    discovers.push(route.request().url());
+    return route.fulfill({ status: 200, contentType: "text/event-stream", body: "event: done\ndata: {}\n\n" });
+  });
+
+  // Leaving before the dwell ends never starts discovery.
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  const watch = page.getByRole("button", { name: "Смотреть", exact: true });
+  await expect(watch).toBeVisible();
+  await page.goto("/");
+  await page.waitForTimeout(1500);
+  expect(discovers).toHaveLength(0);
+
+  // Data saver: neither the dwell nor intent on the button prebuffers.
+  await page.goto("/movie/550?saver=1", { waitUntil: "domcontentloaded" });
+  await expect(watch).toBeVisible();
+  await watch.focus();
+  await page.waitForTimeout(1500);
+  expect(discovers).toHaveLength(0);
+  await expect(page.locator("video")).toHaveCount(0);
+});
+
+test("a source failing during hidden prebuffer falls over silently and the click plays the next one", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
+    localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
+    localStorage.setItem("streambert_history", JSON.stringify([]));
+  });
+  await page.route("**/api/tmdb/**", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ id: 550, title: "Movie 550", release_date: "1994-01-01", runtime: 94, overview: "", genres: [] }),
+  }));
+  await page.route("**/api/source-host?op=discover", (route) => route.fulfill({
+    status: 200, contentType: "text/event-stream",
+    body: ["broken", "good"].map((id) => `event: candidate\ndata: ${JSON.stringify({ id, providerId: id, providerName: id, voiceId: id, voiceName: id })}\n\n`).join("") + "event: done\ndata: {}\n\n",
+  }));
+  await page.route("**/api/source-host?op=resolve", async (route) => {
+    const { id } = route.request().postDataJSON();
+    // The broken source must win the parallel automatic resolve.
+    if (id === "good") await new Promise((resolve) => setTimeout(resolve, 400));
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      kind: "hls", selected: { url: `https://media.test/${id}/prebuffer.m3u8`, label: "360p" },
+      qualities: [{ label: "360p", height: 360 }], subtitles: [], audioNames: [],
+    }) });
+  });
+  await page.route("https://media.test/**", (route) => {
+    const [, id, file] = new URL(route.request().url()).pathname.split("/");
+    if (file.endsWith(".m3u8")) return route.fulfill({
+      status: 200, contentType: "application/vnd.apple.mpegurl",
+      body: readFileSync(join(prebufferFixtureDir, "prebuffer.m3u8")),
+    });
+    if (id === "broken") return route.fulfill({ status: 502, body: "" });
+    return route.fulfill({ status: 200, contentType: "video/mp2t", body: readFileSync(join(prebufferFixtureDir, file)) });
+  });
+
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  const video = page.locator("video");
+  await expect.poll(() => video.evaluate((v) => v.currentSrc && v.buffered.length > 0).catch(() => false), { timeout: 30_000 }).toBe(true);
+  expect(await video.evaluate((v) => v.paused)).toBe(true);
+  expect(await page.evaluate(() => localStorage.getItem("streambert_history"))).toBe("[]");
+
+  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  await expect.poll(() => video.evaluate((v) => !v.paused && v.currentTime > 0)).toBe(true);
+  await expect(page.getByText("Не удалось получить рабочий поток")).toHaveCount(0);
+  expect(await video.evaluate((v) => ({ muted: v.muted, volume: v.volume }))).toEqual({ muted: false, volume: 1 });
 });
 
 for (const mode of ["manual", "auto"]) test(`decoded movie playback skips confirmed segments (${mode})`, async ({ page }) => {

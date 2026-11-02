@@ -268,6 +268,11 @@ export default function OnlinePlayer({
   // balancer fleet). The two share all playback UI; only stream resolution
   // differs — Collaps via collapsResolve here, Lampac via useLampacSource.
   provider = "online",
+  // Preload the selected web source into this same player while the user is on
+  // the details page. The media stays muted and paused until an explicit play.
+  prebuffer = false,
+  onRegisterPlay = null,
+  onPrebufferFailed = null,
   // ── Source-failed hook (optional): fires when a non-Lampac provider cannot
   // resolve a stream for this title (Collaps 410, host not allowed, etc.).
   // The parent (MoviePage/TVPage) uses it to auto-switch playerSource to
@@ -286,6 +291,32 @@ export default function OnlinePlayer({
   onPlaybackState = null, // host: cb({ playing, position }) on local control changes
 }) {
   const videoRef = useRef(null);
+  const [prebuffering, setPrebuffering] = useState(prebuffer);
+  const prebufferingRef = useRef(prebuffer);
+  prebufferingRef.current = prebuffering;
+  useEffect(() => {
+    const wasPrebuffering = prebufferingRef.current;
+    if (prebuffer) {
+      prebufferingRef.current = true;
+      setPrebuffering(true);
+    } else {
+      prebufferingRef.current = false;
+      setPrebuffering(false);
+      if (wasPrebuffering) {
+        const hls = hlsRef.current;
+        if (hls?.config) {
+          hls.config.maxBufferLength = 60;
+          hls.config.maxMaxBufferLength = 300;
+        }
+        const video = videoRef.current;
+        if (video) {
+          userPausedRef.current = false;
+          try { video.volume = volumeRef.current; video.muted = mutedRef.current; } catch {}
+          try { video.play()?.catch(() => {}); } catch {}
+        }
+      }
+    }
+  }, [prebuffer]);
   const [checkpoint, setCheckpoint] = useState(() => {
     try { return progressKey ? getPlaybackCheckpoint(progressKey) : null; } catch { return null; }
   });
@@ -344,6 +375,11 @@ export default function OnlinePlayer({
   const markWatchedRef = useRef(onMarkWatched); markWatchedRef.current = onMarkWatched;
 
   const [state, setState] = useState("loading");
+  // A hidden failure must not greet the later click: the host drops this player
+  // and the click starts a fresh attempt.
+  useEffect(() => {
+    if (prebuffering && state === "error") onPrebufferFailed?.();
+  }, [prebuffering, state, onPrebufferFailed]);
   const [error, setError] = useState("");
   const [stream, setStream] = useState(null); // {dash?, hls?}
   const [audioNames, setAudioNames] = useState([]);
@@ -360,6 +396,14 @@ export default function OnlinePlayer({
   // dash.js/hls.js engine on every volume tick).
   const volumeRef = useRef(1); volumeRef.current = volume;
   const mutedRef = useRef(false); mutedRef.current = muted;
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      video.volume = prebuffering ? 0 : volumeRef.current;
+      video.muted = prebuffering || mutedRef.current;
+    } catch {}
+  }, [prebuffering]);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
   const [buffered, setBuffered] = useState(0);
@@ -458,6 +502,7 @@ export default function OnlinePlayer({
   const refreshFleetSourceRef = useRef(null);
   refreshFleetSourceRef.current = isLampac ? lampac.refreshCurrent : null;
   const saveResumeTime = useCallback((t) => {
+    if (prebufferingRef.current) return;
     try {
       const map = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
       map[progressKey] = Math.max(0, Math.round(t * 10) / 10); // 0.1s precision
@@ -465,6 +510,7 @@ export default function OnlinePlayer({
     } catch {}
   }, [progressKey]);
   const persistCheckpoint = useCallback((position, preferencePatch = null, flush = false, updateState = true) => {
+    if (prebufferingRef.current) return;
     if (!progressKey || !checkpointItem.id) return;
     const previous = checkpointRef.current || {};
     const preferences = preferencePatch ? { ...(previous.preferences || {}), ...preferencePatch } : (previous.preferences || {});
@@ -497,7 +543,7 @@ export default function OnlinePlayer({
       if (latest) {
         checkpointRef.current = latest;
         setCheckpoint(latest);
-        if (Number.isFinite(latest.position) && latest.position >= 0) saveResumeTime(latest.position);
+        if (!prebufferingRef.current && Number.isFinite(latest.position) && latest.position >= 0) saveResumeTime(latest.position);
       }
       setProfileReadyKey(progressKey);
     })();
@@ -580,7 +626,7 @@ export default function OnlinePlayer({
   const rateRef = useRef(1);
   rateRef.current = rate;
 
-  const destroyAll = useCallback(() => {
+  const destroyAll = useCallback((video) => {
     // destroy(), not reset(): reset() only tears down the MediaSource — the
     // MediaPlayer itself (event-bus listeners, BufferController/ScheduleController
     // timers, the refcount into the dash.js core) survives. Every stream change
@@ -598,7 +644,7 @@ export default function OnlinePlayer({
     // and the next stream attaches cleanly (a lingering src would keep buffering
     // the previous file and can wedge the new attach).
     if (engineRef.current === "native") {
-      const v = videoRef.current;
+      const v = video || videoRef.current;
       if (v) { try { v.removeAttribute("src"); v.load(); } catch {} }
     }
     engineRef.current = null;
@@ -765,7 +811,7 @@ export default function OnlinePlayer({
   }, [isLampac, lampac.sourceError]);
 
   useEffect(() => {
-    if (!isLampac || !lampac.sourcePreference) return;
+    if (prebuffering || !isLampac || !lampac.sourcePreference) return;
     const currentTime = videoRef.current?.currentTime || 0;
     let legacyPosition = 0;
     try { legacyPosition = Number((storage.get(STORAGE_KEYS.RESUME_TIME) || {})[progressKey]) || 0; } catch {}
@@ -780,7 +826,7 @@ export default function OnlinePlayer({
       voiceName: lampac.sourcePreference.voiceName,
       ...(lampac.quality ? { quality: lampac.quality } : {}),
     });
-  }, [isLampac, lampac.sourcePreference?.providerId, lampac.sourcePreference?.voiceId, lampac.sourcePreference?.voiceName, lampac.quality, progressKey, persistCheckpoint]);
+  }, [prebuffering, isLampac, lampac.sourcePreference?.providerId, lampac.sourcePreference?.voiceId, lampac.sourcePreference?.voiceName, lampac.quality, progressKey, persistCheckpoint]);
 
   // ── Switching watchdog: the overlay can NEVER outlive a switch ────────────────
   // The `switching` freeze is cleared by the hook (aborted/stale/error descents) or
@@ -837,10 +883,11 @@ export default function OnlinePlayer({
   //   • no metadata, no data = genuine trickle, fail over.
   // Progressive MP4 metadata can take ~9 s; give files a bounded 14 s grace while HLS keeps 7 s.
   useEffect(() => {
-    if (!isLampac || !stream) return;
+    if (prebuffering || !isLampac || !stream) return;
     const v = videoRef.current;
     if (!v) return;
-    let metaSeen = false;
+    // Prebuffered media got its metadata before this watchdog was armed.
+    let metaSeen = v.readyState >= 1;
     const onMeta = () => { metaSeen = true; };
     v.addEventListener("loadedmetadata", onMeta, { once: true });
     const t = setTimeout(() => {
@@ -852,7 +899,7 @@ export default function OnlinePlayer({
         fleetFailover();
         return;
       }
-      if (metaSeen && rs >= 3) { try { v.play?.().catch(() => {}); } catch {} return; }
+      if (metaSeen && rs >= 3) { if (!prebufferingRef.current) { try { v.play?.().catch(() => {}); } catch {} } return; }
       // No forward progress and not enough buffered to advance: a throughput stall
       // the probe couldn't see and no error will report. Jump to the next balancer.
       fleetFailover();
@@ -867,13 +914,13 @@ export default function OnlinePlayer({
       v.removeEventListener("pause", onPause);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLampac, stream, fleetFailover]);
+  }, [prebuffering, isLampac, stream, fleetFailover]);
 
   // A fatal engine error is not the only way a relay can stop: some stalls emit
   // neither an error nor `waiting`. After real playback, refresh the SAME source
   // only when its clock has stopped for 20s while the buffer is empty.
   useEffect(() => {
-    if (!isLampac || !stream || switching) return;
+    if (prebuffering || !isLampac || !stream || switching) return;
     const v = videoRef.current;
     if (!v) return;
     let lastTime = v.currentTime || 0;
@@ -918,11 +965,11 @@ export default function OnlinePlayer({
       }
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [isLampac, stream, switching, saveResumeTime, refreshCurrentSource]);
+  }, [prebuffering, isLampac, stream, switching, saveResumeTime, refreshCurrentSource]);
 
   // ── AniList + AniSkip (intro/outro) for anime ───────────────────────────────
   useEffect(() => {
-    if (introSkipMode === "off" || type !== "tv" || !episode || !duration) return;
+    if (prebuffering || introSkipMode === "off" || type !== "tv" || !episode || !duration) return;
     let cancelled = false;
     const controller = new AbortController();
     (async () => {
@@ -950,14 +997,14 @@ export default function OnlinePlayer({
     })();
     return () => { cancelled = true; controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item?.id, season, episode, introSkipMode, type, details, duration]);
+  }, [prebuffering, item?.id, season, episode, introSkipMode, type, details, duration]);
 
   // ── Fetch cast (real name + character + photo) for the pause overlay ────────
   // Movies: /movie/{id}/credits. TV: /tv/{id}/credits (series main cast). Top
   // ~10 billed, with a profile photo. Shown when the user pauses — like the
   // Kinopoisk player's cast panel (this is the full cast, not frame-recognized).
   useEffect(() => {
-    if (!apiKey || !item?.id) { setCast([]); return; }
+    if (prebuffering || !apiKey || !item?.id) { setCast([]); return; }
     let cancelled = false;
     // Deferred: cast is only rendered on the PAUSE overlay, but the fetch
     // used to fire at mount — competing for the same HTTP/1.1 sockets as
@@ -977,11 +1024,11 @@ export default function OnlinePlayer({
     }, 4000);
     return () => { cancelled = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item?.id, type, apiKey]);
+  }, [prebuffering, item?.id, type, apiKey]);
 
   // ── Confirmed IntroDB segments for movies and TV ────────────────────────────
   useEffect(() => {
-    if (!stream || !duration || !Number.isFinite(duration)) return;
+    if (prebuffering || !stream || !duration || !Number.isFinite(duration)) return;
     let cancelled = false;
     const controller = new AbortController();
     setSkipTimings((prev) => {
@@ -1008,7 +1055,7 @@ export default function OnlinePlayer({
     })();
     return () => { cancelled = true; controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stream, duration, item?.id, item?.imdb_id, details, type, season, episode, apiKey, resolvedImdbId]);
+  }, [prebuffering, stream, duration, item?.id, item?.imdb_id, details, type, season, episode, apiKey, resolvedImdbId]);
 
   // ── Attach engine when stream is ready (DASH preferred → 4K) ────────────────
   // Re-arm the once-per-episode next trigger on a genuine episode change only —
@@ -1072,8 +1119,8 @@ export default function OnlinePlayer({
     // MANIFEST_PARSED) and again on loadedmetadata as a safety net for any
     // engine/browser that applies it late.
     const reapplyVolume = () => {
-      try { v.volume = volumeRef.current; } catch {}
-      try { v.muted = mutedRef.current; } catch {}
+      try { v.volume = prebufferingRef.current ? 0 : volumeRef.current; } catch {}
+      try { v.muted = prebufferingRef.current || mutedRef.current; } catch {}
     };
 
     // Native <video> playback — for progressive MP4/MKV (Lampac torrent & some
@@ -1088,7 +1135,7 @@ export default function OnlinePlayer({
         try { v.playbackRate = rateRef.current || 1; } catch {}
         reapplyVolume();
         resumeAt(v);
-        if (!userPausedRef.current) v.play().catch(() => {});
+        if (!prebufferingRef.current && !userPausedRef.current) v.play().catch(() => {});
       };
       v.addEventListener("loadedmetadata", onMeta, { once: true });
       // A native media error can't recover in-place (no ABR ladder): surface it
@@ -1221,7 +1268,7 @@ export default function OnlinePlayer({
           try { v.playbackRate = rateRef.current || 1; } catch {}
           reapplyVolume();
           resumeAt(v);
-          if (!userPausedRef.current) v.play().catch(() => {});
+          if (!prebufferingRef.current && !userPausedRef.current) v.play().catch(() => {});
           // F4: early `clearSwitching` on a fresh fleet attach. dash.js's STREAM_INITIALIZED
           // fires when the MPD parses — earlier than the first decoded frame that `playing`
           // would react to, and reliably (it is the engine's "we have a stream" signal,
@@ -1340,8 +1387,11 @@ export default function OnlinePlayer({
         testBandwidth: false,
         backBufferLength: 30,
         capLevelToPlayerSize: true,
-        maxBufferLength: 60,
-        maxMaxBufferLength: 300,
+        // One or two fragments are enough for an instant start; everything is
+        // relayed. hls.js grows the target towards maxMaxBufferLength from
+        // maxBufferSize, so that ceiling is the one that actually limits it.
+        maxBufferLength: prebufferingRef.current ? 6 : 60,
+        maxMaxBufferLength: prebufferingRef.current ? 6 : 300,
         maxBufferSize: 120 * 1000 * 1000,
         fragLoadingMaxRetry: 6,
         fragLoadingTimeOut: 20000,
@@ -1396,7 +1446,7 @@ export default function OnlinePlayer({
         resumeAt(v);
         try { v.playbackRate = rateRef.current || 1; } catch {}
         reapplyVolume();
-        if (!userPausedRef.current) v.play().catch(() => {});
+        if (!prebufferingRef.current && !userPausedRef.current) v.play().catch(() => {});
         // F4: see dash STREAM_INITIALIZED note above. MANIFEST_PARSED is hls.js's
         // "we have a stream" signal — fires as soon as the master m3u8 has been
         // parsed and the level list is available, well before the first frame
@@ -1488,6 +1538,8 @@ export default function OnlinePlayer({
       // element; no DASH/HLS engine, the container is the whole stream.
       if (stream.mp4) {
         attachNative(stream.mp4);
+      } else if (prebufferingRef.current && stream.hls) {
+        attachHls();
       } else if (stream.dash && !isMobile) {
         const ok = await attachDash();
         if (!ok) attachHls();
@@ -1497,7 +1549,8 @@ export default function OnlinePlayer({
         setState("error"); setError("Поток недоступен (нет DASH/HLS)");
       }
     })();
-    return () => { disposed = true; destroyAll(); };
+    // React detaches videoRef before this cleanup when the player unmounts.
+    return () => { disposed = true; destroyAll(v); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream]);
 
@@ -1601,7 +1654,7 @@ export default function OnlinePlayer({
       // <2 ceiling rejects a seek/MediaSource-reset jump that slipped past the
       // seek guards below. A false latch would disable failover for good, so bias
       // toward under-latching.
-      if (isLampac && !fleetPlayedRef.current && resumeTargetRef.current == null && !v.seeking) {
+      if (!prebufferingRef.current && isLampac && !fleetPlayedRef.current && resumeTargetRef.current == null && !v.seeking) {
         const prev = lastFleetTimeRef.current;
         if (prev != null && t > prev + 0.1 && t < prev + 2) {
           fleetPlayedRef.current = true;
@@ -1613,9 +1666,10 @@ export default function OnlinePlayer({
       }
     };
     const onDur = () => setDuration(v.duration || 0);
-    const onPlay = () => { setPlaying(true); hadPlayedRef.current = true; };
+    const onPlay = () => { setPlaying(true); if (!prebufferingRef.current) hadPlayedRef.current = true; };
     const onPause = () => {
       setPlaying(false);
+      if (prebufferingRef.current) return;
       const position = resumeTargetRef.current ?? v.currentTime;
       if (Number.isFinite(position) && v.duration > 0) {
         saveResumeTime(position);
@@ -1636,11 +1690,11 @@ export default function OnlinePlayer({
       if (isLampac) lampac.clearSwitching();
     };
     const onRate = () => setRate(v.playbackRate || 1);
-    const onVol = () => { setVolume(v.volume); setMuted(v.muted); };
+    const onVol = () => { if (!prebufferingRef.current) { setVolume(v.volume); setMuted(v.muted); } };
     const onWaiting = () => setWaiting(true);
     // Playback actually running → clear the switch freeze even when no resume
     // seek fired (a fresh balancer/dub that starts at 0 emits no `seeked`).
-    const onPlaying = () => { setWaiting(false); setRecovering(false); hadPlayedRef.current = true; if (isLampac) lampac.clearSwitching(); };
+    const onPlaying = () => { setWaiting(false); setRecovering(false); if (prebufferingRef.current) return; hadPlayedRef.current = true; if (isLampac) lampac.clearSwitching(); };
     const onCanPlay = () => setWaiting(false);
     // `progress` fires on every appended chunk — one re-render per segment
     // during a buffer fill. Same rAF coalescing + no-op skip as onTime.
@@ -1663,7 +1717,10 @@ export default function OnlinePlayer({
       // engine (dash.js/hls.js) or native <video> attaches the new source
       // before our STREAM_INITIALIZED/MANIFEST_PARSED re-apply runs, or resets
       // it afterwards on internal re-init. Cheap no-op if already correct.
-      try { v.volume = volumeRef.current; v.muted = mutedRef.current; } catch {}
+      try {
+        v.volume = prebufferingRef.current ? 0 : volumeRef.current;
+        v.muted = prebufferingRef.current || mutedRef.current;
+      } catch {}
       applyEmbeddedSubtitle(v, checkpointRef.current?.preferences?.subtitle);
       resumeAt(v);
       // F4 (native path): covers the mp4 / Safari native HLS / progressive file
@@ -1707,22 +1764,22 @@ export default function OnlinePlayer({
   const syncStateRef = useRef(syncState);
   syncStateRef.current = syncState;
   useEffect(() => {
-    if (syncRole !== "follower" || !syncState) return;
+    if (prebuffering || syncRole !== "follower" || !syncState) return;
     const v = videoRef.current;
     if (!v) return;
     applyWatchSync(v, syncState);
-  }, [syncRole, syncState]);
+  }, [prebuffering, syncRole, syncState]);
   useEffect(() => {
-    if (syncRole !== "follower") return;
+    if (prebuffering || syncRole !== "follower") return;
     const v = videoRef.current;
     if (!v) return;
     const apply = () => { if (syncStateRef.current) applyWatchSync(v, syncStateRef.current); };
     const tick = setInterval(apply, 500);
     return () => clearInterval(tick);
-  }, [syncRole, stream]);
+  }, [prebuffering, syncRole, stream]);
 
   useEffect(() => {
-    if (syncRole !== "host" || !onPlaybackState) return;
+    if (prebuffering || syncRole !== "host" || !onPlaybackState) return;
     const v = videoRef.current;
     if (!v) return;
     const report = () => onPlaybackState({ playing: !v.paused, position: v.currentTime || 0 });
@@ -1741,11 +1798,11 @@ export default function OnlinePlayer({
       v.removeEventListener("ratechange", onRate);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [syncRole, onPlaybackState, stream]);
+  }, [prebuffering, syncRole, onPlaybackState, stream]);
 
   // ── Progress reporting ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (!stream) return;
+    if (prebuffering || !stream) return;
     clearInterval(progressTimerRef.current);
     progressTimerRef.current = setInterval(() => {
       const v = videoRef.current;
@@ -1758,7 +1815,7 @@ export default function OnlinePlayer({
       saveResumeTime(v.currentTime);
     }, 5000);
     return () => clearInterval(progressTimerRef.current);
-  }, [stream, watchedThreshold, progressKey]);
+  }, [prebuffering, stream, watchedThreshold, progressKey]);
 
   const commitViewingSession = useCallback((completedAt = null) => {
     const session = viewingSessionRef.current;
@@ -1776,16 +1833,17 @@ export default function OnlinePlayer({
   }, [progressKey]);
 
   useEffect(() => {
+    if (prebuffering) return;
     const sessionId = newPlaybackSessionId();
     viewingSessionRef.current = { sessionId, progressKey, segments: [], lastSample: null, playedMediaSeconds: 0, lastFlushAt: 0, completedAt: null };
     return () => commitViewingSession();
-  }, [progressKey, commitViewingSession]);
+  }, [prebuffering, progressKey, commitViewingSession]);
 
   // Count only wall-clock intervals where the video is actively playing and its
   // media clock advances at a plausible rate. Seeks, initial resume, intro skips,
   // pauses, and buffering reset the baseline, so those gaps never enter stats.
   useEffect(() => {
-    if (!stream || !progressKey) return;
+    if (prebuffering || !stream || !progressKey) return;
     const timer = setInterval(() => {
       const video = videoRef.current;
       const session = viewingSessionRef.current;
@@ -1861,7 +1919,7 @@ export default function OnlinePlayer({
       unregisterClosingCapture();
       Promise.resolve(flushViewingProfile()).catch(() => {});
     };
-  }, [stream, progressKey, watchedThreshold, commitViewingSession, saveResumeTime, persistCheckpoint]);
+  }, [prebuffering, stream, progressKey, watchedThreshold, commitViewingSession, saveResumeTime, persistCheckpoint]);
 
   // ── Skip intro/outro/recap + next-episode-when-ending detection ───────────────
   // The active mode depends on the content: anime series use introSkipMode
@@ -1872,12 +1930,12 @@ export default function OnlinePlayer({
   const providerSkips = useMemo(() => isLampac ? providerSkipRanges(lampac.skip, duration) : [], [isLampac, lampac.skip, duration]);
   useEffect(() => {
     const isFollower = syncRole === "follower";
-    const skipActive = !isFollower && (skipTimings || providerSkips.length) && activeSkipMode !== "off";
+    const skipActive = !prebuffering && !isFollower && (skipTimings || providerSkips.length) && activeSkipMode !== "off";
     setSkipPrompt(null);
     // Run the 1s tick if either skip is active OR a next-episode callback is
     // wired (so we can switch episodes when skip is off). Followers cannot
     // seek locally; the host remains authoritative.
-    if (!skipActive && (isFollower || !onNextRef.current)) { setSkipPrompt(null); return; }
+    if (prebuffering || (!skipActive && (isFollower || !onNextRef.current))) { setSkipPrompt(null); return; }
     clearInterval(skipTimerRef.current);
     skipTimerRef.current = setInterval(() => {
       if (state !== "ready" || switching) { setSkipPrompt(null); return; }
@@ -1917,7 +1975,7 @@ export default function OnlinePlayer({
       }
     }, 1000);
     return () => clearInterval(skipTimerRef.current);
-  }, [skipTimings, providerSkips, activeSkipMode, onNext, watchedThreshold, syncRole, state, switching]);
+  }, [prebuffering, skipTimings, providerSkips, activeSkipMode, onNext, watchedThreshold, syncRole, state, switching]);
 
   // ── Fullscreen state ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1972,7 +2030,7 @@ export default function OnlinePlayer({
   // (incl. followers) — landscape fullscreen is a viewing affordance, not a
   // playback control. Every orientation/fullscreen call is wrapped in try/catch.
   useEffect(() => {
-    if (!isMobile) return;
+    if (!isMobile || prebuffering) return;
     const v = videoRef.current;
     const el = containerRef.current;
 
@@ -2060,12 +2118,13 @@ export default function OnlinePlayer({
       document.removeEventListener("webkitfullscreenchange", onFsChange);
       if (v) v.removeEventListener("webkitendfullscreen", onFsChange);
     };
-  }, [isMobile, stream]);
+  }, [isMobile, stream, prebuffering]);
 
   // ── Controls auto-hide ──────────────────────────────────────────────────────
   const showControls = useCallback(() => {
     setControlsVisible(true);
     clearTimeout(hideTimerRef.current);
+    if (prebufferingRef.current) return;
     hideTimerRef.current = setTimeout(() => {
       if (videoRef.current && !videoRef.current.paused &&
           !showTracks && !showQuality && !showSpeed && !showSubs && !showBalanser && !showVoice)
@@ -2075,8 +2134,33 @@ export default function OnlinePlayer({
   useEffect(() => { showControls(); return () => clearTimeout(hideTimerRef.current); }, [showControls, playing]);
 
   // ── Controls (engine-agnostic) ──────────────────────────────────────────────
+  const activateAndPlay = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (prebufferingRef.current) {
+      prebufferingRef.current = false;
+      setPrebuffering(false);
+      const hls = hlsRef.current;
+      if (hls?.config) {
+        hls.config.maxBufferLength = 60;
+        hls.config.maxMaxBufferLength = 300;
+      }
+      try {
+        v.volume = prebufferingRef.current ? 0 : volumeRef.current;
+        v.muted = prebufferingRef.current || mutedRef.current;
+      } catch {}
+    }
+    userPausedRef.current = false;
+    try { v.play()?.catch(() => {}); } catch {}
+  }, []);
+  useEffect(() => {
+    if (!onRegisterPlay) return;
+    onRegisterPlay(activateAndPlay);
+    return () => onRegisterPlay(null);
+  }, [onRegisterPlay, activateAndPlay]);
   const togglePlay = () => {
     const v = videoRef.current; if (!v) return;
+    if (prebufferingRef.current && v.paused) { activateAndPlay(); return; }
     userPausedRef.current = !v.paused;
     if (v.paused) v.play().catch(() => {}); else v.pause();
   };
@@ -2293,6 +2377,7 @@ export default function OnlinePlayer({
   };
   useEffect(() => {
     const onKey = (e) => {
+      if (prebufferingRef.current) return;
       const tag = (e.target?.tagName || "").toLowerCase();
       if (tag === "input" || tag === "textarea" || e.target?.isContentEditable) return;
       const v = videoRef.current; if (!v) return;

@@ -228,6 +228,8 @@ export const clearLampacState = (imdbId) => {
 
 // ── Player volume / mute (single global value, not per-title) ──────────────────
 const clampVol = (v) => {
+  // Number(null) is 0: an unset volume must stay "unset", not become silence.
+  if (v == null || v === "") return null;
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
   return Math.min(1, Math.max(0, n));

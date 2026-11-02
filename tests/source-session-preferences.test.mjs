@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createSourceSession } from "../src/utils/source-host-client.js";
+import { createSourceSession, discoverSources } from "../src/utils/source-host-client.js";
 
 const candidate = (id, voiceId, voiceName) => ({
   id, providerId: "habster:alloha", providerName: "Habster · Alloha", voiceId, voiceName,
@@ -409,4 +409,42 @@ test("automatic source deadlines abort stalled providers and let the next provid
   await flush();
   assert.equal(state.balanser, "deadline-c");
   session.stop();
+});
+
+test("discovery retries a busy server before the stream starts, then gives up", async () => {
+  const realFetch = globalThis.fetch;
+  const busy = () => new Response(JSON.stringify({ error: "BUSY", message: "busy" }), { status: 429 });
+  const stream = () => new Response("event: candidate\ndata: {\"id\":\"a\"}\n\n");
+  try {
+    let calls = 0;
+    globalThis.fetch = async () => (++calls < 3 ? busy() : stream());
+    const events = [];
+    await discoverSources({ type: "movie" }, { onEvent: (name, value) => events.push([name, value.id]), busyRetryDelays: [1, 1] });
+    assert.equal(calls, 3);
+    assert.deepEqual(events, [["candidate", "a"]]);
+
+    calls = 0;
+    globalThis.fetch = async () => { calls++; return busy(); };
+    await assert.rejects(discoverSources({ type: "movie" }, { onEvent() {}, busyRetryDelays: [1] }), (error) => error.status === 429);
+    assert.equal(calls, 2);
+
+    calls = 0;
+    const controller = new AbortController();
+    globalThis.fetch = async () => { calls++; controller.abort(new Error("left")); return busy(); };
+    await assert.rejects(discoverSources({ type: "movie" }, { signal: controller.signal, onEvent() {}, busyRetryDelays: [60_000] }));
+    assert.equal(calls, 1);
+
+    calls = 0;
+    const leaving = new AbortController();
+    globalThis.fetch = async () => { calls++; setTimeout(() => leaving.abort(new Error("left")), 1); return busy(); };
+    await assert.rejects(discoverSources({ type: "movie" }, { signal: leaving.signal, onEvent() {}, busyRetryDelays: [60_000] }), /left/);
+    assert.equal(calls, 1);
+
+    calls = 0;
+    globalThis.fetch = async () => { calls++; return new Response("{}", { status: 502 }); };
+    await assert.rejects(discoverSources({ type: "movie" }, { onEvent() {}, busyRetryDelays: [1] }), (error) => error.status === 502);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

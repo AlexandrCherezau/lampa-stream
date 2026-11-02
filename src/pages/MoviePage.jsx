@@ -46,12 +46,9 @@ import {
   ShieldBlockIcon,
   PopOutIcon,
 } from "../components/Icons";
-// The player subtree is ~400 KB of source (useLampacSource + lampac-client +
-// both players + the download modal) that the detail page does not need until
-// the viewer presses Play. As static imports it all landed in the movie/tv
-// chunk, so the FIRST poster click paid for it before anything rendered —
-// a visible freeze on a cold navigation. Lazy boundaries move it behind the
-// click; the Suspense fallback is the player stage's own loading UI.
+// Keep the player out of the initial movie chunk. Eligible web movies mount it
+// offscreen after details load so its stream can prebuffer; other playback
+// paths still load it on demand. Suspense keeps the player stage self-contained.
 const DownloadModal = lazy(() => import("../components/DownloadModal"));
 const TrailerModal = lazy(() => import("../components/TrailerModal"));
 const BlockedStatsModal = lazy(() => import("../components/BlockedStatsModal"));
@@ -61,6 +58,16 @@ const OnlinePlayer = lazy(loadOnlinePlayer);
 const preloadOnlinePlayer = () => loadOnlinePlayer()
   .then((module) => module.preloadOnlinePlayer())
   .catch(() => {});
+// Video prebuffer goes through the relay, so a card that is only glanced at must
+// not pay for it: wait for a short dwell or for intent on the play button.
+const PREBUFFER_DWELL_MS = 1200;
+// Upstream media links are short-lived (321 s is the longest verified). Drop an
+// unused prebuffer before that, so a late click starts fresh instead of stalling.
+const PREBUFFER_MAX_AGE_MS = 4 * 60_000;
+const prebufferAllowed = () => {
+  const connection = typeof navigator !== "undefined" ? navigator.connection : null;
+  return !connection?.saveData && !/(^|-)2g$/.test(connection?.effectiveType || "");
+};
 import { useBlockedStats } from "../utils/useBlockedStats";
 import useElementWidth from "../utils/useElementWidth";
 import MediaCard from "../components/MediaCard";
@@ -77,7 +84,6 @@ import {
   getAgeLimitSetting,
   getRatingCountry,
 } from "../utils/ageRating";
-import { prepareMovieSource } from "../utils/source-host-client";
 import PersonalRating from "../components/PersonalRating";
 
 export default function MoviePage({
@@ -148,6 +154,10 @@ export default function MoviePage({
   // the rung (w185 vs w154 vs w92) without duplicating those media queries here.
   const [detailPosterRef, detailPosterWidth] = useElementWidth();
   const webviewRef = useRef(null);
+  const prebufferPlayRef = useRef(null);
+  const registerPrebufferPlay = useCallback((play) => {
+    prebufferPlayRef.current = typeof play === "function" ? play : null;
+  }, []);
   // Always-current refs for interval callbacks, avoids stale closures without restarting the interval
   const saveProgressRef = useRef(saveProgress);
   saveProgressRef.current = saveProgress;
@@ -670,11 +680,12 @@ export default function MoviePage({
   }, [playing, progressKey, watchedThreshold, playerSource, progressViaFrames]);
 
   const handlePlay = useCallback(() => {
+    if (!playing) prebufferPlayRef.current?.();
     setM3u8Url(null);
     setInterceptedSubs([]);
     setPlaying(true);
     onHistory({ ...d, media_type: "movie" });
-  }, [d, onHistory]);
+  }, [d, onHistory, playing]);
 
   // Intercept fullscreen requests from embedded players (vidsrc / 2embed use
   // the native Fullscreen API which would otherwise fullscreen the entire app).
@@ -745,45 +756,21 @@ export default function MoviePage({
     today.setHours(0, 0, 0, 0);
     return new Date(d.release_date) > today;
   }, [d.release_date]);
-
-  // Resolve the default Habster stream while the viewer reads the web movie
-  // page. The existing player stays unmounted until the viewer starts playback.
+  const canPrebuffer = webMode && Boolean(details) && !restricted && !isUnreleased
+    && (playerSource === "online" || playerSource === "lampac") && prebufferAllowed();
+  const [prebufferIntent, setPrebufferIntent] = useState(false);
   useEffect(() => {
-    if (!webMode || !details || restricted || isUnreleased || !["online", "lampac"].includes(playerSource)) return;
-    const title = details.title || details.name || item.title || item.name;
-    if (!title) return;
-    const kpId = [details.kinopoisk_id, details.kinopoiskId, item.kinopoisk_id, item.kinopoiskId]
-      .filter((value) => typeof value === "number" || typeof value === "string")
-      .map(Number)
-      .find((value) => Number.isSafeInteger(value) && value > 0);
-    const year = (details.release_date || details.first_air_date || item.release_date || item.first_air_date || "").slice(0, 4);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20_000);
-    const runtime = Number(details.runtime ?? item.runtime);
-    const titleParams = {
-      type: "movie",
-      title,
-      originalTitle: details.original_title || details.original_name || item.original_title || item.original_name || title,
-      language: details.original_language || item.original_language,
-      anime: isAnimeContent(item, details),
-      tmdbId: item.id,
-      ...(["vi3000", "habster", "zona"].includes(item.catalogSource) ? { catalogSource: item.catalogSource } : {}),
-      ...(year ? { year: Number(year) } : {}),
-      ...(details.imdb_id || details.external_ids?.imdb_id || item.imdb_id
-        ? { imdbId: details.imdb_id || details.external_ids?.imdb_id || item.imdb_id }
-        : {}),
-      ...(kpId ? { kinopoiskId: kpId } : {}),
-      ...(Number.isSafeInteger(runtime) && runtime >= 1 && runtime <= 1440 ? { runtimeMinutes: runtime } : {}),
-    };
-    void prepareMovieSource(titleParams, { signal: controller.signal }).then(
-      () => clearTimeout(timeout),
-      () => clearTimeout(timeout),
-    );
-    return () => {
-      clearTimeout(timeout);
-      controller.abort();
-    };
-  }, [webMode, details, item.id, item.title, item.name, item.release_date, item.kinopoisk_id, item.kinopoiskId, item.imdb_id, item.original_title, item.original_name, playerSource, restricted, isUnreleased]);
+    if (!canPrebuffer) return;
+    const timer = setTimeout(() => setPrebufferIntent(true), PREBUFFER_DWELL_MS);
+    return () => clearTimeout(timer);
+  }, [canPrebuffer]);
+  const prebufferOnlinePlayer = canPrebuffer && prebufferIntent;
+  const dropPrebuffer = useCallback(() => setPrebufferIntent(false), []);
+  useEffect(() => {
+    if (!prebufferOnlinePlayer || playing) return;
+    const timer = setTimeout(dropPrebuffer, PREBUFFER_MAX_AGE_MS);
+    return () => clearTimeout(timer);
+  }, [prebufferOnlinePlayer, playing, dropPrebuffer]);
 
   // Check if this movie is already downloaded or currently downloading
   const movieDownload = (downloads || []).find(
@@ -918,9 +905,11 @@ export default function MoviePage({
                   className="btn btn-primary"
                   onPointerEnter={() => {
                     if (playerSource === "online" || playerSource === "lampac") void preloadOnlinePlayer();
+                    if (canPrebuffer) setPrebufferIntent(true);
                   }}
                   onFocus={() => {
                     if (playerSource === "online" || playerSource === "lampac") void preloadOnlinePlayer();
+                    if (canPrebuffer) setPrebufferIntent(true);
                   }}
                   onClick={handlePlay}
                 >
@@ -988,8 +977,24 @@ export default function MoviePage({
 
       <div className="personal-rating-shell"><PersonalRating item={details ? { ...details, media_type: "movie" } : { ...item, media_type: "movie" }} /></div>
 
-      {playing && !restricted && !isUnreleased && (
-        <div className="section">
+      {((playing && !restricted && !isUnreleased) || prebufferOnlinePlayer) && (
+        <div
+          className="section"
+          aria-hidden={!playing}
+          inert={!playing ? "" : undefined}
+          style={!playing ? {
+            position: "fixed",
+            top: 0,
+            left: "-10000px",
+            // Real player size: capLevelToPlayerSize must not pin the buffered
+            // start of the film to a small rung.
+            width: "min(100vw, 1280px)",
+            aspectRatio: "16 / 9",
+            visibility: "hidden",
+            pointerEvents: "none",
+            zIndex: -1,
+          } : undefined}
+        >
           <div
             className={`player-wrap${playerFullscreen ? " player-wrap--fullscreen" : ""}`}
             ref={playerWrapRef}
@@ -1000,6 +1005,9 @@ export default function MoviePage({
                 {playerSource === "online" || playerSource === "lampac" ? (
                   <OnlinePlayer
                     key={playerSource}
+                    prebuffer={!playing}
+                    onRegisterPlay={registerPrebufferPlay}
+                    onPrebufferFailed={dropPrebuffer}
                     provider={playerSource}
                     apiKey={apiKey}
                     item={item}
