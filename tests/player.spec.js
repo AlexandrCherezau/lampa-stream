@@ -332,6 +332,442 @@ test("a source failing during hidden prebuffer falls over silently and the click
   expect(await video.evaluate((v) => ({ muted: v.muted, volume: v.volume }))).toEqual({ muted: false, volume: 1 });
 });
 
+const tvEpisodes = (season) => Array.from({ length: 8 }, (_, index) => ({
+  id: season * 100 + index + 1, season_number: season, episode_number: index + 1, name: `S${season} episode ${index + 1}`,
+  // The last episode has not aired yet.
+  air_date: index === 7 ? "2099-01-01" : "2024-01-01", still_path: null, overview: "",
+}));
+
+const tvPrebufferRoutes = async (page, { storage = {}, saver = false, holdDiscover = null, failDiscover = null } = {}) => {
+  await page.addInitScript(({ storage, saver }) => {
+    if (sessionStorage.getItem("tv-prebuffer-fixture")) return;
+    sessionStorage.setItem("tv-prebuffer-fixture", "1");
+    localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
+    localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
+    localStorage.setItem("streambert_history", JSON.stringify([]));
+    localStorage.setItem("streambert_progress", JSON.stringify(storage.progress || {}));
+    localStorage.setItem("streambert_resumeTime", JSON.stringify(storage.resumeTime || {}));
+    localStorage.setItem("streambert_watched", JSON.stringify(storage.watched || {}));
+    for (const [key, value] of Object.entries(storage.settings || {})) localStorage.setItem(`streambert_${key}`, JSON.stringify(value));
+  }, { storage, saver });
+  await page.addInitScript((saver) => {
+    if (saver) Object.defineProperty(navigator, "connection", { value: { saveData: true } });
+    window.__playedVideos = new Set();
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function playAndRecord() {
+      window.__playedVideos.add(this);
+      return play.call(this);
+    };
+  }, saver);
+  await page.route("**/api/tmdb/**", (route) => {
+    const season = /\/season\/(\d+)/.exec(new URL(route.request().url()).pathname)?.[1];
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(season
+      ? { id: 1399, season_number: Number(season), episodes: tvEpisodes(Number(season)) }
+      : { id: 1399, name: "TV 1399", original_name: "TV 1399", first_air_date: "2024-01-01", overview: "", genres: [], number_of_seasons: 2, external_ids: { imdb_id: "tt0001399" },
+        seasons: [1, 2].map((number) => ({ season_number: number, episode_count: 8, name: `Season ${number}` })) }) });
+  });
+  const log = { discover: [], aborted: [], resolve: [], media: [] };
+  page.on("requestfailed", (request) => {
+    if (request.url().includes("op=discover")) log.aborted.push(request.postDataJSON()?.episode);
+  });
+  await page.route("**/api/source-host?op=discover", async (route) => {
+    const { season, episode } = route.request().postDataJSON();
+    log.discover.push(`s${season}e${episode}`);
+    if (failDiscover?.(log.discover.length)) return route.fulfill({ status: 502, contentType: "application/json", body: "{}" });
+    if (holdDiscover) await holdDiscover(`s${season}e${episode}`);
+    const id = `s${season}e${episode}`;
+    return route.fulfill({ status: 200, contentType: "text/event-stream", body: `event: candidate\ndata: ${JSON.stringify({
+      id, providerId: "habster:alloha", providerName: "Habster · Alloha", voiceId: "v", voiceName: "Original", season, episode,
+    })}\n\nevent: done\ndata: {}\n\n` }).catch(() => {});
+  });
+  await page.route("**/api/source-host?op=resolve", (route) => {
+    const { id } = route.request().postDataJSON();
+    log.resolve.push(id);
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      kind: "hls", selected: { url: `https://media.test/${id}/prebuffer.m3u8`, label: "360p" },
+      qualities: [{ label: "360p", height: 360 }], subtitles: [], audioNames: [],
+    }) });
+  });
+  await page.route("https://media.test/**", (route) => {
+    const [, id, file] = new URL(route.request().url()).pathname.split("/");
+    log.media.push(id);
+    return route.fulfill({
+      status: 200, contentType: file.endsWith(".ts") ? "video/mp2t" : "application/vnd.apple.mpegurl",
+      body: readFileSync(join(prebufferFixtureDir, file)),
+    });
+  });
+  return log;
+};
+
+const episodeCard = (page, number) => page.locator(".episode-card").nth(number - 1);
+const hiddenPlaybackState = (page) => page.evaluate(() => {
+  const video = document.querySelector("video");
+  return {
+    paused: video.paused, muted: video.muted, currentTime: video.currentTime,
+    buffered: video.buffered.length > 0,
+    url: location.search,
+    history: localStorage.getItem("streambert_history"),
+    progress: localStorage.getItem("streambert_progress"),
+    resume: localStorage.getItem("streambert_resumeTime"),
+    watched: localStorage.getItem("streambert_watched"),
+    sessions: Object.keys(JSON.parse(localStorage.getItem("streambert_viewingData") || "{}").sessions || {}),
+    checkpoints: Object.keys(JSON.parse(localStorage.getItem("streambert_viewingData") || "{}").checkpoints || {}),
+    played: window.__playedVideos.has(video),
+  };
+});
+const expectPlayingFromClick = async (page, { minTime = 0 } = {}) => {
+  const video = page.locator("video");
+  await expect.poll(() => video.evaluate((v, min) => !v.paused && v.currentTime > min, minTime), { timeout: 20_000 }).toBe(true);
+  expect(await video.evaluate((v) => ({ muted: v.muted, volume: v.volume }))).toEqual({ muted: false, volume: 1 });
+};
+const historyEntry = (page) => page.evaluate(() => {
+  const [entry] = JSON.parse(localStorage.getItem("streambert_history") || "[]");
+  return entry && { id: entry.id, season: entry.season, episode: entry.episode };
+});
+
+test("TV: the unfinished episode prebuffers silently, and its click starts the same player at the saved position", async ({ page }) => {
+  const storage = {
+    watched: { tv_1399_s1e1: true, tv_1399_s1e2: true },
+    progress: { tv_1399_s1e3: 25 },
+    resumeTime: { tv_1399_s1e3: 30 },
+  };
+  const log = await tvPrebufferRoutes(page, { storage });
+  await page.goto("/tv/1399", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".episode-card")).toHaveCount(8);
+  await expect.poll(() => log.media.length, { timeout: 20_000 }).toBeGreaterThan(1);
+  const video = page.locator("video");
+  await expect.poll(() => video.evaluate((v) => v.buffered.length > 0)).toBe(true);
+  expect(log.discover).toEqual(["s1e3"]);
+
+  const before = await hiddenPlaybackState(page);
+  expect(before).toMatchObject({
+    paused: true, muted: true, played: false, sessions: [], checkpoints: [], history: "[]",
+    progress: JSON.stringify(storage.progress), resume: JSON.stringify(storage.resumeTime), watched: JSON.stringify(storage.watched),
+  });
+  expect(before.currentTime).toBeGreaterThanOrEqual(29.5);
+  expect(before.currentTime).toBeLessThanOrEqual(30.5);
+  expect(new URLSearchParams(before.url).has("episode")).toBe(false);
+  await expect(page.getByText("Сезон 1 · Э3")).toHaveCount(0);
+  await page.evaluate(() => { window.__prebufferVideo = document.querySelector("video"); });
+
+  await episodeCard(page, 3).click();
+  await expectPlayingFromClick(page, { minTime: 30 });
+  expect(await page.evaluate(() => window.__prebufferVideo === document.querySelector("video"))).toBe(true);
+  expect(log.discover).toEqual(["s1e3"]);
+  expect(log.resolve).toEqual(["s1e3"]);
+  expect(new Set(log.media)).toEqual(new Set(["s1e3"]));
+  await expect(page.getByText("Сезон 1 · Э3")).toBeVisible();
+  await expect.poll(() => historyEntry(page)).toEqual({ id: 1399, season: 1, episode: 3 });
+  await expect(page).toHaveURL(/season=1&episode=3/);
+});
+
+test("TV: the route's episode prebuffers exactly, and a season switch drops it for the new season", async ({ page }) => {
+  const log = await tvPrebufferRoutes(page);
+  await page.goto("/tv/1399?season=2&episode=4", { waitUntil: "domcontentloaded" });
+  await expect.poll(() => log.discover, { timeout: 20_000 }).toEqual(["s2e4"]);
+  await expect.poll(() => page.locator("video").evaluate((v) => v.buffered.length > 0)).toBe(true);
+  await page.evaluate(() => { window.__seasonTwoVideo = document.querySelector("video"); });
+
+  await page.locator(".season-btn").first().click();
+  await expect(page.locator(".season-btn.active")).toContainText("Сезон 1");
+  await expect.poll(() => page.evaluate(() => !document.querySelector("video") || document.querySelector("video") !== window.__seasonTwoVideo)).toBe(true);
+  await expect.poll(() => log.discover, { timeout: 20_000 }).toEqual(["s2e4", "s1e1"]);
+  await expect.poll(() => page.locator("video").evaluate((v) => v.buffered.length > 0)).toBe(true);
+  const seasonOneStart = log.media.length;
+
+  await episodeCard(page, 1).click();
+  await expectPlayingFromClick(page);
+  await expect(page.getByText("Сезон 1 · Э1")).toBeVisible();
+  await expect.poll(() => historyEntry(page)).toEqual({ id: 1399, season: 1, episode: 1 });
+  expect(new Set(log.media.slice(seasonOneStart))).toEqual(new Set(["s1e1"]));
+  expect(log.discover).toEqual(["s2e4", "s1e1"]);
+});
+
+test("TV: a rest on an episode card prebuffers that episode and the click reuses it", async ({ page }) => {
+  const log = await tvPrebufferRoutes(page);
+  await page.goto("/tv/1399", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".episode-card")).toHaveCount(8);
+  await episodeCard(page, 5).hover();
+  await expect.poll(() => log.discover, { timeout: 20_000 }).toContain("s1e5");
+  await expect.poll(() => page.locator("video").evaluate((v) => v.buffered.length > 0)).toBe(true);
+  // The pointer resting on the card outranks the guess at the next unwatched episode.
+  await page.waitForTimeout(1500);
+  expect(log.discover).toEqual(["s1e5"]);
+  const hidden = await hiddenPlaybackState(page);
+  expect(hidden).toMatchObject({ paused: true, muted: true, played: false, checkpoints: [], history: "[]" });
+  expect(new URLSearchParams(hidden.url).has("episode")).toBe(false);
+  await expect(episodeCard(page, 5)).not.toHaveClass(/playing/);
+  await page.evaluate(() => { window.__prebufferVideo = document.querySelector("video"); });
+
+  await episodeCard(page, 5).click();
+  await expectPlayingFromClick(page);
+  expect(await page.evaluate(() => window.__prebufferVideo === document.querySelector("video"))).toBe(true);
+  expect(log.discover).toEqual(["s1e5"]);
+  await expect(page.getByText("Сезон 1 · Э5")).toBeVisible();
+
+  // During playback a card under the pointer starts nothing: the visible player owns the page.
+  await episodeCard(page, 2).hover();
+  await page.waitForTimeout(800);
+  expect(log.discover).toEqual(["s1e5"]);
+});
+
+test("TV: sweeping over the episode list does not flood discovery", async ({ page }) => {
+  const held = [];
+  const log = await tvPrebufferRoutes(page, {
+    holdDiscover: () => new Promise((resolve) => { held.push(resolve); setTimeout(resolve, 60_000); }),
+  });
+  await page.setViewportSize({ width: 1280, height: 2400 });
+  await page.goto("/tv/1399", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".episode-card")).toHaveCount(8);
+  await expect(episodeCard(page, 7)).toBeInViewport();
+  const centers = await page.locator(".episode-card").evaluateAll((cards) => cards.map((card) => {
+    const box = card.getBoundingClientRect();
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  }));
+  const moveTo = (number) => page.mouse.move(centers[number - 1].x, centers[number - 1].y);
+
+  // A fast sweep rests nowhere. It outlasts the page dwell, and the guess at the
+  // next episode must still run once the pointer leaves.
+  for (let round = 0; round < 6; round++) {
+    for (let number = 1; number <= 7; number++) {
+      await moveTo(number);
+      await page.waitForTimeout(40);
+    }
+  }
+  await page.mouse.move(0, 0);
+  await expect.poll(() => log.discover, { timeout: 5_000 }).toEqual(["s1e1"]);
+  await page.waitForTimeout(800);
+  expect(log.discover).toEqual(["s1e1"]);
+
+  // Resting 500 ms on each card inside the 3 s cooldown keeps one discovery running.
+  await page.waitForTimeout(3100);
+  const started = Date.now();
+  for (const number of [2, 3, 4, 5, 6, 7]) {
+    await moveTo(number);
+    await page.waitForTimeout(500);
+  }
+  const elapsed = Date.now() - started;
+  expect(log.discover.length - 1).toBeLessThanOrEqual(Math.ceil(elapsed / 3000) + 1);
+  await expect.poll(() => log.discover.at(-1), { timeout: 6_000 }).toBe("s1e7");
+  // Every replaced hidden discovery was cancelled: one stays open at most.
+  await expect.poll(() => log.aborted.length).toBe(log.discover.length - 1);
+  held.forEach((release) => release());
+});
+
+test("TV: prebuffers stop after a budget, a click still works", async ({ page }) => {
+  const log = await tvPrebufferRoutes(page);
+  await page.clock.install();
+  await page.goto("/tv/1399", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".episode-card")).toHaveCount(8);
+  await page.clock.fastForward(1300);
+  await expect.poll(() => log.discover).toEqual(["s1e1"]);
+  for (const [index, number] of [2, 3, 4, 5, 6].entries()) {
+    await episodeCard(page, number).hover();
+    await page.clock.fastForward(3100);
+    await expect.poll(() => log.discover).toHaveLength(index + 2);
+  }
+  expect(log.discover.at(-1)).toBe("s1e6");
+  await episodeCard(page, 7).hover();
+  await page.clock.fastForward(3100);
+  await page.clock.fastForward(3100);
+  expect(log.discover).toHaveLength(6);
+  await episodeCard(page, 7).click();
+  await expect.poll(() => log.discover.at(-1), { timeout: 20_000 }).toBe("s1e7");
+});
+
+test("TV: a failed player chunk leaves the page working and the click still plays", async ({ page }) => {
+  const log = await tvPrebufferRoutes(page);
+  const blockChunk = (route) => route.abort();
+  await page.route(/\/OnlinePlayer-[^/]*\.js/, blockChunk);
+  await page.goto("/tv/1399", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".episode-card")).toHaveCount(8);
+  await page.waitForTimeout(2000);
+  await expect(page.locator(".episode-card")).toHaveCount(8);
+  await expect(page.locator(".torrplayer-stage")).toHaveCount(0);
+  expect(log.discover).toEqual([]);
+  await page.unroute(/\/OnlinePlayer-[^/]*\.js/, blockChunk);
+  await episodeCard(page, 1).click();
+  await expectPlayingFromClick(page);
+  expect(log.discover).toEqual(["s1e1"]);
+});
+
+test("TV: a series above the age limit starts nothing while its rating is still loading", async ({ page }) => {
+  const log = await tvPrebufferRoutes(page, { storage: { settings: { ageLimit: 12 } } });
+  // Registered last, so it wins over the generic metadata route of the helper.
+  await page.route("**/api/tmdb/**/content_ratings*", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [{ iso_3166_1: "US", rating: "TV-MA" }] }) });
+  });
+  await page.goto("/tv/1399", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".episode-card")).toHaveCount(8);
+  await episodeCard(page, 3).hover();
+  await expect(page.locator(".episode-card--restricted").first()).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(1500);
+  expect(log.discover).toEqual([]);
+  await expect(page.locator(".torrplayer-stage")).toHaveCount(0);
+});
+
+test("TV: clicking another episode never reveals the hidden one", async ({ page }) => {
+  const log = await tvPrebufferRoutes(page);
+  await page.goto("/tv/1399", { waitUntil: "domcontentloaded" });
+  await expect.poll(() => log.discover, { timeout: 20_000 }).toEqual(["s1e1"]);
+  await expect.poll(() => page.locator("video").evaluate((v) => v.buffered.length > 0)).toBe(true);
+  await page.evaluate(() => { window.__hiddenVideo = document.querySelector("video"); });
+  const hiddenMedia = log.media.length;
+
+  await episodeCard(page, 6).click();
+  await expectPlayingFromClick(page);
+  expect(await page.evaluate(() => ({
+    replaced: window.__hiddenVideo !== document.querySelector("video"),
+    hiddenPlayed: window.__playedVideos.has(window.__hiddenVideo),
+  }))).toEqual({ replaced: true, hiddenPlayed: false });
+  expect(log.discover).toEqual(["s1e1", "s1e6"]);
+  expect(new Set(log.media.slice(hiddenMedia))).toEqual(new Set(["s1e6"]));
+  await expect(page.getByText("Сезон 1 · Э6")).toBeVisible();
+  await expect.poll(() => historyEntry(page)).toEqual({ id: 1399, season: 1, episode: 6 });
+  await expect(page).toHaveURL(/season=1&episode=6/);
+});
+
+test("TV: the same episode number in another season is a different episode", async ({ page }) => {
+  const log = await tvPrebufferRoutes(page);
+  await page.goto("/tv/1399?season=2&episode=4", { waitUntil: "domcontentloaded" });
+  await expect.poll(() => log.discover, { timeout: 20_000 }).toEqual(["s2e4"]);
+  await expect.poll(() => page.locator("video").evaluate((v) => v.buffered.length > 0)).toBe(true);
+  const hiddenMedia = log.media.length;
+  await page.locator(".season-btn").first().click();
+  await expect(page.locator(".season-btn.active")).toContainText("Сезон 1");
+  await expect(page.locator(".episode-card")).toHaveCount(8);
+  await episodeCard(page, 4).click();
+  await expectPlayingFromClick(page);
+  expect(log.discover).toEqual(["s2e4", "s1e4"]);
+  expect(new Set(log.media.slice(hiddenMedia))).toEqual(new Set(["s1e4"]));
+  await expect(page.getByText("Сезон 1 · Э4")).toBeVisible();
+  await expect.poll(() => historyEntry(page)).toEqual({ id: 1399, season: 1, episode: 4 });
+});
+
+test("TV: a click during the hidden discovery keeps it and starts when the source arrives", async ({ page }) => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const log = await tvPrebufferRoutes(page, { holdDiscover: () => gate });
+  await page.goto("/tv/1399", { waitUntil: "domcontentloaded" });
+  await expect.poll(() => log.discover, { timeout: 20_000 }).toEqual(["s1e1"]);
+  await episodeCard(page, 1).click();
+  await expect.poll(() => historyEntry(page)).toEqual({ id: 1399, season: 1, episode: 1 });
+  release();
+  await expectPlayingFromClick(page);
+  expect(log.discover).toEqual(["s1e1"]);
+});
+
+test("TV: autoplay continues to the exact next episode after a prebuffered start", async ({ page }) => {
+  test.setTimeout(90_000);
+  // Starts inside the 20 s end threshold of the 180 s fixture, so the next episode is due at once.
+  const log = await tvPrebufferRoutes(page, { storage: {
+    progress: { tv_1399_s1e1: 90 }, resumeTime: { tv_1399_s1e1: 165 }, settings: { autoplayNextDuration: 1 },
+  } });
+  await page.goto("/tv/1399", { waitUntil: "domcontentloaded" });
+  await expect.poll(() => log.discover, { timeout: 20_000 }).toEqual(["s1e1"]);
+  const video = page.locator("video");
+  await expect.poll(() => video.evaluate((v) => v.buffered.length > 0)).toBe(true);
+  await page.evaluate(() => { window.__prebufferVideo = document.querySelector("video"); });
+  await episodeCard(page, 1).click();
+  await expectPlayingFromClick(page, { minTime: 165 });
+
+  await expect(page.getByText("Сезон 1 · Э2")).toBeVisible({ timeout: 45_000 });
+  await expect.poll(() => log.discover).toEqual(["s1e1", "s1e2"]);
+  await expect.poll(() => historyEntry(page)).toEqual({ id: 1399, season: 1, episode: 2 });
+  await expect.poll(() => log.media.includes("s1e2")).toBe(true);
+  await expectPlayingFromClick(page);
+  // The next episode replaces media in place; fullscreen depends on this node surviving.
+  expect(await page.evaluate(() => window.__prebufferVideo === document.querySelector("video"))).toBe(true);
+  await expect(page).toHaveURL(/season=1&episode=2/);
+});
+
+test("TV: a hidden failure does not retry on its own and the click starts fresh", async ({ page }) => {
+  const log = await tvPrebufferRoutes(page, { failDiscover: (attempt) => attempt === 1 });
+  await page.goto("/tv/1399", { waitUntil: "domcontentloaded" });
+  await expect.poll(() => log.discover, { timeout: 20_000 }).toEqual(["s1e1"]);
+  await expect(page.locator(".torrplayer-stage")).toHaveCount(0, { timeout: 15_000 });
+  await page.waitForTimeout(2000);
+  expect(log.discover).toEqual(["s1e1"]);
+  await episodeCard(page, 1).click();
+  await expectPlayingFromClick(page);
+  expect(log.discover).toEqual(["s1e1", "s1e1"]);
+  await expect(page.getByText("Не удалось получить рабочий поток")).toHaveCount(0);
+});
+
+test("TV: an old hidden prebuffer is dropped and does not restart without a new intent", async ({ page }) => {
+  const log = await tvPrebufferRoutes(page);
+  await page.clock.install();
+  await page.goto("/tv/1399", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".episode-card")).toHaveCount(8);
+  await page.clock.fastForward(1300);
+  const video = page.locator("video");
+  await expect(video).toHaveCount(1);
+  await expect.poll(() => log.discover).toEqual(["s1e1"]);
+  await page.clock.fastForward(4 * 60_000 + 1000);
+  await expect(video).toHaveCount(0);
+  await page.clock.fastForward(5000);
+  expect(log.discover).toEqual(["s1e1"]);
+  await episodeCard(page, 1).hover();
+  await page.clock.fastForward(400);
+  await expect.poll(() => log.discover).toEqual(["s1e1", "s1e1"]);
+});
+
+test("TV: data saver, unaired episodes and a fully watched season prebuffer nothing", async ({ browser }, testInfo) => {
+  const open = async (options) => {
+    const context = await browser.newContext({ baseURL: testInfo.project.use.baseURL, serviceWorkers: "block" });
+    const page = await context.newPage();
+    const log = await tvPrebufferRoutes(page, options);
+    await page.goto("/tv/1399?season=1", { waitUntil: "domcontentloaded" });
+    await expect(page.locator(".episode-card")).toHaveCount(8);
+    return { context, page, log };
+  };
+  const saver = await open({ saver: true });
+  await episodeCard(saver.page, 2).hover();
+  await saver.page.waitForTimeout(1700);
+  expect(saver.log.discover).toEqual([]);
+  await expect(saver.page.locator("video")).toHaveCount(0);
+  await saver.context.close();
+
+  const watched = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [`tv_1399_s1e${index + 1}`, true]));
+  const finished = await open({ storage: { watched } });
+  await episodeCard(finished.page, 8).hover({ force: true });
+  await finished.page.waitForTimeout(1700);
+  expect(finished.log.discover).toEqual([]);
+  await expect(finished.page.locator("video")).toHaveCount(0);
+  await finished.context.close();
+});
+
+test("TV: a tap on a phone is not a hover, it plays the tapped episode once", async ({ browser }, testInfo) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"], baseURL: testInfo.project.use.baseURL, serviceWorkers: "block" });
+  const page = await context.newPage();
+  const watched = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [`tv_1399_s1e${index + 1}`, true]));
+  const log = await tvPrebufferRoutes(page, { storage: { watched } });
+  await page.goto("/tv/1399?season=1", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".episode-card")).toHaveCount(8);
+  await episodeCard(page, 2).tap();
+  await expect.poll(() => log.discover, { timeout: 20_000 }).toEqual(["s1e2"]);
+  await expect.poll(() => historyEntry(page)).toEqual({ id: 1399, season: 1, episode: 2 });
+  await page.waitForTimeout(1000);
+  expect(log.discover).toEqual(["s1e2"]);
+  await context.close();
+});
+
+test("TV: a tap on the prebuffered episode starts it on a phone", async ({ browser }, testInfo) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"], baseURL: testInfo.project.use.baseURL, serviceWorkers: "block" });
+  const page = await context.newPage();
+  const log = await tvPrebufferRoutes(page);
+  await page.goto("/tv/1399?season=1", { waitUntil: "domcontentloaded" });
+  await expect.poll(() => log.discover, { timeout: 20_000 }).toEqual(["s1e1"]);
+  await expect.poll(() => page.locator("video").evaluate((v) => v.buffered.length > 0)).toBe(true);
+  await page.evaluate(() => { window.__prebufferVideo = document.querySelector("video"); });
+  await episodeCard(page, 1).tap();
+  await expectPlayingFromClick(page);
+  expect(await page.evaluate(() => window.__prebufferVideo === document.querySelector("video"))).toBe(true);
+  expect(log.discover).toEqual(["s1e1"]);
+  await context.close();
+});
+
 for (const mode of ["manual", "auto"]) test(`decoded movie playback skips confirmed segments (${mode})`, async ({ page }) => {
   await page.addInitScript((mode) => {
     localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");

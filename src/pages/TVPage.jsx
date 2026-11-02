@@ -60,7 +60,24 @@ const DownloadModal = lazy(() => import("../components/DownloadModal"));
 const TrailerModal = lazy(() => import("../components/TrailerModal"));
 const BlockedStatsModal = lazy(() => import("../components/BlockedStatsModal"));
 const TorrPlayer = lazy(() => import("../components/TorrPlayer"));
-const OnlinePlayer = lazy(() => import("../components/OnlinePlayer"));
+const loadOnlinePlayer = () => import("../components/OnlinePlayer");
+const OnlinePlayer = lazy(loadOnlinePlayer);
+// Episode prebuffer goes through the relay and each discovery holds a slot on the
+// source host, so only a settled intent may start one: a page dwell for the episode
+// the viewer would continue, or a short rest on an episode card. One hidden player
+// exists at a time; a start during the cooldown waits for its end, and a page
+// visit gets a fixed number of starts: each can cost up to ~14 MB of relay traffic.
+const PREBUFFER_DWELL_MS = 1200;
+const PREBUFFER_HOVER_DWELL_MS = 350;
+const PREBUFFER_MIN_SWITCH_MS = 3000;
+const PREBUFFER_BUDGET = 6;
+// Upstream media links are short-lived (321 s is the longest verified). Drop an
+// unused prebuffer before that, so a late click starts fresh instead of stalling.
+const PREBUFFER_MAX_AGE_MS = 4 * 60_000;
+const prebufferAllowed = () => {
+  const connection = typeof navigator !== "undefined" ? navigator.connection : null;
+  return !connection?.saveData && !/(^|-)2g$/.test(connection?.effectiveType || "");
+};
 import { useBlockedStats } from "../utils/useBlockedStats";
 import useElementWidth from "../utils/useElementWidth";
 import ProgressiveGrid from "../utils/useProgressiveList.jsx";
@@ -527,6 +544,7 @@ export default function TVPage({
 
   // Age rating
   const [rating, setRating] = useState({ cert: null, minAge: null });
+  const [ratingKnown, setRatingKnown] = useState(false);
   const ageLimitSetting = useMemo(() => getAgeLimitSetting(storage), []);
   const ratingCountry = useMemo(() => getRatingCountry(storage), []);
   const restricted = isRestricted(rating.minAge, ageLimitSetting);
@@ -631,7 +649,10 @@ export default function TVPage({
   useEffect(() => {
     let mounted = true;
     fetchTVRating(item.id, apiKey, ratingCountry).then((r) => {
-      if (mounted) setRating(r);
+      if (mounted) {
+        setRating(r);
+        setRatingKnown(true);
+      }
     });
     return () => {
       mounted = false;
@@ -1532,6 +1553,113 @@ export default function TVPage({
     };
   }, [playing, playerSource]);
 
+  // ── Episode prebuffer (web): one hidden OnlinePlayer, season and episode fixed ──
+  // Hover and dwell never touch selectedEp: it drives the route and the playback
+  // state of the page, and those change only on a click.
+  const [prebuffer, setPrebuffer] = useState(null); // { ep, season }
+  const [playerInstance, setPlayerInstance] = useState(0);
+  const canPrebuffer = webMode && Boolean(details) && !restricted
+    && (ageLimitSetting == null || ratingKnown)
+    && (playerSource === "online" || playerSource === "lampac") && prebufferAllowed();
+  const hiddenEp = !playing && canPrebuffer && prebuffer?.season === selectedSeason ? prebuffer.ep : null;
+  const stageEp = playing ? selectedEp : hiddenEp;
+  const stageProgressKey = stageEp ? `tv_${item.id}_s${selectedSeason}e${stageEp.episode_number}` : null;
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  const hiddenEpRef = useRef(hiddenEp);
+  hiddenEpRef.current = hiddenEp;
+  const canPrebufferRef = useRef(canPrebuffer);
+  canPrebufferRef.current = canPrebuffer;
+  const prebufferPlayRef = useRef(null);
+  const registerPrebufferPlay = useCallback((play) => {
+    prebufferPlayRef.current = typeof play === "function" ? play : null;
+  }, []);
+  const dropPrebuffer = useCallback(() => setPrebuffer(null), []);
+  const nextPrebufferAtRef = useRef(0);
+  const prebufferBudgetRef = useRef(PREBUFFER_BUDGET);
+  const prebufferAttemptRef = useRef(0);
+  const hoverEpRef = useRef(null);
+  const hoverTimerRef = useRef(null);
+  const cancelHover = useCallback(() => {
+    clearTimeout(hoverTimerRef.current);
+    hoverEpRef.current = null;
+  }, []);
+  // Every hidden start is a new instance, so a click can never reveal a video
+  // that still holds the previous episode.
+  const startPrebuffer = useCallback((ep) => {
+    if (!canPrebufferRef.current || playingRef.current || prebufferBudgetRef.current <= 0) return;
+    prebufferBudgetRef.current -= 1;
+    nextPrebufferAtRef.current = Date.now() + PREBUFFER_MIN_SWITCH_MS;
+    const attempt = ++prebufferAttemptRef.current;
+    // Mount only after the chunk loaded: nothing above this page catches a failed
+    // lazy(), and lazy() would keep that failure for the viewer's later click.
+    loadOnlinePlayer().then(() => {
+      if (attempt !== prebufferAttemptRef.current) return;
+      setPrebuffer({ ep, season: selectedSeason });
+      setPlayerInstance((value) => value + 1);
+    }, () => {});
+  }, [selectedSeason]);
+  const handleEpisodeHover = useCallback((ep) => {
+    if (!canPrebufferRef.current || playingRef.current) return;
+    cancelHover();
+    if (hiddenEpRef.current?.episode_number === ep.episode_number || prebufferBudgetRef.current <= 0) return;
+    hoverEpRef.current = ep;
+    hoverTimerRef.current = setTimeout(() => {
+      hoverEpRef.current = null;
+      startPrebuffer(ep);
+    }, Math.max(PREBUFFER_HOVER_DWELL_MS, nextPrebufferAtRef.current - Date.now()));
+  }, [cancelHover, startPrebuffer]);
+  const handleEpisodeHoverEnd = useCallback((ep) => {
+    if (hoverEpRef.current === ep) cancelHover();
+  }, [cancelHover]);
+  useEffect(() => {
+    prebufferAttemptRef.current += 1;
+    setPrebuffer(null);
+    return cancelHover;
+  }, [item.id, selectedSeason, cancelHover]);
+
+  // The episode a viewer returning to this season is most likely to start: the
+  // one named by the route, else the latest unfinished one, else the next unwatched.
+  const continueEp = useMemo(() => {
+    const released = (ep) => !(ep.air_date && new Date(ep.air_date) > _todayForEpisodes);
+    const key = (ep) => `tv_${item.id}_s${selectedSeason}e${ep.episode_number}`;
+    const episodes = currentSeasonEpisodes;
+    if (item.episode && (item.season == null || Number(item.season) === selectedSeason)) {
+      const requested = episodes.find((ep) => ep.episode_number === Number(item.episode));
+      return requested && released(requested) ? requested : null;
+    }
+    let lastWatched = -1;
+    let lastStarted = -1;
+    episodes.forEach((ep, index) => {
+      if (watched?.[key(ep)]) lastWatched = index;
+      else if (progress?.[key(ep)] > 0) lastStarted = index;
+    });
+    if (lastStarted > lastWatched && released(episodes[lastStarted])) return episodes[lastStarted];
+    return episodes.slice(lastWatched + 1).find((ep) => !watched?.[key(ep)] && released(ep)) || null;
+  }, [currentSeasonEpisodes, item.id, item.season, item.episode, selectedSeason, watched, progress]);
+  const continueEpNumber = continueEp?.episode_number ?? null;
+  const continueEpRef = useRef(continueEp);
+  continueEpRef.current = continueEp;
+  useEffect(() => {
+    if (!canPrebuffer || playing || continueEpNumber == null) return;
+    let timer;
+    const start = () => {
+      if (hiddenEpRef.current || !continueEpRef.current) return;
+      // A card the pointer rests on is a stronger signal than this guess; the
+      // guess still applies if the pointer moves on without settling.
+      if (hoverEpRef.current) timer = setTimeout(start, PREBUFFER_HOVER_DWELL_MS);
+      else startPrebuffer(continueEpRef.current);
+    };
+    timer = setTimeout(start, Math.max(PREBUFFER_DWELL_MS, nextPrebufferAtRef.current - Date.now()));
+    return () => clearTimeout(timer);
+  }, [canPrebuffer, playing, continueEpNumber, startPrebuffer]);
+  const hiddenEpNumber = hiddenEp?.episode_number ?? null;
+  useEffect(() => {
+    if (hiddenEpNumber == null) return;
+    const timer = setTimeout(dropPrebuffer, PREBUFFER_MAX_AGE_MS);
+    return () => clearTimeout(timer);
+  }, [hiddenEpNumber, playerInstance, dropPrebuffer]);
+
   const playEpisode = useCallback(
     (ep) => {
       // Cancel any in-flight autoplay countdown BEFORE the state change commits.
@@ -1539,6 +1667,15 @@ export default function TVPage({
       // commits — a setInterval tick in that window would call
       // playEpisode(stale_nextEp) and start the wrong episode.
       resetAutoplayRef.current?.();
+      cancelHover();
+      prebufferAttemptRef.current += 1;
+      if (!playingRef.current) {
+        // Same episode: start the hidden player inside this click, so the gesture
+        // unlocks sound. Any other: a new instance, never the wrong episode's video.
+        if (hiddenEpRef.current?.episode_number === ep.episode_number) prebufferPlayRef.current?.();
+        else setPlayerInstance((value) => value + 1);
+        setPrebuffer(null);
+      }
       setM3u8Url(null);
       setInterceptedSubs([]);
       resolvedPlayerUrlRef.current = null;
@@ -1557,7 +1694,7 @@ export default function TVPage({
       });
       // d and selectedSeason are stable within a season view; onHistory is useCallback in App
     },
-    [d, selectedSeason, onHistory],
+    [d, selectedSeason, onHistory, cancelHover],
   );
 
   const nextEp = useMemo(() => {
@@ -1779,9 +1916,25 @@ export default function TVPage({
 
           <div className="personal-rating-shell"><PersonalRating item={{ ...(d || item), media_type: "tv" }} /></div>
 
-          {playing && selectedEp && (
-            <div className="section">
-              <div
+          {stageEp && (
+            <div
+              className="section"
+              aria-hidden={!playing}
+              inert={!playing ? "" : undefined}
+              style={!playing ? {
+                position: "fixed",
+                top: 0,
+                left: "-10000px",
+                // Real player size: capLevelToPlayerSize must not pin the buffered
+                // start of the episode to a small rung.
+                width: "min(100vw, 1280px)",
+                aspectRatio: "16 / 9",
+                visibility: "hidden",
+                pointerEvents: "none",
+                zIndex: -1,
+              } : undefined}
+            >
+              {playing && <div
                 style={{
                   marginBottom: 12,
                   display: "flex",
@@ -1812,7 +1965,7 @@ export default function TVPage({
                     ✓ Отметить просмотренным
                   </button>
                 )}
-              </div>
+              </div>}
               <div
                 className={`player-wrap${playerFullscreen ? " player-wrap--fullscreen" : ""}`}
                 ref={playerWrapRef}
@@ -1822,15 +1975,18 @@ export default function TVPage({
                     <Suspense fallback={<div className="torrplayer-loading">Загрузка плеера…</div>}>
                     {playerSource === "online" || playerSource === "lampac" ? (
                       <OnlinePlayer
-                        key={playerSource}
+                        key={`${playerSource}:${playerInstance}`}
+                        prebuffer={!playing}
+                        onRegisterPlay={registerPrebufferPlay}
+                        onPrebufferFailed={dropPrebuffer}
                         provider={playerSource}
                         apiKey={apiKey}
                         item={item}
                         details={details}
                         type="tv"
                         season={selectedSeason}
-                        episode={selectedEp?.episode_number}
-                        progressKey={currentProgressKey}
+                        episode={stageEp.episode_number}
+                        progressKey={stageProgressKey}
                         saveProgress={saveProgress}
                         onMarkWatched={onMarkWatched}
                         watchedThreshold={watchedThreshold}
@@ -1840,8 +1996,7 @@ export default function TVPage({
                           // (per dub) so a dead Collaps title doesn't poison
                           // future opens of OTHER titles.
                           if (failedProvider === "online" && playerSource === "online") {
-                            const epKey = `tv_${item.id}_s${selectedSeason}e${selectedEp?.episode_number}`;
-                            setFailoverSource(epKey, "lampac");
+                            setFailoverSource(stageProgressKey, "lampac");
                             setPlayerSource("lampac");
                           }
                         }}
@@ -2614,6 +2769,8 @@ export default function TVPage({
                         downloadsByEpisodeKey={downloadsByEpisodeKey}
                         restricted={restricted}
                         onPlay={playEpisode}
+                        onHover={handleEpisodeHover}
+                        onHoverEnd={handleEpisodeHoverEnd}
                         onContextMenu={setEpMenu}
                         onGoToDownloads={onGoToDownloads}
                       />
@@ -2722,6 +2879,8 @@ const EpisodeCard = memo(function EpisodeCard({
   downloadsByEpisodeKey,
   restricted,
   onPlay,
+  onHover,
+  onHoverEnd,
   onContextMenu,
   onGoToDownloads,
 }) {
@@ -2741,6 +2900,11 @@ const EpisodeCard = memo(function EpisodeCard({
     <div
       className={`episode-card ${isPlaying ? "playing" : ""} ${epWatched ? "ep-watched" : ""} ${restricted ? "episode-card--restricted" : ""} ${epUnreleased ? "episode-card--unreleased" : ""}`}
       onClick={() => (restricted || epUnreleased ? null : onPlay(ep))}
+      // A touch "enter" is the tap or scroll itself, not a pointer resting here.
+      onPointerEnter={(e) => {
+        if (e.pointerType === "mouse" && !restricted && !epUnreleased) onHover(ep);
+      }}
+      onPointerLeave={() => onHoverEnd(ep)}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
