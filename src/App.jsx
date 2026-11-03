@@ -202,7 +202,7 @@ export default function App() {
 
   useEffect(() => {
     const name = page === "movie" || page === "tv" ? selected?.title || selected?.name : PAGE_TITLES[page];
-    document.title = name ? `${name} — Lampa-Stream` : "Lampa-Stream";
+    document.title = name ? `${name} — Nahflix` : "Nahflix";
   }, [page, selected?.title, selected?.name]);
 
   // Hydrate direct movie/TV links after the private TMDB token is available.
@@ -1377,7 +1377,7 @@ export default function App() {
               color: "#fff",
             }}
           >
-            <span>🎉 Streambert v{updateBanner.latest} is available!</span>
+            <span>🎉 Nahflix v{updateBanner.latest} is available!</span>
             <button
               onClick={() => setShowUpdateModal(true)}
               style={{

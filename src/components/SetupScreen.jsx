@@ -120,7 +120,7 @@ export default function SetupScreen({ onSave, onSkip }) {
         <div className="apikey-logo">
           <StreambertLogo />
         </div>
-        <div className="apikey-title">LAMPA-STREAM</div>
+        <div className="apikey-title">NAHFLIX</div>
         <p className="apikey-sub">
           Чтобы начать, введите <strong>бесплатный</strong> токен TMDB{" "}
           <strong>Read Access Token</strong>.

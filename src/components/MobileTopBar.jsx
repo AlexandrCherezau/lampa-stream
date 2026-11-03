@@ -52,7 +52,7 @@ const MobileTopBar = memo(function MobileTopBar({ page, canGoBack, onBack, onSea
       >
         <BackIcon />
       </button>
-      <div className={`mobile-topbar-title${page === "home" ? " sidebar-wordmark" : ""}`}>{page === "home" ? "lampa" : TITLES[page] || ""}</div>
+      <div className={`mobile-topbar-title${page === "home" ? " sidebar-wordmark" : ""}`}>{page === "home" ? "nahflix" : TITLES[page] || ""}</div>
       <button className="mobile-topbar-btn" onClick={onSearch} aria-label="Поиск">
         <SearchIcon />
       </button>

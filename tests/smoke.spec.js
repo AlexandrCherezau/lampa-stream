@@ -177,12 +177,12 @@ test("tab title and page language follow the current page", async ({ page }) => 
   await mockTmdb(page);
   await page.addInitScript(() => localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token"));
   await page.goto("/");
-  await expect(page).toHaveTitle("Lampa-Stream");
+  await expect(page).toHaveTitle("Nahflix");
   await expect(page.locator("html")).toHaveAttribute("lang", "ru");
   await page.getByRole("button", { name: "Каталог", exact: true }).click();
-  await expect(page).toHaveTitle("Каталог — Lampa-Stream");
+  await expect(page).toHaveTitle("Каталог — Nahflix");
   await page.goto("/movie/550");
-  await expect(page).toHaveTitle("Movie 550 — Lampa-Stream");
+  await expect(page).toHaveTitle("Movie 550 — Nahflix");
 });
 
 test("search close and clear buttons are named for assistive tech", async ({ page }) => {

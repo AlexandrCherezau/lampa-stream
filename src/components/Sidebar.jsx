@@ -102,9 +102,9 @@ const Sidebar = memo(function Sidebar({
       <button
         className="sidebar-logo sidebar-wordmark"
         onClick={() => onNavigate("home")}
-        aria-label="Lampa, на главную"
+        aria-label="Nahflix, на главную"
       >
-        lampa
+        nahflix
       </button>
 
       {canGoBack && (

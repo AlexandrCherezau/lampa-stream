@@ -37,7 +37,7 @@ export async function ensureSiteGate() {
   gate.innerHTML = `
     <div style="min-height:100dvh;display:flex;align-items:center;justify-content:center;background:#0a0a0a;color:#f0f0f0;font-family:system-ui,sans-serif;padding:20px">
       <form id="ls-gate-form" style="background:#111;border:1px solid #2a2a2a;border-radius:14px;padding:32px 28px;width:100%;max-width:360px;box-sizing:border-box">
-        <h1 style="font-size:20px;margin:0 0 6px;text-align:center">Lampa-Stream</h1>
+        <h1 style="font-size:20px;margin:0 0 6px;text-align:center">Nahflix</h1>
         <p style="color:#909090;margin:0 0 22px;text-align:center;font-size:13px">Введите пароль сайта</p>
         <input id="ls-gate-pw" type="password" placeholder="Пароль" autofocus
           style="width:100%;box-sizing:border-box;padding:13px 14px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:9px;color:#fff;font-size:15px;margin-bottom:14px">

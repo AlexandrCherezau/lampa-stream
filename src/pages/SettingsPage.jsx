@@ -235,7 +235,7 @@ function ResetConfirmDialog({ onConfirm, onCancel }) {
             marginBottom: 10,
           }}
         >
-          СБРОСИТЬ LAMPA-STREAM?
+          СБРОСИТЬ NAHFLIX?
         </div>
         <div
           style={{
@@ -1902,7 +1902,7 @@ function StartPageSection() {
           lineHeight: 1.6,
         }}
       >
-        Выберите страницу, которая будет открываться при запуске Streambert.
+        Выберите страницу, которая будет открываться при запуске Nahflix.
       </div>
       <div
         style={{
@@ -3577,7 +3577,7 @@ export default function SettingsPage({
       {showDeleteDlConfirm && (
         <ConfirmDialog
           title="УДАЛИТЬ ВСЕ ЗАГРУЗКИ?"
-          description="Будут безвозвратно удалены все видео, загруженные через Streambert, и очищен список загрузок."
+          description="Будут безвозвратно удалены все видео, загруженные через Nahflix, и очищен список загрузок."
           confirmLabel="Да, удалить всё"
           onConfirm={async () => {
             setShowDeleteDlConfirm(false);
@@ -3618,7 +3618,7 @@ export default function SettingsPage({
           НАСТРОЙКИ
         </div>
         <div style={{ color: "var(--text3)", fontSize: 14, marginBottom: 48 }}>
-         Настройки Lampa-Stream
+         Настройки Nahflix
         </div>
 
         {/* ══════════════════════════════════════════════════════════════════ */}
@@ -4194,7 +4194,7 @@ export default function SettingsPage({
               }}
             >
               Downloaded videos will be saved here. Make sure the folder exists
-              and Streambert has write access to it.
+              and Nahflix has write access to it.
             </div>
             <div
               style={{
@@ -4303,7 +4303,7 @@ export default function SettingsPage({
             <div style={{ padding: "22px 24px" }}>
               <CleanRow
                 title="Папка приложения"
-                description="Открывает папку, в которой установлен Streambert."
+                description="Открывает папку, в которой установлен Nahflix."
                 buttonLabel="Открыть папку"
                 onAction={async () => {
                   const p = await window.electron?.getInstallPath?.();
@@ -4349,7 +4349,7 @@ export default function SettingsPage({
             <div style={{ padding: "22px 24px" }}>
               <CleanRow
                 title="Удалить все загрузки"
-                description="Безвозвратно удаляет видео, загруженные через Streambert, и убирает их из списка. Остальные файлы в папке не затрагиваются."
+                description="Безвозвратно удаляет видео, загруженные через Nahflix, и убирает их из списка. Остальные файлы в папке не затрагиваются."
                 buttonLabel="Удалить всё"
                 onAction={() =>
                   new Promise((resolve) => {
@@ -4415,7 +4415,7 @@ export default function SettingsPage({
                       lineHeight: 1.6,
                     }}
                   >
-                    Completely resets Streambert to factory defaults, clears all
+                    Completely resets Nahflix to factory defaults, clears all
                     settings, API Token, saved library, watch history/progress,
                     and all cached data. Your downloaded video files will not be
                     touched.

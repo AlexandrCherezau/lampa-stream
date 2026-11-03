@@ -94,7 +94,7 @@ export default function MonthlyRecapPage({ history = [] }) {
       const blob = await drawRecapCard(recap);
       const file = new File([blob], `streambert-${month}.png`, { type: "image/png" });
       if (share && navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: `Итоги · ${recap.label}`, text: "Мой киномесяц в Streambert" });
+        await navigator.share({ files: [file], title: `Итоги · ${recap.label}`, text: "Мой киномесяц в Nahflix" });
         setMessage("Карточка отправлена");
       } else {
         const url = URL.createObjectURL(blob); const link = document.createElement("a");
