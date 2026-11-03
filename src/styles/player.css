@@ -1,19 +1,11 @@
-/* The player: controls gather in one capsule of liquid glass floating over the
-   picture. The glass has no colour of its own: what shows through it is the film. */
+/* The player: one slim dark bar floating over the picture. Plain white icons, a long
+   thin line for the film, everything else under the gear. */
 
 .torrplayer {
   --capsule-gap: 12px;
-  /* Clear, with light caught along the rim and a soft sheen from above. */
-  --glass-fill:
-    linear-gradient(to bottom, rgb(255 255 255 / 0.2), rgb(255 255 255 / 0.03) 46%, rgb(255 255 255 / 0.07)),
-    rgb(14 16 20 / 0.2);
-  --glass-rim:
-    inset 0 1px 0.5px rgb(255 255 255 / 0.62),
-    inset 0 -1px 0.5px rgb(255 255 255 / 0.2),
-    inset 0 0 0 0.5px rgb(255 255 255 / 0.28),
-    inset 0 0 22px rgb(255 255 255 / 0.1),
-    0 10px 34px rgb(0 0 0 / 0.34);
-  --glass-blur: blur(14px) saturate(1.9);
+  --bar-fill: rgb(12 15 17 / 0.5);
+  --bar-blur: blur(24px) saturate(1.4);
+  --menu-fill: rgb(22 25 28 / 0.88);
   container-type: size;
   overflow: hidden;
   color: #fff;
@@ -49,27 +41,24 @@
   z-index: 28; /* Its menus open over the skip button and the state overlays. */
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-height: 52px;
-  padding: 4px 8px;
-  border-radius: 22px;
-  text-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
+  gap: 2px;
+  height: 46px;
+  padding: 0 8px;
+  border-radius: 18px;
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
-/* The glass is its own layer: a blur on the capsule itself would stop the menus
-   inside it from seeing the film. */
+/* The bar's blur is its own layer: on the capsule itself it would stop the menus
+   inside from seeing the film. */
 .torrplayer-controls::after {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: var(--glass-fill);
+  background: var(--bar-fill);
   border-radius: inherit;
-  box-shadow: var(--glass-rim);
-  backdrop-filter: var(--glass-blur);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.28);
+  backdrop-filter: var(--bar-blur);
 }
-.torrplayer-lens { position: absolute; width: 0; height: 0; }
-.torrplayer-btn svg { filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.5)); }
 /* Hidden means not composited: blurring over a playing video costs every frame. */
 .torrplayer-controls--hidden {
   visibility: hidden;
@@ -81,7 +70,7 @@
 
 .torrplayer-transport,
 .torrplayer-sound,
-.torrplayer-tools { display: flex; flex: none; align-items: center; gap: 1px; }
+.torrplayer-tools { display: flex; flex: none; align-items: center; gap: 2px; }
 
 .torrplayer-time,
 .torrplayer-remain {
@@ -90,17 +79,17 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.torrplayer-time { min-width: 38px; padding-left: 6px; text-align: right; }
-.torrplayer-remain { display: flex; gap: 10px; padding-right: 4px; color: rgb(255 255 255 / 0.78); }
-.torrplayer-ends { color: rgb(255 255 255 / 0.55); }
+.torrplayer-time { min-width: 34px; padding-left: 4px; text-align: left; }
+.torrplayer-remain { padding-right: 6px; }
+.torrplayer-ends { display: none; }
 
 /* The line of the film */
 .torrplayer-seek {
   position: relative;
   flex: 1 1 120px;
-  min-width: 60px;
+  min-width: 40px;
   height: 32px;
-  margin: 0 8px;
+  margin: 0 10px;
   cursor: pointer;
   touch-action: none;
 }
@@ -109,27 +98,25 @@
   left: 0;
   right: 0;
   top: 50%;
-  height: 4px;
+  height: 3px;
   overflow: hidden;
-  background: rgb(255 255 255 / 0.3);
-  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.18);
-  border-radius: 4px;
+  background: rgb(255 255 255 / 0.28);
+  border-radius: 3px;
   transform: translateY(-50%);
   transition: height 0.12s ease;
 }
-.torrplayer-seek:hover .torrplayer-seek-track { height: 6px; }
+.torrplayer-seek:hover .torrplayer-seek-track { height: 5px; }
 .torrplayer-seek-buffer,
 .torrplayer-seek-fill { position: absolute; top: 0; bottom: 0; left: 0; transition: width 0.25s linear; }
-.torrplayer-seek-buffer { background: rgb(255 255 255 / 0.34); }
+.torrplayer-seek-buffer { background: rgb(255 255 255 / 0.36); }
 .torrplayer-seek-fill { background: #fff; }
 .torrplayer-seek-thumb {
   position: absolute;
   top: 50%;
-  width: 24px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.4);
+  border-radius: 50%;
   transform: translate(-50%, -50%) scale(0);
   transition: transform 0.12s ease, left 0.25s linear;
 }
@@ -142,86 +129,112 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
-  background: rgb(14 16 20 / 0.55);
-  border-radius: 10px;
-  backdrop-filter: var(--glass-blur);
+  background: var(--menu-fill);
+  border-radius: 8px;
   transform: translateX(-50%);
 }
 
 .torrplayer-btn {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-width: 38px;
-  height: 38px;
-  padding: 0 8px;
-  color: rgb(255 255 255 / 0.92);
+  min-width: 36px;
+  height: 36px;
+  padding: 0 7px;
+  color: #fff;
   font: inherit;
   font-size: 13px;
   white-space: nowrap;
   background: transparent;
   border: 0;
-  border-radius: 12px;
+  border-radius: 10px;
   cursor: pointer;
   transition: background 0.12s ease;
 }
-.torrplayer-btn:hover { color: #fff; background: rgb(255 255 255 / 0.18); }
+.torrplayer-btn:hover { background: rgb(255 255 255 / 0.14); }
 .torrplayer-btn:focus-visible,
 .torrplayer-audio-item:focus-visible,
 .torrplayer-bigplay:focus-visible,
 .torrplayer-volume:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
-.torrplayer-btn--active,
-.torrplayer-btn--active:hover { color: #fff; background: rgb(255 255 255 / 0.24); }
-.torrplayer-btn--pip { display: none; }
+.torrplayer-btn--settings.torrplayer-btn--active { background: rgb(255 255 255 / 0.18); }
 .torrplayer-btn svg { flex: none; }
 
+/* Volume opens from the speaker when asked for. */
 .torrplayer-volume {
-  width: 64px;
+  width: 0;
   height: 22px;
-  margin: 0 6px 0 2px;
+  margin: 0;
   padding: 0;
+  overflow: hidden;
   background: transparent;
   cursor: pointer;
+  opacity: 0;
   appearance: none;
+  transition: width 0.14s ease, opacity 0.14s ease, margin 0.14s ease;
 }
+.torrplayer-sound:hover .torrplayer-volume,
+.torrplayer-volume:focus-visible { width: 64px; margin: 0 6px 0 2px; opacity: 1; }
 .torrplayer-volume::-webkit-slider-runnable-track {
-  height: 4px;
-  background: linear-gradient(to right, #fff var(--level, 100%), rgb(255 255 255 / 0.26) var(--level, 100%));
-  border-radius: 4px;
+  height: 3px;
+  background: linear-gradient(to right, #fff var(--level, 100%), rgb(255 255 255 / 0.28) var(--level, 100%));
+  border-radius: 3px;
 }
-.torrplayer-volume::-moz-range-track { height: 4px; background: rgb(255 255 255 / 0.26); border-radius: 4px; }
-.torrplayer-volume::-moz-range-progress { height: 4px; background: #fff; border-radius: 4px; }
+.torrplayer-volume::-moz-range-track { height: 3px; background: rgb(255 255 255 / 0.28); border-radius: 3px; }
+.torrplayer-volume::-moz-range-progress { height: 3px; background: #fff; border-radius: 3px; }
 .torrplayer-volume::-webkit-slider-thumb {
   width: 12px;
   height: 12px;
-  margin-top: -4px;
+  margin-top: -4.5px;
   background: #fff;
   border-radius: 50%;
   appearance: none;
 }
 .torrplayer-volume::-moz-range-thumb { width: 12px; height: 12px; background: #fff; border: 0; border-radius: 50%; }
 
-/* Source, voice, speed, subtitles, quality */
-.torrplayer-audio { position: relative; }
-.torrplayer-audio-label { max-width: 112px; overflow: hidden; text-overflow: ellipsis; }
-.torrplayer-audio-menu {
+/* The gear's panel: one row per setting, a chosen row's list opens over it. */
+.torrplayer-settings {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 14px);
-  z-index: 30;
-  display: grid;
-  gap: 1px;
-  min-width: 150px;
-  max-height: min(340px, calc(100cqh - 92px));
+  bottom: calc(100% + 8px);
+  display: none;
+  width: min(300px, 100%);
+  max-height: calc(100cqh - 72px);
   padding: 6px;
   overflow-y: auto;
-  background: var(--glass-fill), rgb(14 16 20 / 0.42);
-  border-radius: 20px;
-  box-shadow: var(--glass-rim);
-  backdrop-filter: blur(26px) saturate(1.9);
+  background: var(--menu-fill);
+  border-radius: 16px;
+  box-shadow: 0 14px 40px rgb(0 0 0 / 0.45);
+  backdrop-filter: var(--bar-blur);
 }
-.torrplayer-audio-menu--wide { width: min(340px, 90cqw); }
+.torrplayer-settings.is-open { display: grid; gap: 1px; }
+.torrplayer-settings:has(.torrplayer-audio-menu) { overflow: visible; }
+.torrplayer-settings .torrplayer-btn {
+  justify-content: space-between;
+  width: 100%;
+  height: 40px;
+  padding: 0 10px;
+}
+.torrplayer-settings .torrplayer-btn::before { content: attr(data-label); color: rgb(255 255 255 / 0.72); }
+.torrplayer-settings .torrplayer-btn svg { display: none; }
+.torrplayer-audio-label { max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+
+.torrplayer-audio-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  display: grid;
+  gap: 1px;
+  max-height: calc(100cqh - 72px);
+  padding: 6px;
+  overflow-y: auto;
+  background: rgb(22 25 28 / 0.97);
+  border-radius: 16px;
+  box-shadow: 0 14px 40px rgb(0 0 0 / 0.45);
+}
 .torrplayer-audio-head { padding: 8px 10px 4px; color: rgb(255 255 255 / 0.5); font-size: 12px; }
 .torrplayer-audio-item {
   display: block;
@@ -232,15 +245,14 @@
   font: inherit;
   font-size: 13px;
   line-height: 1.3;
-  text-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
   text-align: left;
   background: none;
   border: 0;
   border-radius: 10px;
   cursor: pointer;
 }
-.torrplayer-audio-item:hover { color: #fff; background: rgb(255 255 255 / 0.14); }
-.torrplayer-audio-item.active { position: relative; color: #fff; font-weight: 600; background: rgb(255 255 255 / 0.16); }
+.torrplayer-audio-item:hover { background: rgb(255 255 255 / 0.12); }
+.torrplayer-audio-item.active { position: relative; font-weight: 600; }
 .torrplayer-audio-item.active::before {
   content: "";
   position: absolute;
@@ -260,43 +272,40 @@
   z-index: 26;
   display: grid;
   place-items: center;
-  width: 76px;
-  height: 76px;
+  width: 72px;
+  height: 72px;
   color: #fff;
-  background: var(--glass-fill);
+  background: var(--bar-fill);
   border: 0;
   border-radius: 50%;
-  box-shadow: var(--glass-rim);
   cursor: pointer;
-  backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--bar-blur);
   transform: translate(-50%, -50%);
   transition: transform 0.14s ease;
 }
 .torrplayer-bigplay:hover { transform: translate(-50%, -50%) scale(1.06); }
-.torrplayer:has(.torrplayer-audio-menu) .torrplayer-bigplay { display: none; }
-.torrplayer-bigplay svg { width: 30px; height: 30px; margin-left: 3px; }
+.torrplayer:has(.torrplayer-settings.is-open) .torrplayer-bigplay { display: none; }
+.torrplayer-bigplay svg { width: 28px; height: 28px; margin-left: 3px; }
 
 /* Everything else that appears over the picture */
 .torrplayer-spinner { border-color: rgb(255 255 255 / 0.18); border-top-color: #fff; }
 .torrplayer-skip {
-  bottom: 80px;
+  bottom: 70px;
   right: var(--capsule-gap);
   flex-direction: row;
   gap: 6px;
-  min-height: 40px;
-  padding: 0 16px;
-  background: var(--glass-fill);
+  min-height: 38px;
+  padding: 0 14px;
+  background: var(--bar-fill);
   border: 0;
-  border-radius: 999px;
-  box-shadow: var(--glass-rim);
-  text-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
-  backdrop-filter: var(--glass-blur);
+  border-radius: 12px;
+  backdrop-filter: var(--bar-blur);
 }
 .torrplayer-skip-title,
 .torrplayer-skip-sub { font-size: 13px; font-weight: 600; letter-spacing: 0; color: inherit; text-transform: lowercase; }
 .torrplayer-skip-title::first-letter { text-transform: uppercase; }
-.torrplayer-cast { bottom: 80px; }
-.torrplayer-notice { background: var(--glass-fill), rgb(14 16 20 / 0.42); border: 0; border-radius: 16px; box-shadow: var(--glass-rim); backdrop-filter: var(--glass-blur); }
+.torrplayer-cast { bottom: 70px; }
+.torrplayer-notice { background: var(--menu-fill); border: 0; border-radius: 12px; backdrop-filter: var(--bar-blur); }
 .torrplayer-state-overlay,
 .torrplayer-switching { backdrop-filter: blur(6px); }
 
@@ -304,87 +313,36 @@
 .player-wrap .player-overlay-group { transition: opacity 0.25s ease; }
 .player-wrap .player-overlay-btn {
   color: #fff;
-  background: var(--glass-fill);
+  background: var(--bar-fill);
   border: 0;
-  border-radius: 999px;
-  box-shadow: var(--glass-rim);
-  text-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
-  backdrop-filter: var(--glass-blur);
+  border-radius: 10px;
+  backdrop-filter: var(--bar-blur);
 }
 .player-wrap:has(.torrplayer--hidden-cursor) .player-overlay-group { opacity: 0; pointer-events: none; }
 
-/* Where the browser can do it and the machine has room to spare, the glass also bends
-   the picture behind it. Only Blink draws an SVG filter in backdrop-filter and only it
-   has -webkit-app-region; phones keep the plain blur, this costs too much per frame. */
-@media (hover: hover) and (pointer: fine) {
-  @supports (-webkit-app-region: drag) {
-    .torrplayer-controls::after,
-    .torrplayer-bigplay { backdrop-filter: url(#torrplayer-liquid) blur(2.5px) saturate(1.8); }
-  }
-}
-
-/* Narrower players (a room's stage, a small window) give way step by step. */
-/* The film's line needs the room more than these words do. */
-/* Hidden from sight only: the label is still what a screen reader announces. */
-@container (max-width: 1500px) {
-  .torrplayer-ends { display: none; }
-  .torrplayer-btn[title="Источник"] .torrplayer-audio-label,
-  .torrplayer-btn[title^="Субтитры"] .torrplayer-audio-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-}
-@container (max-width: 1100px) {
-  .torrplayer-btn:has(svg) .torrplayer-audio-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-}
-@container (max-width: 760px) {
-  .torrplayer-volume, .torrplayer-btn--seekback, .torrplayer-btn--seekfwd { display: none; }
-}
-
-/* Phone: the capsule takes two lines, the film's line above the buttons. */
+/* Phone: the same single line, without the remaining time and the volume slider. */
 @media (max-width: 768px), (max-width: 1024px) and (max-height: 500px) and (pointer: coarse) {
   .torrplayer { --capsule-gap: 6px; border-radius: 12px; }
-  .torrplayer-controls {
-    flex-wrap: wrap;
-    gap: 0;
-    padding: 0 6px 2px;
-    min-height: 0;
-    border-radius: 18px;
-  }
-  /* A zero-height line break: the film's line above, buttons below. */
-  .torrplayer-controls::before { content: ""; order: 2; flex-basis: 100%; height: 0; }
-  .torrplayer-time { order: 1; min-width: 0; padding-left: 4px; font-size: 11px; }
-  .torrplayer-seek { order: 1; flex: 1 1 0; height: 24px; min-width: 0; margin: 0 8px; }
+  .torrplayer-controls { height: 42px; padding: 0 4px; border-radius: 14px; }
+  .torrplayer-time { font-size: 12px; }
+  .torrplayer-seek { margin: 0 8px; }
   .torrplayer-seek::before { content: ""; position: absolute; inset: -6px 0; }
   .torrplayer-seek-thumb { transform: translate(-50%, -50%) scale(0.85); }
-  .torrplayer-remain { order: 1; padding-right: 4px; font-size: 11px; }
-  .torrplayer-ends, .torrplayer-volume { display: none; }
-  .torrplayer-transport, .torrplayer-sound, .torrplayer-tools { order: 3; }
-  /* The buttons stay on one line: what does not fit scrolls. Menus are positioned
-     from the capsule, so this does not clip them. */
-  .torrplayer-tools { flex: 1 1 0; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-  .torrplayer-tools::-webkit-scrollbar { display: none; }
-  .torrplayer-tools > :first-child { margin-left: auto; }
-  .torrplayer-btn { flex: none; min-width: 34px; height: 36px; padding: 0 5px; font-size: 12px; }
-  .torrplayer-btn--seekback, .torrplayer-btn--seekfwd { display: inline-flex; }
-  @media (min-width: 481px) { .torrplayer-btn--pip { display: inline-flex; } }
-  /* A phone held upright keeps play and pause: the line is there for jumps. */
-  @media (max-width: 420px) { .torrplayer-btn--seekback, .torrplayer-btn--seekfwd { display: none; } }
-  .torrplayer-btn:has(svg) .torrplayer-audio-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  /* A menu takes the capsule's width and scrolls within the picture. */
-  .torrplayer-audio { position: static; }
-  .torrplayer-audio-menu,
-  .torrplayer-audio-menu--wide {
-    left: 0;
-    right: 0;
-    bottom: calc(100% + 6px);
-    width: auto;
-    max-height: calc(100cqh - 88px);
-  }
-  .torrplayer-bigplay { top: calc((100% - 74px) / 2); width: 60px; height: 60px; }
+  .torrplayer-volume { display: none; }
+  .torrplayer-btn { min-width: 34px; height: 36px; padding: 0 5px; }
+  .torrplayer-settings .torrplayer-btn { height: 38px; }
+  .torrplayer-bigplay { top: calc((100% - 48px) / 2); width: 56px; height: 56px; }
   .torrplayer-bigplay svg { width: 24px; height: 24px; }
-  .torrplayer-skip { bottom: 76px; }
-  .torrplayer-cast { bottom: 76px; }
+  .torrplayer-skip { bottom: 54px; }
+  .torrplayer-cast { bottom: 54px; }
   .player-wrap .player-overlay-btn { min-height: 30px; padding: 0 10px; font-size: 12px; }
+  /* The gear's panel fills a phone's player, and the source pill would show through it. */
+  .player-wrap:has(.torrplayer-settings.is-open) .player-overlay-btn { visibility: hidden; }
+}
+@media (max-width: 480px) {
+  .torrplayer-remain, .torrplayer-btn--pip { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .torrplayer-controls, .torrplayer-seek-thumb, .torrplayer-seek-fill, .torrplayer-seek-buffer { transition: none; }
+  .torrplayer-controls, .torrplayer-seek-thumb, .torrplayer-seek-fill, .torrplayer-seek-buffer, .torrplayer-volume { transition: none; }
 }

@@ -258,9 +258,7 @@ const VolumeI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 const MuteI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>);
 const AudioI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" /></svg>);
 const SubI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="M7 15h4M15 15h2M7 11h2M13 11h4" /></svg>);
-const GearI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>);
-const Back10I = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><path d="M12 5V2L7 6l5 4V7a6 6 0 1 1-6 6" /><text x="12" y="17" fontSize="7" fill="currentColor" stroke="none" textAnchor="middle" fontWeight="700">10</text></svg>);
-const Fwd10I = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><path d="M12 5V2l5 4-5 4V7a6 6 0 1 0 6 6" /><text x="12" y="17" fontSize="7" fill="currentColor" stroke="none" textAnchor="middle" fontWeight="700">10</text></svg>);
+const GearI = () => (<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" /></svg>);
 // Fleet-only glyphs (Lampac): balancer = stacked servers, voice/dub = globe+dot.
 const BalancerI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><rect x="3" y="4" width="18" height="6" rx="1.5" /><rect x="3" y="14" width="18" height="6" rx="1.5" /><line x1="7" y1="7" x2="7.01" y2="7" /><line x1="7" y1="17" x2="7.01" y2="17" /></svg>);
 const VoiceI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>);
@@ -496,6 +494,7 @@ export default function OnlinePlayer({
   const srcQualities = isLampac ? lampac.qualities : [];
   const [showBalanser, setShowBalanser] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   // Inline notice that never blanks the player (dead balancer, stale link): the
   // picker stays up so the viewer can switch. Distinct from `error` (fatal).
   const [notice, setNotice] = useState(null);
@@ -2203,10 +2202,10 @@ export default function OnlinePlayer({
     if (prebufferingRef.current) return;
     hideTimerRef.current = setTimeout(() => {
       if (videoRef.current && !videoRef.current.paused &&
-          !showTracks && !showQuality && !showSpeed && !showSubs && !showBalanser && !showVoice)
+          !showSettings && !showTracks && !showQuality && !showSpeed && !showSubs && !showBalanser && !showVoice)
         setControlsVisible(false);
     }, 3000);
-  }, [showTracks, showQuality, showSpeed, showSubs, showBalanser, showVoice]);
+  }, [showSettings, showTracks, showQuality, showSpeed, showSubs, showBalanser, showVoice]);
   useEffect(() => { showControls(); return () => clearTimeout(hideTimerRef.current); }, [showControls, playing]);
 
   // ── Controls (engine-agnostic) ──────────────────────────────────────────────
@@ -2502,11 +2501,11 @@ export default function OnlinePlayer({
 
   // ── Close any open menu on outside click ────────────────────────────────────
   useEffect(() => {
-    if (!showTracks && !showQuality && !showSpeed && !showSubs && !showBalanser && !showVoice) return;
-    const onDown = () => { setShowTracks(false); setShowQuality(false); setShowSpeed(false); setShowSubs(false); setShowBalanser(false); setShowVoice(false); };
+    if (!showSettings && !showTracks && !showQuality && !showSpeed && !showSubs && !showBalanser && !showVoice) return;
+    const onDown = () => { setShowSettings(false); setShowTracks(false); setShowQuality(false); setShowSpeed(false); setShowSubs(false); setShowBalanser(false); setShowVoice(false); };
     const t = setTimeout(() => document.addEventListener("click", onDown), 0);
     return () => { clearTimeout(t); document.removeEventListener("click", onDown); };
-  }, [showTracks, showQuality, showSpeed, showSubs, showBalanser, showVoice]);
+  }, [showSettings, showTracks, showQuality, showSpeed, showSubs, showBalanser, showVoice]);
 
   // ── RENDER: loading ─────────────────────────────────────────────────────────
   const srcTitle = isLampac ? "Lampac — балансеры · озвучки · 4K · торренты" : "Онлайн (Collaps) — русская озвучка · до 4K";
@@ -2577,21 +2576,13 @@ export default function OnlinePlayer({
 
   return (
     <div
-      className={"torrplayer" + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor") + (playing ? "" : " torrplayer--paused")}
+      className={"torrplayer" + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor")}
       ref={containerRef}
       onMouseMove={showControls}
       onMouseLeave={() => { if (videoRef.current && !videoRef.current.paused) setControlsVisible(false); }}
       onPointerDownCapture={syncRole ? () => { lastInputAtRef.current = Date.now(); } : undefined}
       onPointerUpCapture={syncRole ? () => { lastInputAtRef.current = Date.now(); } : undefined}
     >
-      {/* Bends the picture seen through the glass (see player.css). */}
-      <svg className="torrplayer-lens" aria-hidden="true">
-        <filter id="torrplayer-liquid" x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
-          <feTurbulence type="fractalNoise" baseFrequency="0.006 0.03" numOctaves="2" seed="4" result="noise" />
-          <feGaussianBlur in="noise" stdDeviation="2" result="soft" />
-          <feDisplacementMap in="SourceGraphic" in2="soft" scale="46" xChannelSelector="R" yChannelSelector="G" />
-        </filter>
-      </svg>
       <video ref={videoRef} className="torrplayer-video" playsInline crossOrigin="anonymous" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
       {waiting && <div className="torrplayer-spinner" />}
       {overlay}
@@ -2668,9 +2659,7 @@ export default function OnlinePlayer({
       )}
       <div className={"torrplayer-controls" + (controlsVisible ? "" : " torrplayer-controls--hidden")}>
         <div className="torrplayer-transport">
-          <button className="torrplayer-btn torrplayer-btn--seekback" onClick={() => seekBy(-10)} title="Назад 10с (← / J)"><Back10I /></button>
           <button className="torrplayer-btn torrplayer-btn--play" onClick={togglePlay} title={playing ? "Пауза (Space / K)" : "Смотреть (Space / K)"}>{playing ? <PauseI /> : <PlayI />}</button>
-          <button className="torrplayer-btn torrplayer-btn--seekfwd" onClick={() => seekBy(10)} title="Вперёд 10с (→ / L)"><Fwd10I /></button>
         </div>
         <div className="torrplayer-sound">
           <button className="torrplayer-btn torrplayer-btn--mute" onClick={toggleMute} title={muted ? "Включить звук (M)" : "Выключить звук (M)"}>{muted || volume === 0 ? <MuteI /> : <VolumeI />}</button>
@@ -2690,7 +2679,16 @@ export default function OnlinePlayer({
           {duration > current && <span className="torrplayer-ends">до {clockAfter((duration - current) / 60 / (rate || 1))}</span>}
         </div>
         <div className="torrplayer-tools">
-
+        {/* A click inside stays inside: the outside-click closer lives on document. */}
+        <div className="torrplayer-settings-wrap" onClick={(e) => e.stopPropagation()}>
+        <button
+          className={"torrplayer-btn torrplayer-btn--settings" + (showSettings ? " torrplayer-btn--active" : "")}
+          // With a list open over the panel, the gear steps back to the panel's rows.
+          onClick={() => { if (!(showBalanser || showVoice || showTracks || showQuality || showSpeed || showSubs)) setShowSettings((v) => !v); setShowBalanser(false); setShowVoice(false); setShowTracks(false); setShowQuality(false); setShowSpeed(false); setShowSubs(false); }}
+          title="Настройки"
+          aria-expanded={showSettings}
+        ><GearI /></button>
+        <div className={"torrplayer-settings" + (showSettings ? " is-open" : "")}>
         {/* ── Fleet: Balancer picker (Lampac only) ─────────────────────────── */}
         {isLampac && balansers.length > 0 && (
           <div className="torrplayer-audio">
@@ -2698,6 +2696,7 @@ export default function OnlinePlayer({
               className={"torrplayer-btn" + (showBalanser ? " torrplayer-btn--active" : "")}
               onClick={() => { setShowBalanser((v) => !v); setShowVoice(false); setShowTracks(false); setShowQuality(false); setShowSpeed(false); setShowSubs(false); }}
               title="Источник"
+              data-label="Источник"
             >
               <BalancerI /><span className="torrplayer-audio-label">{activeBalanser?.name || "Источник"}</span>
             </button>
@@ -2727,6 +2726,7 @@ export default function OnlinePlayer({
               className={"torrplayer-btn" + (showVoice ? " torrplayer-btn--active" : "")}
               onClick={() => { setShowVoice((v) => !v); setShowBalanser(false); setShowTracks(false); setShowQuality(false); setShowSpeed(false); setShowSubs(false); }}
               title={voicePickerTitle}
+              data-label="Озвучка"
             >
               <VoiceI /><span className="torrplayer-audio-label">{activeVoice?.name || "Озвучка"}</span>
             </button>
@@ -2749,7 +2749,7 @@ export default function OnlinePlayer({
 
         {/* Speed */}
         <div className="torrplayer-audio torrplayer-speed">
-          <button className="torrplayer-btn" onClick={() => { setShowSpeed((v) => !v); setShowTracks(false); setShowQuality(false); setShowSubs(false); setShowBalanser(false); setShowVoice(false); }} title="Скорость (< >)"><span className="torrplayer-audio-label">{rate}×</span></button>
+          <button className="torrplayer-btn" data-label="Скорость" onClick={() => { setShowSpeed((v) => !v); setShowTracks(false); setShowQuality(false); setShowSubs(false); setShowBalanser(false); setShowVoice(false); }} title="Скорость (< >)"><span className="torrplayer-audio-label">{rate}×</span></button>
           {showSpeed && (
             <div className={menuClass}>
               {SPEEDS.map((s) => (<button key={s} className={"torrplayer-audio-item" + (s === rate ? " active" : "")} onClick={() => setSpeed(s)}>{s}×{s === 1 ? " (норма)" : ""}</button>))}
@@ -2760,7 +2760,7 @@ export default function OnlinePlayer({
         {/* Subtitles */}
         {subtitles.length > 0 && (
           <div className="torrplayer-audio">
-            <button className={"torrplayer-btn" + (subId >= 0 ? " torrplayer-btn--active" : "")} onClick={() => { setShowSubs((v) => !v); setShowTracks(false); setShowQuality(false); setShowSpeed(false); setShowBalanser(false); setShowVoice(false); }} title="Субтитры (C)"><SubI /><span className="torrplayer-audio-label">{subId >= 0 ? "Вкл" : "Выкл"}</span></button>
+            <button className={"torrplayer-btn" + (subId >= 0 ? " torrplayer-btn--active" : "")} onClick={() => { setShowSubs((v) => !v); setShowTracks(false); setShowQuality(false); setShowSpeed(false); setShowBalanser(false); setShowVoice(false); }} title="Субтитры (C)" data-label="Субтитры"><SubI /><span className="torrplayer-audio-label">{subId >= 0 ? "Вкл" : "Выкл"}</span></button>
             {showSubs && (
               <div className={menuClass}>
                 <button className={"torrplayer-audio-item" + (subId < 0 ? " active" : "")} onClick={() => selectSub(-1)}>Выключить</button>
@@ -2773,7 +2773,7 @@ export default function OnlinePlayer({
         {/* Audio */}
         {audioTracks.length > 1 && (
           <div className="torrplayer-audio">
-            <button className={"torrplayer-btn" + (audioId >= 0 ? " torrplayer-btn--active" : "")} onClick={() => { setShowTracks((v) => !v); setShowQuality(false); setShowSpeed(false); setShowSubs(false); setShowBalanser(false); setShowVoice(false); }} title="Аудиодорожка (A)"><AudioI /><span className="torrplayer-audio-label">{audioTracks[audioId]?.name || `Аудио ${(audioId ?? -1) + 1}`}</span></button>
+            <button className={"torrplayer-btn" + (audioId >= 0 ? " torrplayer-btn--active" : "")} onClick={() => { setShowTracks((v) => !v); setShowQuality(false); setShowSpeed(false); setShowSubs(false); setShowBalanser(false); setShowVoice(false); }} title="Аудиодорожка (A)" data-label="Аудио"><AudioI /><span className="torrplayer-audio-label">{audioTracks[audioId]?.name || `Аудио ${(audioId ?? -1) + 1}`}</span></button>
             {showTracks && (
               <div className={menuClass}>
                 {audioTracks.map((t, i) => (<button key={i} className={"torrplayer-audio-item" + (i === audioId ? " active" : "")} onClick={() => selectAudio(i)}>{t.name}</button>))}
@@ -2788,7 +2788,7 @@ export default function OnlinePlayer({
             ladder inside the ONE file currently attached. */}
         {(levels.length > 0 || (isLampac && (srcQualities.length > 0 || higherQualitySources.length > 0))) && (
           <div className="torrplayer-audio">
-            <button className="torrplayer-btn" onClick={() => { setShowQuality((v) => !v); setShowBalanser(false); setShowVoice(false); setShowTracks(false); setShowSpeed(false); setShowSubs(false); }} title="Качество (Q)"><span className="torrplayer-audio-label">{isLampac && activeSrcQuality ? activeSrcQuality.label : currentQualityLabel}</span></button>
+            <button className="torrplayer-btn" onClick={() => { setShowQuality((v) => !v); setShowBalanser(false); setShowVoice(false); setShowTracks(false); setShowSpeed(false); setShowSubs(false); }} title="Качество (Q)" data-label="Качество"><span className="torrplayer-audio-label">{isLampac && activeSrcQuality ? activeSrcQuality.label : currentQualityLabel}</span></button>
             {showQuality && (
               <div className={menuClass}>
                 {isLampac && srcQualities.length > 0 && (
@@ -2828,7 +2828,9 @@ export default function OnlinePlayer({
           </div>
         )}
 
-        {isMobile && typeof document !== "undefined" && document.pictureInPictureEnabled && (<button className={"torrplayer-btn torrplayer-btn--pip" + (pipActive ? " torrplayer-btn--active" : "")} onClick={togglePiP} title="Картинка в картинке"><PiPIcon /></button>)}
+        </div>
+        </div>
+        {typeof document !== "undefined" && document.pictureInPictureEnabled && (<button className={"torrplayer-btn torrplayer-btn--pip" + (pipActive ? " torrplayer-btn--active" : "")} onClick={togglePiP} title="Картинка в картинке"><PiPIcon /></button>)}
         <button className="torrplayer-btn torrplayer-btn--fs" onClick={toggleFullscreen} title="Полный экран (F)"><FullscreenI /></button>
         </div>
       </div>

@@ -4,6 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect, devices } from "@playwright/test";
 
+// Source, voice, subtitle and quality menus live under the player's gear.
+const openPlayerSettings = async (page) => {
+  if (await page.locator(".torrplayer-settings").isVisible()) return;
+  await page.locator(".torrplayer").hover();
+  await page.locator(".torrplayer-btn--settings").click();
+};
+
 let fixtureDir;
 let animeFixtureDir;
 let prebufferFixtureDir;
@@ -1015,6 +1022,8 @@ test("decoded movie playback recovers after HTTP and decode failures from manual
   await expect.poll(() => video.evaluate((v) => v.readyState), { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThan(0.5);
 
+  await openPlayerSettings(page);
+
   const balancer = page.getByRole("button", { name: "Healthy source" });
   await expect(balancer).toBeVisible();
   await balancer.click();
@@ -1089,6 +1098,7 @@ test("late 4K sources stay optional and the quality shortcut preserves playback 
   await page.getByRole("button", { name: "Смотреть", exact: true }).click();
   const video = page.locator("video");
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 20_000 }).toBeGreaterThan(0.5);
+  await openPlayerSettings(page);
   await page.locator('[title="Качество (Q)"]').click();
   await expect(page.locator(".torrplayer-audio-menu").getByRole("button", { name: "530p", exact: true })).toBeVisible();
   await expect(page.locator(".torrplayer-audio-menu").getByRole("button", { name: /4K/ })).toHaveCount(0);
@@ -1096,8 +1106,11 @@ test("late 4K sources stay optional and the quality shortcut preserves playback 
   await expect(page.locator(".torrplayer-audio-menu").getByRole("button", { name: "VKMovie · 4K", exact: true })).toBeVisible();
   expect(resolutions).toHaveLength(1);
   await expect(page.locator('[title="Источник"]')).toContainText("Habster · Collaps");
+  // The open list covers the panel's rows; the gear steps back to them.
+  await page.locator(".torrplayer-btn--settings").click();
   await page.locator('[title="Источник"]').click();
   await expect(page.locator(".torrplayer-audio-menu").getByRole("button", { name: "VKMovie · до 4K", exact: true })).toBeVisible();
+  await page.locator(".torrplayer-btn--settings").click();
   await page.locator('[title="Качество (Q)"]').click();
   await video.evaluate((v) => { v.currentTime = 45; v.pause(); });
   await page.locator(".torrplayer-audio-menu").getByRole("button", { name: "VKMovie · 4K", exact: true }).click();
@@ -1106,6 +1119,7 @@ test("late 4K sources stay optional and the quality shortcut preserves playback 
   await expect.poll(() => video.evaluate((v) => v.readyState), { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThanOrEqual(44);
   await page.locator(".torrplayer").hover();
+  await openPlayerSettings(page);
   await page.locator('[title="Качество (Q)"]').click();
   await expect(page.locator(".torrplayer-audio-menu").getByRole("button", { name: "4K ⭐", exact: true })).toHaveCount(2);
 });
@@ -1168,6 +1182,7 @@ test("late HLS network failures fail over once and preserve the playback positio
   await expect.poll(() => resolves.length, { timeout: 75_000 }).toBeGreaterThan(1);
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 25_000 }).toBeGreaterThan(60.5);
   await expect.poll(() => video.evaluate((v) => v.getVideoPlaybackQuality().totalVideoFrames), { timeout: 15_000 }).toBeGreaterThan(framesBeforeHandoff + 2);
+  await openPlayerSettings(page);
   await expect(page.getByRole("button", { name: "Second source" })).toBeVisible();
   expect(resolves).toEqual(["first", "second"]);
 
@@ -1322,6 +1337,7 @@ test("manual source resolution preserves a near-end resume position after the se
   // provider resolve remains pending. This reproduces the cold-start race
   // without adding 14 seconds of wall-clock time to the suite.
   await page.clock.install();
+  await openPlayerSettings(page);
   await page.getByRole("button", { name: "Ready source" }).click();
   await page.getByRole("button", { name: "Slow source", exact: true }).click();
   await slowResolveStarted;
@@ -1386,6 +1402,8 @@ test("a timeline seek made during source resolution overrides the captured resum
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThan(0.5);
   await video.evaluate((v) => { v.currentTime = 70; v.pause(); });
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 5_000 }).toBeGreaterThanOrEqual(69);
+
+  await openPlayerSettings(page);
 
   await page.getByRole("button", { name: "Ready source" }).click();
   await page.getByRole("button", { name: "Pending source" }).click();
@@ -1529,10 +1547,12 @@ test("Haikyuu season 3 uses mapped AniSkip episode and skips its opening", async
 
   await video.evaluate((v) => { v.currentTime = 220; });
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThanOrEqual(219);
+  await openPlayerSettings(page);
   await page.locator('[title="Озвучка"]').click();
   await page.locator(".torrplayer-audio-menu").getByRole("button", { name: "Русская озвучка", exact: true }).click();
   await expect.poll(() => resolved.at(-1)?.id, { timeout: 5_000 }).toBe("anime-dub");
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 15_000 }).toBeGreaterThan(210);
+  await openPlayerSettings(page);
   await page.locator('[title="Качество (Q)"]').click();
   await page.locator(".torrplayer-audio-menu").getByRole("button", { name: "1080p", exact: true }).click();
   await expect.poll(() => resolved.at(-1)?.quality, { timeout: 5_000 }).toBe("1080p");

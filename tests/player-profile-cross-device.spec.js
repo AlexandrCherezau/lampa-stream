@@ -5,6 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect, devices } from "@playwright/test";
 
+// Source, voice, subtitle and quality menus live under the player's gear.
+const openPlayerSettings = async (page) => {
+  if (await page.locator(".torrplayer-settings").isVisible()) return;
+  await page.locator(".torrplayer").hover();
+  await page.locator(".torrplayer-btn--settings").click();
+};
+
 const enabled = process.env.PLAYER_PROFILE_LIVE === "1";
 const baseURL = process.env.PROFILE_BROWSER_URL || "http://localhost:3000";
 const localQaIp = `2001:db8:${randomUUID()}`;
@@ -136,11 +143,13 @@ for (const type of ["movie", "tv"]) {
     await expect.poll(() => first.evaluate((value) => value.currentTime)).toBeGreaterThan(2);
 
     await desktop.locator(".torrplayer").hover();
+    await openPlayerSettings(desktop);
     await desktop.getByTitle("Озвучка").click();
     await desktop.locator(".torrplayer-audio-menu").getByRole("button", { name: "Eng.Original", exact: true }).click();
     await expect.poll(() => desktopResolves.at(-1)?.id).toBe("voice-en");
     await expect.poll(() => first.evaluate((value) => value.currentTime)).toBeGreaterThan(2);
     await desktop.locator(".torrplayer").hover();
+    await openPlayerSettings(desktop);
     await desktop.getByTitle("Субтитры (C)").click();
     await desktop.locator(".torrplayer-audio-menu").getByRole("button", { name: "Русские", exact: true }).click();
     await expect.poll(() => first.evaluate((value) => [...value.textTracks].some((track) => track.mode === "showing"))).toBe(true);
@@ -186,6 +195,7 @@ for (const type of ["movie", "tv"]) {
     // Turn subtitles off on the phone, pause at a fresh point, then prove OFF is
     // represented semantically in Redis instead of being lost as an absent value.
     await phone.locator(".torrplayer").hover();
+    await openPlayerSettings(phone);
     await phone.getByTitle("Субтитры (C)").click();
     await phone.locator(".torrplayer-audio-menu").getByRole("button", { name: "Выключить", exact: true }).click();
     await expect.poll(() => second.evaluate((value) => [...value.textTracks].every((track) => track.mode !== "showing"))).toBe(true);

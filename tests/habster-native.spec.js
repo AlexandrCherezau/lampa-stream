@@ -4,6 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect } from "@playwright/test";
 
+// Source, voice, subtitle and quality menus live under the player's gear.
+const openPlayerSettings = async (page) => {
+  if (await page.locator(".torrplayer-settings").isVisible()) return;
+  await page.locator(".torrplayer").hover();
+  await page.locator(".torrplayer-btn--settings").click();
+};
+
 let fixtureDir;
 test.beforeAll(() => {
   fixtureDir = mkdtempSync(join(tmpdir(), "streambert-habster-native-"));
@@ -114,6 +121,7 @@ test("Habster HLS uses our player, full quality ladder, voice switching and save
   await expect.poll(() => video.evaluate((value) => value.getVideoPlaybackQuality().totalVideoFrames)).toBeGreaterThan(0);
   await expect.poll(() => video.evaluate((value) => value.currentTime)).toBeGreaterThanOrEqual(29);
   await page.locator(".torrplayer").hover();
+  await openPlayerSettings(page);
   await page.getByTitle("Качество (Q)").click();
   const menu = page.locator(".torrplayer-audio-menu");
   for (const label of ["1440p", "1080p", "720p", "480p", "360p"]) await expect(menu.getByRole("button", { name: label, exact: true })).toBeVisible();
@@ -124,6 +132,7 @@ test("Habster HLS uses our player, full quality ladder, voice switching and save
   await expect.poll(() => video.evaluate((value) => value.currentTime)).toBeGreaterThanOrEqual(29);
   await expect.poll(() => video.evaluate((value) => value.readyState)).toBeGreaterThanOrEqual(2);
   await page.locator(".torrplayer").hover();
+  await openPlayerSettings(page);
   await page.getByTitle("Озвучка", { exact: true }).click();
   await video.evaluate((value) => {
     // Reproduce pause before the coarser timeupdate playback latch fires.
@@ -250,6 +259,7 @@ test("multilevel Habster HLS decodes its first fragment while the next fragment 
     expect(subtitleRequests).toEqual([]);
 
     await page.locator(".torrplayer").hover();
+    await openPlayerSettings(page);
     await page.getByTitle("Субтитры (C)").click();
     await page.locator(".torrplayer-audio-menu").getByRole("button", { name: "Русский", exact: true }).nth(1).click();
     await expect.poll(() => subtitleRequests).toEqual(["subtitle-3-Русский"]);
@@ -259,6 +269,7 @@ test("multilevel Habster HLS decodes its first fragment while the next fragment 
     })).toBe(true);
 
     await page.locator(".torrplayer").hover();
+    await openPlayerSettings(page);
     await page.getByTitle("Субтитры (C)").click();
     await page.locator(".torrplayer-audio-menu").getByRole("button", { name: "Выключить", exact: true }).click();
     expect(await video.evaluate((value) => Array.from(value.querySelectorAll("track[data-cc]"))[3].track.mode)).toBe("disabled");
@@ -398,6 +409,7 @@ test("a confirmed Lampac session keeps the normal HLS retry budget on quality re
   // Let the normal time-advance latch confirm real playback before reattaching.
   await page.waitForTimeout(400);
   await page.locator(".torrplayer").hover();
+  await openPlayerSettings(page);
   await page.getByTitle("Качество (Q)").click();
   await page.locator(".torrplayer-audio-menu").getByRole("button", { name: "1080p", exact: true }).click();
   await expect.poll(() => qualityHealthySegments).toBeGreaterThan(0);

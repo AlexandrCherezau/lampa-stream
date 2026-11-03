@@ -4,6 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect } from "@playwright/test";
 
+// Source, voice, subtitle and quality menus live under the player's gear.
+const openPlayerSettings = async (page) => {
+  if (await page.locator(".torrplayer-settings").isVisible()) return;
+  await page.locator(".torrplayer").hover();
+  await page.locator(".torrplayer-btn--settings").click();
+};
+
 const longTitle = "Невероятное путешествие: история длиною в целую жизнь";
 const overview = "История о дружбе, новых открытиях и большом путешествии. ".repeat(4);
 const movies = Array.from({ length: 12 }, (_, i) => ({
@@ -184,6 +191,7 @@ test.describe("phone details", () => {
     await expect.poll(() => video.evaluate((v) => !v.paused && v.currentTime > 0)).toBe(true);
     await video.tap();
     await expect(page.locator(".torrplayer-time")).toBeVisible();
+    await openPlayerSettings(page);
     await expect(page.locator(".torrplayer-controls").getByText("720p")).toBeVisible();
     await expect(page.locator(".torrplayer-btn--pip")).toBeHidden();
   });
