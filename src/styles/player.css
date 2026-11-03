@@ -1,10 +1,19 @@
-/* The player: controls gather in one capsule of frosted glass floating over the
-   picture, tinted by the poster. Nothing else sits on the film. */
+/* The player: controls gather in one capsule of liquid glass floating over the
+   picture. The glass has no colour of its own: what shows through it is the film. */
 
 .torrplayer {
-  --player-glow: var(--red2);
-  --player-light: color-mix(in oklab, var(--player-glow) 58%, white);
   --capsule-gap: 12px;
+  /* Clear, with light caught along the rim and a soft sheen from above. */
+  --glass-fill:
+    linear-gradient(to bottom, rgb(255 255 255 / 0.2), rgb(255 255 255 / 0.03) 46%, rgb(255 255 255 / 0.07)),
+    rgb(14 16 20 / 0.2);
+  --glass-rim:
+    inset 0 1px 0.5px rgb(255 255 255 / 0.62),
+    inset 0 -1px 0.5px rgb(255 255 255 / 0.2),
+    inset 0 0 0 0.5px rgb(255 255 255 / 0.28),
+    inset 0 0 22px rgb(255 255 255 / 0.1),
+    0 10px 34px rgb(0 0 0 / 0.34);
+  --glass-blur: blur(14px) saturate(1.9);
   container-type: size;
   overflow: hidden;
   color: #fff;
@@ -43,12 +52,24 @@
   gap: 4px;
   min-height: 52px;
   padding: 4px 8px;
-  background: color-mix(in oklab, var(--player-glow) 14%, rgb(18 20 23 / 0.62));
-  border-radius: 18px;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1), 0 10px 34px rgb(0 0 0 / 0.38);
-  backdrop-filter: blur(22px) saturate(1.5);
+  border-radius: 22px;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
+/* The glass is its own layer: a blur on the capsule itself would stop the menus
+   inside it from seeing the film. */
+.torrplayer-controls::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--glass-fill);
+  border-radius: inherit;
+  box-shadow: var(--glass-rim);
+  backdrop-filter: var(--glass-blur);
+}
+.torrplayer-lens { position: absolute; width: 0; height: 0; }
+.torrplayer-btn svg { filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.5)); }
 /* Hidden means not composited: blurring over a playing video costs every frame. */
 .torrplayer-controls--hidden {
   visibility: hidden;
@@ -90,7 +111,8 @@
   top: 50%;
   height: 4px;
   overflow: hidden;
-  background: rgb(255 255 255 / 0.22);
+  background: rgb(255 255 255 / 0.3);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.18);
   border-radius: 4px;
   transform: translateY(-50%);
   transition: height 0.12s ease;
@@ -98,16 +120,16 @@
 .torrplayer-seek:hover .torrplayer-seek-track { height: 6px; }
 .torrplayer-seek-buffer,
 .torrplayer-seek-fill { position: absolute; top: 0; bottom: 0; left: 0; transition: width 0.25s linear; }
-.torrplayer-seek-buffer { background: rgb(255 255 255 / 0.3); }
+.torrplayer-seek-buffer { background: rgb(255 255 255 / 0.34); }
 .torrplayer-seek-fill { background: #fff; }
 .torrplayer-seek-thumb {
   position: absolute;
   top: 50%;
-  width: 14px;
+  width: 24px;
   height: 14px;
   background: #fff;
-  border-radius: 50%;
-  box-shadow: 0 0 16px 4px color-mix(in oklab, var(--player-glow) 80%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.4);
   transform: translate(-50%, -50%) scale(0);
   transition: transform 0.12s ease, left 0.25s linear;
 }
@@ -120,8 +142,9 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
-  background: rgb(18 20 23 / 0.9);
-  border-radius: 8px;
+  background: rgb(14 16 20 / 0.55);
+  border-radius: 10px;
+  backdrop-filter: var(--glass-blur);
   transform: translateX(-50%);
 }
 
@@ -143,13 +166,13 @@
   cursor: pointer;
   transition: background 0.12s ease;
 }
-.torrplayer-btn:hover { color: #fff; background: rgb(255 255 255 / 0.14); }
+.torrplayer-btn:hover { color: #fff; background: rgb(255 255 255 / 0.18); }
 .torrplayer-btn:focus-visible,
 .torrplayer-audio-item:focus-visible,
 .torrplayer-bigplay:focus-visible,
-.torrplayer-volume:focus-visible { outline: 2px solid var(--player-light); outline-offset: 1px; }
+.torrplayer-volume:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 .torrplayer-btn--active,
-.torrplayer-btn--active:hover { color: var(--player-light); }
+.torrplayer-btn--active:hover { color: #fff; background: rgb(255 255 255 / 0.24); }
 .torrplayer-btn--pip { display: none; }
 .torrplayer-btn svg { flex: none; }
 
@@ -193,9 +216,10 @@
   max-height: min(340px, calc(100cqh - 92px));
   padding: 6px;
   overflow-y: auto;
-  background: rgb(22 24 27 / 0.97);
-  border-radius: 16px;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1), 0 18px 50px rgb(0 0 0 / 0.55);
+  background: var(--glass-fill), rgb(14 16 20 / 0.42);
+  border-radius: 20px;
+  box-shadow: var(--glass-rim);
+  backdrop-filter: blur(26px) saturate(1.9);
 }
 .torrplayer-audio-menu--wide { width: min(340px, 90cqw); }
 .torrplayer-audio-head { padding: 8px 10px 4px; color: rgb(255 255 255 / 0.5); font-size: 12px; }
@@ -204,18 +228,19 @@
   width: 100%;
   min-height: 36px;
   padding: 7px 10px 7px 30px;
-  color: rgb(255 255 255 / 0.88);
+  color: #fff;
   font: inherit;
   font-size: 13px;
   line-height: 1.3;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
   text-align: left;
   background: none;
   border: 0;
   border-radius: 10px;
   cursor: pointer;
 }
-.torrplayer-audio-item:hover { color: #fff; background: rgb(255 255 255 / 0.1); }
-.torrplayer-audio-item.active { position: relative; color: var(--player-light); font-weight: 600; }
+.torrplayer-audio-item:hover { color: #fff; background: rgb(255 255 255 / 0.14); }
+.torrplayer-audio-item.active { position: relative; color: #fff; font-weight: 600; background: rgb(255 255 255 / 0.16); }
 .torrplayer-audio-item.active::before {
   content: "";
   position: absolute;
@@ -238,12 +263,12 @@
   width: 76px;
   height: 76px;
   color: #fff;
-  background: color-mix(in oklab, var(--player-glow) 18%, rgb(18 20 23 / 0.5));
+  background: var(--glass-fill);
   border: 0;
   border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14), 0 10px 34px rgb(0 0 0 / 0.4);
+  box-shadow: var(--glass-rim);
   cursor: pointer;
-  backdrop-filter: blur(22px) saturate(1.5);
+  backdrop-filter: var(--glass-blur);
   transform: translate(-50%, -50%);
   transition: transform 0.14s ease;
 }
@@ -252,7 +277,7 @@
 .torrplayer-bigplay svg { width: 30px; height: 30px; margin-left: 3px; }
 
 /* Everything else that appears over the picture */
-.torrplayer-spinner { border-color: rgb(255 255 255 / 0.18); border-top-color: var(--player-light); }
+.torrplayer-spinner { border-color: rgb(255 255 255 / 0.18); border-top-color: #fff; }
 .torrplayer-skip {
   bottom: 80px;
   right: var(--capsule-gap);
@@ -260,17 +285,18 @@
   gap: 6px;
   min-height: 40px;
   padding: 0 16px;
-  background: color-mix(in oklab, var(--player-glow) 14%, rgb(18 20 23 / 0.7));
+  background: var(--glass-fill);
   border: 0;
-  border-radius: 14px;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12);
-  backdrop-filter: blur(22px) saturate(1.5);
+  border-radius: 999px;
+  box-shadow: var(--glass-rim);
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
+  backdrop-filter: var(--glass-blur);
 }
 .torrplayer-skip-title,
 .torrplayer-skip-sub { font-size: 13px; font-weight: 600; letter-spacing: 0; color: inherit; text-transform: lowercase; }
 .torrplayer-skip-title::first-letter { text-transform: uppercase; }
 .torrplayer-cast { bottom: 80px; }
-.torrplayer-notice { background: rgb(22 24 27 / 0.92); border: 0; border-radius: 12px; }
+.torrplayer-notice { background: var(--glass-fill), rgb(14 16 20 / 0.42); border: 0; border-radius: 16px; box-shadow: var(--glass-rim); backdrop-filter: var(--glass-blur); }
 .torrplayer-state-overlay,
 .torrplayer-switching { backdrop-filter: blur(6px); }
 
@@ -278,23 +304,35 @@
 .player-wrap .player-overlay-group { transition: opacity 0.25s ease; }
 .player-wrap .player-overlay-btn {
   color: #fff;
-  background: rgb(18 20 23 / 0.55);
+  background: var(--glass-fill);
   border: 0;
-  border-radius: 12px;
-  backdrop-filter: blur(22px);
+  border-radius: 999px;
+  box-shadow: var(--glass-rim);
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
+  backdrop-filter: var(--glass-blur);
 }
 .player-wrap:has(.torrplayer--hidden-cursor) .player-overlay-group { opacity: 0; pointer-events: none; }
 
+/* Where the browser can do it and the machine has room to spare, the glass also bends
+   the picture behind it. Only Blink draws an SVG filter in backdrop-filter and only it
+   has -webkit-app-region; phones keep the plain blur, this costs too much per frame. */
+@media (hover: hover) and (pointer: fine) {
+  @supports (-webkit-app-region: drag) {
+    .torrplayer-controls::after,
+    .torrplayer-bigplay { backdrop-filter: url(#torrplayer-liquid) blur(2.5px) saturate(1.8); }
+  }
+}
+
 /* Narrower players (a room's stage, a small window) give way step by step. */
 /* The film's line needs the room more than these words do. */
+/* Hidden from sight only: the label is still what a screen reader announces. */
 @container (max-width: 1500px) {
-  .torrplayer-ends,
+  .torrplayer-ends { display: none; }
   .torrplayer-btn[title="Источник"] .torrplayer-audio-label,
-  .torrplayer-btn[title^="Субтитры"] .torrplayer-audio-label { display: none; }
+  .torrplayer-btn[title^="Субтитры"] .torrplayer-audio-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 @container (max-width: 1100px) {
-  .torrplayer-audio-label { display: none; }
-  .torrplayer-btn:not(:has(svg)) .torrplayer-audio-label { display: inline; }
+  .torrplayer-btn:has(svg) .torrplayer-audio-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 @container (max-width: 760px) {
   .torrplayer-volume, .torrplayer-btn--seekback, .torrplayer-btn--seekfwd { display: none; }
@@ -308,7 +346,7 @@
     gap: 0;
     padding: 0 6px 2px;
     min-height: 0;
-    border-radius: 14px;
+    border-radius: 18px;
   }
   /* A zero-height line break: the film's line above, buttons below. */
   .torrplayer-controls::before { content: ""; order: 2; flex-basis: 100%; height: 0; }
@@ -329,8 +367,7 @@
   @media (min-width: 481px) { .torrplayer-btn--pip { display: inline-flex; } }
   /* A phone held upright keeps play and pause: the line is there for jumps. */
   @media (max-width: 420px) { .torrplayer-btn--seekback, .torrplayer-btn--seekfwd { display: none; } }
-  .torrplayer-audio-label { display: none; }
-  .torrplayer-btn:not(:has(svg)) .torrplayer-audio-label { display: inline; }
+  .torrplayer-btn:has(svg) .torrplayer-audio-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* A menu takes the capsule's width and scrolls within the picture. */
   .torrplayer-audio { position: static; }
   .torrplayer-audio-menu,

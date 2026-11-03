@@ -170,7 +170,6 @@ import { fetchAniSkipTimings, resolveAnimeEpisode } from "../utils/aniSkip";
 import { fetchIntroDbTimings, mergeTimings, providerSkipRanges } from "../utils/introDetect";
 import { createSyncTracker, expectedPosition, syncVideo } from "../utils/watchParty";
 import { clockAfter, useMinuteClock } from "../utils/endTime";
-import usePosterGlow from "../utils/usePosterGlow";
 import { storage, STORAGE_KEYS, getStoredVolume, getStoredMuted, setStoredVolume, setStoredMuted, setCappedMap } from "../utils/storage";
 import { getPlaybackCheckpoint, waitForViewingProfile, savePlaybackCheckpoint, flushViewingProfile, recordViewingSession, registerViewingProfileClosingCapture } from "../utils/viewingProfile";
 import { crossedPlaybackPosition, crossedWatchedThreshold, hasGenuinePlaybackForEnd, shouldApplyResumePosition } from "../utils/playbackCompletion";
@@ -460,8 +459,6 @@ export default function OnlinePlayer({
   const nextFiredRef = useRef(false);
 
   const [controlsVisible, setControlsVisible] = useState(true);
-  // Asked for only once the film is on screen: nothing may compete with the prebuffer.
-  const posterGlow = usePosterGlow(prebuffering ? null : item?.poster_path);
   useMinuteClock(); // Keeps the end time right while paused, when nothing else re-renders.
   const [hoverTime, setHoverTime] = useState(null);
 
@@ -2581,13 +2578,20 @@ export default function OnlinePlayer({
   return (
     <div
       className={"torrplayer" + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor") + (playing ? "" : " torrplayer--paused")}
-      style={posterGlow ? { "--player-glow": posterGlow } : undefined}
       ref={containerRef}
       onMouseMove={showControls}
       onMouseLeave={() => { if (videoRef.current && !videoRef.current.paused) setControlsVisible(false); }}
       onPointerDownCapture={syncRole ? () => { lastInputAtRef.current = Date.now(); } : undefined}
       onPointerUpCapture={syncRole ? () => { lastInputAtRef.current = Date.now(); } : undefined}
     >
+      {/* Bends the picture seen through the glass (see player.css). */}
+      <svg className="torrplayer-lens" aria-hidden="true">
+        <filter id="torrplayer-liquid" x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.006 0.03" numOctaves="2" seed="4" result="noise" />
+          <feGaussianBlur in="noise" stdDeviation="2" result="soft" />
+          <feDisplacementMap in="SourceGraphic" in2="soft" scale="46" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </svg>
       <video ref={videoRef} className="torrplayer-video" playsInline crossOrigin="anonymous" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
       {waiting && <div className="torrplayer-spinner" />}
       {overlay}
