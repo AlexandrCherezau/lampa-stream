@@ -1175,23 +1175,65 @@ test("late HLS network failures fail over once and preserve the playback positio
   await expect.poll(() => video.evaluate((v) => v.getVideoPlaybackQuality().totalVideoFrames), { timeout: 30_000 }).toBeGreaterThan(15);
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 10_000 }).toBeGreaterThan(1);
 
-  const framesBeforeHandoff = await video.evaluate((v) => v.getVideoPlaybackQuality().totalVideoFrames);
   failCurrentSource = true;
   await video.evaluate((v) => { v.currentTime = 60; });
   await expect.poll(() => failedSegmentRequests, { timeout: 20_000 }).toBeGreaterThan(0);
-  await expect.poll(() => resolves.length, { timeout: 75_000 }).toBeGreaterThan(1);
+  // The viewer's source gets its bounded fresh tries, then the next source takes over.
+  await expect.poll(() => resolves.includes("second"), { timeout: 120_000 }).toBe(true);
+  expect(resolves.filter((id) => id === "first").length).toBeLessThanOrEqual(3);
   await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 25_000 }).toBeGreaterThan(60.5);
-  await expect.poll(() => video.evaluate((v) => v.getVideoPlaybackQuality().totalVideoFrames), { timeout: 15_000 }).toBeGreaterThan(framesBeforeHandoff + 2);
+  await expect(page.getByText(/Поток прерван/)).toHaveCount(0);
   await openPlayerSettings(page);
-  await expect(page.getByRole("button", { name: "Second source" })).toBeVisible();
-  expect(resolves).toEqual(["first", "second"]);
+  await expect(page.locator('[title="Источник"]')).toContainText("Second source");
 
-  // The second source proves the pool was used, then the same real segment
-  // failure exhausts it. No third resolve/retry loop should follow.
+  // With nothing left the same failure settles into the error screen: no retry loop.
   await video.evaluate((v) => { v.currentTime = 80; });
-  await expect.poll(() => failedSegmentRequests, { timeout: 10_000 }).toBeGreaterThan(1);
-  await expect(page.getByText(/Поток прерван/)).toBeVisible({ timeout: 75_000 });
-  expect(resolves).toEqual(["first", "second"]);
+  await expect(page.getByText(/Поток прерван|Воспроизведение остановилось|Не найдено работающего/)).toBeVisible({ timeout: 120_000 });
+  const settled = resolves.length;
+  await page.waitForTimeout(3_000);
+  expect(resolves.length).toBe(settled);
+  expect(resolves.filter((id) => id === "second").length).toBeLessThanOrEqual(3);
+});
+
+test("a manifest that answers 502 a couple of times still starts on the same source", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token");
+    localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
+  });
+  const tmdb = (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ id: 550, title: "Movie 550", original_title: "Movie 550", imdb_id: "tt0111161", original_language: "en", runtime: 100, genres: [], credits: { cast: [] } }),
+  });
+  await page.route("**/api/tmdb/**", tmdb);
+  await page.route("https://api.themoviedb.org/**", tmdb);
+  await page.route(/\/api\/source-host\?op=discover(?:&|$)/, (route) => route.fulfill({
+    status: 200, contentType: "text/event-stream",
+    body: ["flaky", "spare"].map((id) => `event: candidate\ndata: ${JSON.stringify({ id, providerId: id, providerName: id, voiceName: "Dub" })}\n\n`).join("") + "event: done\ndata: {}\n\n",
+  }));
+  await page.route(/\/api\/source-host\?op=resolve(?:&|$)/, (route) => {
+    const { id } = route.request().postDataJSON();
+    const url = `https://media.example/${id}/fixture.m3u8`;
+    // The spare must not win the race: this test is about the flaky source surviving.
+    if (id === "spare") return;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "hls", selected: { label: "720p", height: 720, url }, qualities: [{ label: "720p", height: 720, url }] }) });
+  });
+  let manifestRequests = 0;
+  await page.route("https://media.example/**", (route) => {
+    const headers = { "access-control-allow-origin": "*" };
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith(".m3u8")) {
+      if (++manifestRequests <= 2) return route.fulfill({ status: 502, contentType: "text/plain", headers, body: "Media source unavailable" });
+      return route.fulfill({ status: 200, contentType: "application/vnd.apple.mpegurl", headers, body: readFileSync(join(fixtureDir, "fixture.m3u8"), "utf8") });
+    }
+    return route.fulfill({ status: 200, contentType: "video/mp2t", headers, body: readFileSync(join(fixtureDir, url.pathname.split("/").pop())) });
+  });
+  await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  const video = page.locator("video");
+  await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 30_000 }).toBeGreaterThan(0.5);
+  expect(manifestRequests).toBeGreaterThanOrEqual(3);
+  await openPlayerSettings(page);
+  await expect(page.locator('[title="Источник"]')).toContainText("flaky");
 });
 
 test("automatic recovery keeps another voice after HTTP and decode failures in the same provider", async ({ page }) => {
@@ -1592,7 +1634,9 @@ for (const { kind, recovers } of [{ kind: "file", recovers: true }, { kind: "fil
     await mediaGate;
     await route.fulfill({ status: 200, contentType: "video/mp4", body: readFileSync(mp4) }).catch(() => {});
   });
-  await page.route("**/fallback.mp4", (route) => route.fulfill({ status: 200, contentType: "video/mp4", body: readFileSync(mp4) }));
+  // Two sources resolve side by side, so only a request for the spare's media means the handover happened.
+  let fallbackRequests = 0;
+  await page.route("**/fallback.mp4", (route) => { fallbackRequests += 1; return route.fulfill({ status: 200, contentType: "video/mp4", body: readFileSync(mp4) }); });
   await page.clock.install();
   await page.goto("/movie/550", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Смотреть", exact: true }).click();
@@ -1602,20 +1646,20 @@ for (const { kind, recovers } of [{ kind: "file", recovers: true }, { kind: "fil
   try {
     if (kind === "hls") {
       await page.clock.fastForward(8000);
-      await expect.poll(() => resolutions).toEqual(["delayed", "fallback"]);
+      await expect.poll(() => fallbackRequests).toBeGreaterThan(0);
       return;
     }
     await page.clock.fastForward(9000);
-    expect(resolutions).toEqual(["delayed"]);
+    expect(fallbackRequests).toBe(0);
     if (recovers) {
       releaseMedia();
       await expect.poll(() => video.evaluate((v) => v.getVideoPlaybackQuality().totalVideoFrames)).toBeGreaterThan(3);
       await expect.poll(() => video.evaluate((v) => v.currentTime)).toBeGreaterThan(0.5);
       await page.clock.fastForward(15000);
-      expect(resolutions).toEqual(["delayed"]);
+      expect(fallbackRequests).toBe(0);
     } else {
       await page.clock.fastForward(6000);
-      await expect.poll(() => resolutions).toEqual(["delayed", "fallback"]);
+      await expect.poll(() => fallbackRequests).toBeGreaterThan(0);
     }
   } finally { releaseMedia(); }
 });

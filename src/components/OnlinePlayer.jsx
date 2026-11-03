@@ -33,6 +33,10 @@ function loadHls() {
 }
 export function preloadOnlinePlayer() { return loadHls(); }
 
+// Source hosts answer 502 now and then and the next try usually works, while
+// hls.js gives a manifest a single retry by default.
+const PLAYLIST_ERROR_RETRY = { maxNumRetry: 3, retryDelayMs: 400, maxRetryDelayMs: 1500 };
+
 function setHlsFragmentErrorRetryBudget(hls, maxNumRetry) {
   // hls.js 1.6's loader/error controller read this modern policy. Keep the
   // legacy fragLoadingMaxRetry constructor option as well: mergeConfig maps it
@@ -509,6 +513,8 @@ export default function OnlinePlayer({
   // balancer, and the first real `playing` locks the current one in.
   const reportFleetFailureRef = useRef(null);
   reportFleetFailureRef.current = isLampac ? lampac.reportPlaybackFailure : null;
+  const abandonFleetSourceRef = useRef(null);
+  abandonFleetSourceRef.current = isLampac ? lampac.abandonCurrent : null;
   const noteFleetPlayingRef = useRef(null);
   noteFleetPlayingRef.current = isLampac ? lampac.notePlaying : null;
   const refreshFleetSourceRef = useRef(null);
@@ -570,8 +576,10 @@ export default function OnlinePlayer({
   const fleetFailover = useCallback(() => {
     const fn = reportFleetFailureRef.current;
     if (!fn) return false;
-    if (fn()) {
+    // A source locked by earlier playback gets here with its own recovery used up.
+    if (fn() || abandonFleetSourceRef.current?.()) {
       forceStreamReattachRef.current = true;
+      fleetPlayedRef.current = false;
       // A new descent is in flight: blank the dead stream and show loading rather
       // than the terminal error screen.
       setStream(null);
@@ -609,6 +617,10 @@ export default function OnlinePlayer({
       } else {
         recoveryPendingRef.current = false;
         recoveryQualityRef.current = null;
+        if (result === false && fleetFailover()) {
+          setRecovering(false);
+          return true;
+        }
         recoveryFailedRef.current = result === false;
         if (result === false) {
           setState("error");
@@ -621,15 +633,16 @@ export default function OnlinePlayer({
       if (selection !== sourceSelectionRef.current) return undefined;
       recoveryPendingRef.current = false;
       recoveryQualityRef.current = null;
-      recoveryFailedRef.current = true;
       setRecovering(false);
+      if (fleetFailover()) return true;
+      recoveryFailedRef.current = true;
       setState("error");
       setError("Воспроизведение остановилось. Источник не удалось восстановить.");
       return false;
     } finally {
       recoveryInFlightRef.current = false;
     }
-  }, []);
+  }, [fleetFailover]);
 
   // Mirror `levels` into a ref so the DASH/HLS quality-change listeners (closures
   // captured once at attach time) map the engine's level index to our UI index
@@ -954,7 +967,7 @@ export default function OnlinePlayer({
       const time = v.currentTime || 0;
       // The room's own seeks are not progress: on a dead stream it keeps seeking
       // forward, and that must not hide the stall from this watchdog.
-      if (document.hidden || !fleetPlayedRef.current || v.paused || userPausedRef.current || v.ended || (v.seeking && !syncRole)
+      if (document.hidden || !fleetPlayedRef.current || v.paused || userPausedRef.current || v.ended
         || v.readyState >= 3 || switching || recoveryInFlightRef.current || recoveryPendingRef.current) {
         resetStall(now);
         return;
@@ -1429,6 +1442,8 @@ export default function OnlinePlayer({
       // per initial source attempt; restore the normal six-retry budget once a
       // decoded time advance proves this source can play.
       if (isLampac && !fleetHasPlayedRef.current) setHlsFragmentErrorRetryBudget(hls, 1);
+      hls.config.manifestLoadPolicy.default.errorRetry = PLAYLIST_ERROR_RETRY;
+      hls.config.playlistLoadPolicy.default.errorRetry = PLAYLIST_ERROR_RETRY;
       hlsRef.current = hls; engineRef.current = "hls";
       hls.loadSource(stream.hls); hls.attachMedia(v);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {

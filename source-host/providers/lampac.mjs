@@ -1,5 +1,5 @@
 const RUS_MOVIE_PROVIDERS = new Set([
-  "aladin", "cdnvideohub", "collaps", "fancdn", "filmix", "flixcdn", "getstv",
+  "aladin", "cdnvideohub", "fancdn", "filmix", "flixcdn", "getstv",
   "hdvb", "iremux", "kinobase", "kinogo", "leproduction", "mirage",
   "phantom", "pizdatoehd", "redheadsound", "rezka", "rutubemovie", "sakhtv", "vkmovie",
   "spectre", "veoveo", "vibix", "videodb", "videoseed", "zetflix", "zetflixdb",

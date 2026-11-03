@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSourceSession } from '../src/utils/source-host-client.js';
+import { createSourceSession, resolveSource } from '../src/utils/source-host-client.js';
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const candidate = (id, providerId='p', voiceId='dub') => ({id, providerId, providerName:providerId, voiceId, voiceName:voiceId, season:1, episode:2});
 const result = (name, quality='720p') => ({kind:'hls', selected:{url:`https://media.invalid/${name}.m3u8`,label:quality}, qualities:[{label:quality,height:720}], audioNames:['Dub'], subtitles:[]});
@@ -82,4 +82,39 @@ test('reused positional voice ID cannot silently replace the original dub after 
  },resolve:async(id,quality,_signal,number)=>{if(number>1)throw Object.assign(new Error('expired'),{code:'SOURCE_EXPIRED'});return result(id,quality);}});
  await start(f);assert.equal(await f.session.refreshCurrent(),false);
  assert.equal(f.state.sourcePreference.voiceName,'Original Dub');assert.deepEqual(f.calls.map(c=>c.id),['old','old']);f.session.stop();
+});
+test('abandoning a confirmed source moves to the next one and hides the dead provider from the picker',async()=>{
+ const f=fixture();await start(f);
+ assert.equal(f.session.abandonCurrent(),true);await flush();
+ assert.equal(f.state.balanser,'other');assert.match(f.state.stream.hls,/b\.m3u8/);
+ assert.deepEqual(f.state.balansers.map(p=>p.id),['other']);
+ f.session.notePlaying();assert.equal(await f.session.refreshCurrent(),true,'the new source gets its own refresh budget');f.session.stop();
+});
+test('abandoning the last source reports exhaustion instead of looping',async()=>{
+ const f=fixture();await start(f);
+ assert.equal(f.session.abandonCurrent(),true);await flush();f.session.notePlaying();const before=f.calls.length;
+ assert.equal(f.session.abandonCurrent(),false);await flush();
+ assert.equal(f.state.stream,null);assert.equal(f.calls.length,before);assert.ok(f.state.sourceError);
+ assert.deepEqual(f.state.balansers.map(p=>p.id),['p','other'],'with nothing left the picker still offers every source');f.session.stop();
+});
+test('a manual pick that cannot resolve leaves the picker and keeps the playing source',async()=>{
+ const f=fixture({resolve:async id=>{if(id==='b')throw new Error('dead');return result(id);}});await start(f);
+ assert.equal(await f.session.selectBalanser('other'),false);
+ assert.equal(f.state.balanser,'p');assert.deepEqual(f.state.balansers.map(p=>p.id),['p']);f.session.stop();
+});
+test('resolve retries a transient failure once and leaves real refusals alone',async()=>{
+ const realFetch=globalThis.fetch;
+ const reply=(status,body={kind:'hls'})=>new Response(JSON.stringify(body),{status});
+ try{
+  let calls=0;globalThis.fetch=async()=>++calls===1?reply(502,{error:'MEDIA_UNAVAILABLE'}):reply(200);
+  assert.equal((await resolveSource('a')).kind,'hls');assert.equal(calls,2);
+  calls=0;globalThis.fetch=async()=>{if(++calls===1)throw new TypeError('network');return reply(200);};
+  assert.equal((await resolveSource('a')).kind,'hls');assert.equal(calls,2);
+  calls=0;globalThis.fetch=async()=>{calls++;return reply(502);};
+  await assert.rejects(resolveSource('a'));assert.equal(calls,2,'one retry only');
+  calls=0;globalThis.fetch=async()=>{calls++;return reply(404,{error:'QUALITY_NOT_FOUND'});};
+  await assert.rejects(resolveSource('a'));assert.equal(calls,1);
+  const left=new AbortController();calls=0;globalThis.fetch=async()=>{calls++;left.abort(new Error('left'));throw new TypeError('network');};
+  await assert.rejects(resolveSource('a',undefined,left.signal));assert.equal(calls,1);
+ }finally{globalThis.fetch=realFetch;}
 });

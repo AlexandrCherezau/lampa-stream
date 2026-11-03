@@ -32,7 +32,7 @@ const hlsQualityEnd = source.indexOf("recoveryQualityRef.current = null;", hlsQu
 assert.ok(hlsStart >= 0 && hlsQualityStart > hlsStart && hlsQualityEnd > hlsQualityStart, "find the production HLS quality restore branch");
 const hlsQualityBody = source.slice(hlsQualityStart, hlsQualityEnd);
 const refreshCallbackStart = source.indexOf("async (previousEngine = engineRef.current) => {", source.indexOf("const refreshCurrentSource = useCallback("));
-const refreshCallbackEnd = source.indexOf("\n  }, []);", refreshCallbackStart);
+const refreshCallbackEnd = source.indexOf("\n  }, [fleetFailover]);", refreshCallbackStart);
 assert.ok(refreshCallbackStart >= 0 && refreshCallbackEnd > refreshCallbackStart, "find the production same-source refresh callback");
 const refreshCallback = source.slice(refreshCallbackStart, refreshCallbackEnd + 4);
 
@@ -213,11 +213,16 @@ test("a 20-second empty-buffer stall retries the same source at the saved clock 
   assert.deepEqual(monitor.calls, [["saveResumeTime", 42], ["refreshCurrentSource"]]);
 });
 
-test("pause, hidden tab, seek, and ready buffer do not trigger stall recovery", () => {
+test("a seek that never lands counts as a stall", () => {
+  const monitor = createStallMonitor({ v: { currentTime: 42, paused: false, ended: false, seeking: true, readyState: 1 } });
+  monitor.checkStall(20_000);
+  assert.deepEqual(monitor.calls.at(-1), ["refreshCurrentSource"]);
+});
+
+test("pause, hidden tab, and ready buffer do not trigger stall recovery", () => {
   for (const overrides of [
     { userPausedRef: { current: true } },
     { document: { hidden: true } },
-    { v: { currentTime: 42, paused: false, ended: false, seeking: true, readyState: 2 } },
     { v: { currentTime: 42, paused: false, ended: false, seeking: false, readyState: 3 } },
   ]) {
     const monitor = createStallMonitor(overrides);
@@ -245,9 +250,10 @@ test("incoming bytes alone do not keep a stalled media clock alive", () => {
   assert.doesNotMatch(monitorEffect, /"progress"/);
 });
 
-function createRefreshHelper(refresh) {
+function createRefreshHelper(refresh, sourceLeft = false) {
   const calls = [];
   const env = {
+    fleetFailover: () => { calls.push(["failover"]); return sourceLeft; },
     engineRef: { current: "hls" },
     refreshFleetSourceRef: { current: refresh },
     recoveryInFlightRef: { current: false },
@@ -285,10 +291,19 @@ test("a stall-triggered failed same-source recovery settles the player error whi
     ["recovering", true],
     ["error", ""],
     ["state", "loading"],
+    ["failover"],
     ["state", "error"],
     ["error", "Воспроизведение остановилось. Источник не удалось восстановить."],
     ["recovering", false],
   ]);
+});
+
+test("a failed same-source recovery moves to another source when one is left", async () => {
+  const helper = createRefreshHelper(async () => false, true);
+  assert.equal(await helper.run(), true);
+  assert.equal(helper.env.recoveryFailedRef.current, false);
+  assert.ok(!helper.calls.some(([name, value]) => name === "state" && value === "error"));
+  assert.deepEqual(helper.calls.slice(-2), [["failover"], ["recovering", false]]);
 });
 
 test("stale refresh completion after a new source selection cannot replace its state", async () => {

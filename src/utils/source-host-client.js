@@ -10,6 +10,7 @@ const REFRESH_TIMEOUT_MS = 20_000;
 const MAX_AUTO_REFRESHES = 2;
 const PROVIDER_COOLDOWN_MS = 30_000;
 const DISCOVER_BUSY_RETRY_MS = [800, 2_000, 4_000];
+const RESOLVE_RETRY_MS = 400;
 const preparedSources = new Map();
 const providerCooldowns = new Map();
 
@@ -39,6 +40,14 @@ async function request(op, body, signal) {
   return response;
 }
 
+function pause(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => { clearTimeout(timer); reject(signal.reason); };
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", onAbort); resolve(); }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 // The server caps concurrent discoveries and answers 429 before the stream
 // starts, so a retry is safe and spares the viewer a hard error on a busy moment.
 async function requestDiscovery(body, signal, delays = DISCOVER_BUSY_RETRY_MS) {
@@ -47,11 +56,7 @@ async function requestDiscovery(body, signal, delays = DISCOVER_BUSY_RETRY_MS) {
       return await request("discover", body, signal);
     } catch (error) {
       if (error.status !== 429 || attempt >= delays.length || signal?.aborted) throw error;
-      await new Promise((resolve, reject) => {
-        const onAbort = () => { clearTimeout(timer); reject(signal.reason); };
-        const timer = setTimeout(() => { signal?.removeEventListener("abort", onAbort); resolve(); }, delays[attempt]);
-        signal?.addEventListener("abort", onAbort, { once: true });
-      });
+      await pause(delays[attempt], signal);
     }
   }
 }
@@ -83,7 +88,15 @@ export async function discoverSources(title, { signal, onEvent, prepareOnly = fa
 }
 
 export async function resolveSource(id, quality, signal) {
-  return (await request("resolve", { id, ...(quality ? { quality } : {}) }, signal)).json();
+  const send = async () => (await request("resolve", { id, ...(quality ? { quality } : {}) }, signal)).json();
+  try { return await send(); }
+  catch (error) {
+    // A provider hiccup must not cost the source: the next try usually works. An
+    // upstream media status is a real answer, and the server has already retried it.
+    if (signal?.aborted || error.sourceUpstreamStatus || (error.status != null && ![429, 502, 504].includes(error.status))) throw error;
+    await pause(RESOLVE_RETRY_MS, signal);
+    return send();
+  }
 }
 
 export async function prepareMovieSource(title, { signal, discover = discoverSources, resolve = resolveSource } = {}) {
@@ -238,7 +251,9 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   const emit = (patch = {}) => {
     state = { ...state, ...patch };
     const byProvider = new Map();
-    for (const candidate of candidates) {
+    // A source that failed leaves the picker, unless that would leave nothing to pick.
+    const working = candidates.filter((candidate) => !failed.has(candidate.id) || candidate.providerId === active?.candidate.providerId);
+    for (const candidate of working.length ? working : candidates) {
       const height = advertisedHeight(candidate.qualityHint);
       const prior = byProvider.get(candidate.providerId);
       byProvider.set(candidate.providerId, {
@@ -338,8 +353,11 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     }
     // Try every available provider before exhausting its alternate voices.
     const inFlight = new Set([...autoAttempts.values()].map(({ candidate }) => candidate.providerId));
-    const available = candidates.filter((value) => !failed.has(value.id)
-      && !autoAttempts.has(value.id) && !inFlight.has(value.providerId) && !coolingDown(value.providerId));
+    const untried = candidates.filter((value) => !failed.has(value.id)
+      && !autoAttempts.has(value.id) && !inFlight.has(value.providerId));
+    const rested = untried.filter((value) => !coolingDown(value.providerId));
+    // A cooldown only moves a doubtful source to the back: it still beats an error screen.
+    const available = rested.length || !finished ? rested : untried;
     const preferred = sourcePreference && available.find((value) => matchesSourcePreference(value, sourcePreference));
     // A cloud-restored source choice is useful only if it is restored before the
     // first frame. Give discovery time to surface that stable provider/voice
@@ -474,6 +492,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       if (controller.signal.aborted || token !== generation) return undefined;
       if (quality == null) recordProviderFailure(candidate.providerId, error);
       if (manual && active) {
+        if (quality == null) failed.add(candidate.id);
         emit({ switching: false, sourceError: { message: error.message || "Не удалось переключить источник" } });
         return false;
       }
@@ -585,6 +604,17 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     selectQuality: (label) => active ? choose(active.candidate, label, true) : undefined,
     clearSwitching: () => emit({ switching: false }),
     notePlaying: () => { confirmed = true; previous = null; emit({ switching: false }); },
+    // The last resort once recovery on this source is used up: another source beats an error screen.
+    abandonCurrent: () => {
+      if (!active) return pending || !finished;
+      cancelRefresh();
+      refreshAttempts = 0;
+      failed.add(active.candidate.id);
+      active = previous = null;
+      confirmed = false;
+      emit({ stream: null, switching: false, sourceError: null, audioNames: [], skip: null });
+      return next();
+    },
     reportPlaybackFailure: () => {
       if (!active) return pending || !finished;
       // Once frames have played, recovery must keep the viewer's source and dub.
