@@ -6,7 +6,6 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createLampacProvider } from "./providers/lampac.mjs";
 import { createVi3000Provider } from "./providers/vi3000.mjs";
 import { createHabsterProvider } from "./providers/habster.mjs";
-import { createVidSrcProvider } from "./providers/vidsrc.mjs";
 import { createAllMangaProvider } from "./providers/allmanga.mjs";
 import { createKinoarcProvider } from "./providers/kinoarc.mjs";
 import { createTransport } from "./transport.mjs";
@@ -111,7 +110,8 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
   adapter ||= createLampacProvider({ baseUrl: engineUrl, fetchJson: transport.json, providerOrder: PROVIDER_ORDER });
   viAdapter ||= createVi3000Provider({ transport: createTransport() });
   habsterAdapter ||= createHabsterProvider({ transport: createTransport() });
-  vidsrcAdapter ||= createVidSrcProvider({ transport: createTransport() });
+  // VidSrc answers 403/451 to every address we can host on: it only added a dead row to the picker.
+  vidsrcAdapter ||= { async *discover() {} };
   allmangaAdapter ||= createAllMangaProvider({ transport: createTransport() });
   kinoarcAdapter ||= createKinoarcProvider({ transport: createTransport() });
   const sourceAdapter = (catalogSource) => catalogSource === "kinoarc" ? kinoarcAdapter : catalogSource === "allmanga" ? allmangaAdapter : catalogSource === "vidsrc" ? vidsrcAdapter : catalogSource === "habster" ? habsterAdapter : catalogSource === "vi3000" ? viAdapter : adapter;

@@ -14,6 +14,8 @@ import "./styles/watch-together.css";
 // Web only: gate on the site password before mounting the app. On desktop this
 // resolves immediately (no VITE_SITE_PWD_HASH → no gate).
 ensureSiteGate().finally(() => {
+  // The source host sleeps when idle: wake it now, not on the viewer's first click.
+  if (window.__webShim) fetch("/api/source-host?op=providers").catch(() => {});
   ReactDOM.createRoot(document.getElementById("root")).render(
     <React.StrictMode>
       <App />

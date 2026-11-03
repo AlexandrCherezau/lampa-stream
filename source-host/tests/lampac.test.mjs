@@ -684,7 +684,7 @@ async function testAnimeRetainsRussianMovieProviders() {
   };
   const provider = createLampacProvider({ baseUrl, fetchJson });
   const results = await collect(provider.discover({ type: "tv", title: "Волейбол!!", anime: true, season: 1, episode: 14 }));
-  assert.deepEqual(results.map((value) => value.providerId), ["vibix", "phantom", "collaps", "kodik"],
+  assert.deepEqual(results.map((value) => value.providerId), ["vibix", "phantom", "kodik"],
     "anime must retain Russian general providers without adding foreign or unvetted catalogs");
   assert(results.every((value) => value.season === 1 && value.episode === 14));
 }

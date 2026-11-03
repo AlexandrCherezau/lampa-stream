@@ -200,7 +200,7 @@ test("a late saved provider does not replace an already-started fallback", async
   session.stop();
 });
 
-test("cooldown skips automatic retries, expires, and still allows manual retry", async () => {
+test("cooldown sends automatic retries to the back of the queue, expires, and still allows manual retry", async () => {
   const calls = [];
   let state;
   const first = createSourceSession({
@@ -217,7 +217,8 @@ test("cooldown skips automatic retries, expires, and still allows manual retry",
   });
   await first.start({ title: "Cooldown" });
   for (let i = 0; i < 5 && !state.sourceError; i++) await tick();
-  assert.deepEqual(calls.sort(), ["cooldown-1", "other"]);
+  assert.deepEqual(calls.slice(-1), ["cooldown-2"], "the cooling voice is tried only after every other source");
+  assert.deepEqual([...calls].sort(), ["cooldown-1", "cooldown-2", "other"]);
   first.stop();
 
   const realNow = Date.now;
@@ -277,7 +278,7 @@ test("accumulated candidates still race distinct providers after an absent saved
   slow.resolve(result("late"));
 });
 
-test("missing media does not cool down another voice or title, while upstream 503 does", async (t) => {
+test("one failed voice never blocks another voice or title, whatever the upstream answered", async (t) => {
   let calls = [];
   t.mock.method(globalThis, "fetch", async (_url, options) => {
     const { id } = JSON.parse(options.body);
@@ -301,12 +302,12 @@ test("missing media does not cool down another voice or title, while upstream 50
     };
     calls = [];
     const first = await run([`bad${status}`, "other-voice"]);
-    assert.equal(Boolean(first.stream), status !== 503);
-    assert.deepEqual(calls, status === 503 ? [`bad${status}`] : [`bad${status}`, "other-voice"]);
+    assert.ok(first.stream);
+    assert.deepEqual(calls, [`bad${status}`, "other-voice"]);
     calls = [];
     const second = await run(["other-title"]);
-    assert.equal(Boolean(second.stream), status !== 503);
-    assert.deepEqual(calls, status === 503 ? [] : ["other-title"]);
+    assert.ok(second.stream);
+    assert.deepEqual(calls, ["other-title"]);
   }
 });
 
