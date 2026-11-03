@@ -132,6 +132,41 @@
 .wt-msg.is-mine .wt-msg__name { color: var(--red2); }
 .wt-note { margin: 0; color: var(--text3); font-size: 12px; text-align: center; }
 
+.wt-credit { margin-top: 28px; font-size: 12px; }
+.wt-credit a { color: inherit; }
+
+.wt-sounds { display: flex; gap: 6px; padding: 8px 10px 0; border-top: 1px solid var(--border); }
+.wt-sound {
+  flex: 1 1 0;
+  min-height: 38px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  background: var(--surface2);
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.wt-sound:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 14%, transparent); }
+.wt-sound:disabled { opacity: 0.5; cursor: default; }
+.wt-sound--mute { flex: 0 0 44px; }
+.wt-sounds + .wt-reactions { border-top: 0; }
+
+/* In fullscreen the panel is gone, so the two sounds sit on the video. */
+.wt-sounds--fullscreen { display: none; }
+.torrplayer:fullscreen .wt-sounds--fullscreen {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  padding: 0;
+  border: 0;
+  opacity: 0.6;
+  pointer-events: auto;
+}
+.torrplayer:fullscreen .wt-sounds--fullscreen:hover { opacity: 1; }
+.wt-sounds--fullscreen .wt-sound { padding: 0 12px; color: #fff; background: rgb(0 0 0 / 0.6); }
+
 .wt-reactions { display: flex; justify-content: space-between; padding: 4px 10px; border-top: 1px solid var(--border); }
 .wt-reactions button { width: 44px; height: 40px; font-size: 20px; background: none; border: 0; border-radius: 10px; cursor: pointer; transition: transform 0.12s ease; }
 .wt-reactions button:hover { background: var(--surface2); }

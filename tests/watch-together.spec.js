@@ -26,6 +26,7 @@ test.beforeAll(() => {
     "-hls_time", "2", "-hls_list_size", "0",
     "-hls_segment_filename", join(fixtureDir, "seg%03d.ts"), join(fixtureDir, "index.m3u8"),
   ]);
+  execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-q:a", "9", join(fixtureDir, "sound.mp3")]);
 });
 test.afterAll(() => { if (fixtureDir) rmSync(fixtureDir, { recursive: true, force: true }); });
 
@@ -140,6 +141,12 @@ class RoomsServer {
       else if (/\/movie\/550$/.test(pathname)) json = { ...FILM, imdb_id: "tt0137523", runtime: 139, genres: [] };
       else if (/trending\/all/.test(pathname) || /search\/multi/.test(pathname)) json = { results: [FILM, SERIES] };
       return route.fulfill({ json });
+    });
+    await page.route("**/sounds/*.mp3", (route) => route.fulfill({ contentType: "audio/mpeg", body: readFileSync(join(fixtureDir, "sound.mp3")) }));
+    await page.addInitScript(() => {
+      window.__sounds = 0;
+      const start = AudioBufferSourceNode.prototype.start;
+      AudioBufferSourceNode.prototype.start = function patched(...args) { window.__sounds += 1; return start.apply(this, args); };
     });
     await page.route("**/api/source-host?op=discover", (route) => route.fulfill({
       status: 200,
@@ -533,5 +540,40 @@ test("a guest without a token keeps the room across a reload; the player's keys 
   await page.waitForTimeout(400);
   expect(server.commands.filter((c) => c.command.t === "play")).toHaveLength(before);
   await context.close();
+  await host.context.close();
+});
+
+test("a laugh or applause plays for everyone, and each viewer can silence it for themselves", async ({ browser }) => {
+  const server = new RoomsServer();
+  const host = await hostRoom(server, browser);
+  const guest = await guestJoin(server, browser, host.code);
+  const played = (page) => page.evaluate(() => window.__sounds);
+
+  await guest.page.locator(".wt-panel .wt-sounds").getByRole("button", { name: "Смех" }).click();
+  await expect.poll(() => played(host.page)).toBe(1);
+  await expect.poll(() => played(guest.page)).toBe(1);
+  await expect(host.page.locator(".wt-float")).toHaveText("😂");
+
+  // The presser waits out the cooldown, others are free.
+  await expect(guest.page.locator(".wt-panel .wt-sounds").getByRole("button", { name: "Хлопки" })).toBeDisabled();
+  await host.page.locator(".wt-panel .wt-sounds").getByRole("button", { name: "Хлопки" }).click();
+  await expect.poll(() => played(guest.page)).toBe(2);
+  await expect(guest.page.locator(".wt-float").last()).toHaveText("👏");
+
+  // Silencing is personal: the float stays, the other viewer still hears it.
+  await guest.page.getByRole("button", { name: "Выключить звуки комнаты у себя" }).click();
+  await expect(guest.page.locator(".wt-panel .wt-sounds").getByRole("button", { name: "Смех" })).toBeEnabled({ timeout: 5000 });
+  await guest.page.locator(".wt-panel .wt-sounds").getByRole("button", { name: "Смех" }).click();
+  await expect.poll(() => played(host.page)).toBe(3);
+  await guest.page.waitForTimeout(400);
+  expect(await played(guest.page)).toBe(2);
+  await expect(guest.page.locator(".wt-float").last()).toHaveText("😂");
+
+  await guest.page.reload({ waitUntil: "domcontentloaded" });
+  await expect(guest.page.getByRole("button", { name: "Включить звуки комнаты у себя" })).toBeVisible();
+
+  // A forged sound never reaches anyone.
+  expect(applyCommand(server.rooms.get(host.code), server.peerId(await host.page.evaluate(() => localStorage.getItem("lampa_stream_wt_peer"))), { t: "react", sound: "x" }, Date.now()).error).toBe("bad_reaction");
+  await guest.context.close();
   await host.context.close();
 });

@@ -167,3 +167,15 @@ test("rejoining with an empty name keeps the name; a crafted handover target is 
   assert.equal(room.hostId, "host");
   assert.equal(applyCommand(room, "host", null, T0).error, "bad_command");
 });
+
+test("a laugh or applause goes to everyone, one per peer every few seconds", () => {
+  const room = roomWithGuest();
+  const first = applyCommand(room, "guest", { t: "react", sound: "laugh" }, T0 + 10_000);
+  assert.deepEqual(first.reaction, { sound: "laugh", name: "Боря", by: "guest" });
+  assert.equal(first.persist, false);
+  assert.equal(applyCommand(room, "guest", { t: "react", sound: "applause" }, T0 + 11_000).reaction, undefined);
+  assert.equal(applyCommand(room, "host", { t: "react", sound: "applause" }, T0 + 11_000).reaction.sound, "applause");
+  assert.equal(applyCommand(room, "guest", { t: "react", sound: "applause" }, T0 + 13_000).reaction.sound, "applause");
+  assert.equal(applyCommand(room, "guest", { t: "react", sound: "/etc/passwd" }, T0 + 20_000).error, "bad_reaction");
+  assert.equal(applyCommand(room, "stranger", { t: "react", sound: "laugh" }, T0 + 20_000).error, "not_joined");
+});

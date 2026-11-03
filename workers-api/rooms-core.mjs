@@ -13,6 +13,8 @@ const NAME_MAX_LEN = 24;
 const MAX_PEERS = 20;
 const MAX_POSITION = 48 * 3600;
 export const REACTIONS = ["😂", "😮", "😢", "🔥", "❤️"];
+export const SOUNDS = ["laugh", "applause"];
+const SOUND_MIN_GAP_MS = 3000; // A sound lasts seconds; a held button must not stack them.
 
 // No 0/O or 1/I: codes get dictated over the phone.
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -178,6 +180,12 @@ export function applyCommand(room, peerId, command, now) {
       return { chat: message, persist: true };
     }
     case "react": {
+      if (command.sound !== undefined) {
+        if (!SOUNDS.includes(command.sound)) return { error: "bad_reaction" };
+        if (now - (peer.soundAt || 0) < SOUND_MIN_GAP_MS) return { persist: false };
+        peer.soundAt = now;
+        return { reaction: { sound: command.sound, name: peer.name, by: peerId }, persist: false };
+      }
       if (!REACTIONS.includes(command.emoji)) return { error: "bad_reaction" };
       if (now - (peer.reactAt || 0) < CHAT_MIN_GAP_MS) return { persist: false };
       peer.reactAt = now;

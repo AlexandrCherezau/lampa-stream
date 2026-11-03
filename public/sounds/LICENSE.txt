@@ -1,0 +1,10 @@
+laugh.mp3
+  "approx-800-laughter-only-1" by lonemonk, https://freesound.org/people/lonemonk/packs/4695/
+  via https://commons.wikimedia.org/wiki/File:72843_lonemonk_approx-800-laughter-only-1.wav
+  License: CC BY 3.0, https://creativecommons.org/licenses/by/3.0/
+  Changes: first 6 seconds, faded out, loudness normalised, encoded as MP3.
+
+applause.mp3
+  "Applause from 40 People #2" by BigSoundBank, https://bigsoundbank.com/applause-from-40-people-2-s3518.html
+  License: CC0
+  Changes: 6 seconds from 1.2 s, faded out, loudness normalised, encoded as MP3.

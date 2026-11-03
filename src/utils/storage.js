@@ -145,6 +145,7 @@ export const STORAGE_KEYS = {
   // a reload or a visit to another tab. Leaving a room clears it.
   WT_NAME: "wtName",
   WT_LAST_CODE: "wtLastCode",
+  WT_SOUNDS_OFF: "wtSoundsOff",
 };
 
 export const getApiKey = () => storage.get(STORAGE_KEYS.API_KEY);

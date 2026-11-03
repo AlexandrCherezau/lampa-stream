@@ -6,9 +6,15 @@ import OnlinePlayer from "../components/OnlinePlayer";
 import { CloseIcon, ListIcon, SearchIcon, SendIcon, UsersIcon } from "../components/Icons";
 import { imgUrl, tmdbFetch } from "../utils/api";
 import { storage, STORAGE_KEYS } from "../utils/storage";
+import { createRoomSounds } from "../utils/roomSounds";
 import { RoomConnection, createRoom, expectedPosition, fetchRoom, getWtPeerSecret, normalizeRoomCode } from "../utils/watchParty";
 
 const REACTIONS = ["😂", "😮", "😢", "🔥", "❤️"];
+const ROOM_SOUNDS = [
+  { id: "laugh", emoji: "😂", label: "Смех", title: "Закадровый смех для всех в комнате" },
+  { id: "applause", emoji: "👏", label: "Хлопки", title: "Закадровые хлопки для всех в комнате" },
+];
+const SOUND_COOLDOWN_MS = 3000;
 const TOAST_MS = 3000;
 const REACTION_MS = 2600;
 const FLASH_MS = 5000;
@@ -214,6 +220,9 @@ export default function WatchTogetherPage({ apiKey, initialCode = null, onInitia
         </div>
       )}
       {message && <p className="wt-message" role="status">{message}</p>}
+      <p className="wt-muted wt-credit">
+        Смех зала: <a href="https://freesound.org/people/lonemonk/packs/4695/" target="_blank" rel="noreferrer">lonemonk</a>, CC BY 3.0, фрагмент записи.
+      </p>
     </div>
   );
 }
@@ -233,6 +242,10 @@ function Room({ code, secret, name, apiKey, onExit }) {
   const [flash, setFlash] = useState(null);
   const [nextOffer, setNextOffer] = useState(null);
   const [chatInput, setChatInput] = useState("");
+  const [soundsOff, setSoundsOff] = useState(() => !!storage.get(STORAGE_KEYS.WT_SOUNDS_OFF));
+  const [soundCooling, setSoundCooling] = useState(false);
+  const soundsOffRef = useRef(soundsOff);
+  const soundsRef = useRef(null);
   const connRef = useRef(null);
   const chatRef = useRef(null);
   const toastTimer = useRef(null);
@@ -245,6 +258,7 @@ function Room({ code, secret, name, apiKey, onExit }) {
   const seenChat = useRef(null);
   const noteId = useRef(0);
   const floatId = useRef(0);
+  const coolTimer = useRef(null);
 
   const say = useCallback((text) => {
     setToast(text);
@@ -253,6 +267,12 @@ function Room({ code, secret, name, apiKey, onExit }) {
   }, []);
 
   useEffect(() => {
+    const sounds = createRoomSounds();
+    soundsRef.current = sounds;
+    const unlock = () => sounds.unlock();
+    window.addEventListener("pointerdown", unlock, true);
+    window.addEventListener("keydown", unlock, true);
+    if (!soundsOffRef.current) sounds.preload();
     const addNote = (text) => {
       noteId.current += 1;
       setNotes((list) => [...list.slice(-20), { id: `note-${noteId.current}`, text, ts: connRef.current?.now() ?? Date.now() }]);
@@ -273,7 +293,9 @@ function Room({ code, secret, name, apiKey, onExit }) {
         if (event.type === "reaction") {
           floatId.current += 1;
           const id = floatId.current;
-          setFloats((list) => [...list.slice(-12), { id, emoji: event.emoji, left: 10 + Math.random() * 80 }]);
+          const emoji = event.emoji || ROOM_SOUNDS.find((sound) => sound.id === event.sound)?.emoji;
+          if (event.sound && !soundsOffRef.current) sounds.play(event.sound);
+          setFloats((list) => [...list.slice(-12), { id, emoji, left: 10 + Math.random() * 80 }]);
           setTimeout(() => setFloats((list) => list.filter((f) => f.id !== id)), REACTION_MS);
         } else if (event.type === "joined" && event.by !== conn.peerId) addNote(`${event.name} присоединяется`);
         else if (event.type === "left" && event.by !== conn.peerId) addNote(`${event.name} выходит из комнаты`);
@@ -282,8 +304,11 @@ function Room({ code, secret, name, apiKey, onExit }) {
     });
     connRef.current = conn;
     conn.start();
-    const timers = { toast: toastTimer, flash: flashTimer, status: statusTimer };
+    const timers = { toast: toastTimer, flash: flashTimer, status: statusTimer, cool: coolTimer };
     return () => {
+      window.removeEventListener("pointerdown", unlock, true);
+      window.removeEventListener("keydown", unlock, true);
+      sounds.close();
       conn.stop();
       connRef.current = null;
       Object.values(timers).forEach((timer) => clearTimeout(timer.current));
@@ -467,6 +492,30 @@ function Room({ code, secret, name, apiKey, onExit }) {
     }
   };
 
+  const sendSound = (id) => {
+    if (soundCooling) return;
+    setSoundCooling(true);
+    clearTimeout(coolTimer.current);
+    coolTimer.current = setTimeout(() => setSoundCooling(false), SOUND_COOLDOWN_MS);
+    // Without a socket nobody gets the broadcast, this viewer included.
+    if (link !== "live" && !soundsOff) soundsRef.current?.play(id);
+    connRef.current?.send({ t: "react", sound: id });
+  };
+
+  const toggleSounds = () => {
+    const off = !soundsOff;
+    setSoundsOff(off);
+    soundsOffRef.current = off;
+    storage.set(STORAGE_KEYS.WT_SOUNDS_OFF, off);
+    if (!off) soundsRef.current?.preload();
+  };
+
+  const soundButtons = ROOM_SOUNDS.map((sound) => (
+    <button key={sound.id} type="button" className="wt-sound" title={sound.title} disabled={soundCooling} onClick={() => sendSound(sound.id)}>
+      <span aria-hidden="true">{sound.emoji}</span> {sound.label}
+    </button>
+  ));
+
   const leave = async () => {
     const conn = connRef.current;
     await Promise.race([conn?.send({ t: "leave" }), new Promise((resolve) => { setTimeout(resolve, 300); })]);
@@ -493,6 +542,7 @@ function Room({ code, secret, name, apiKey, onExit }) {
       {floats.map((float) => <span key={float.id} className="wt-float" style={{ left: `${float.left}%` }}>{float.emoji}</span>)}
       {toast && <div className="wt-toast" role="status">{toast}</div>}
       {flash && <div className="wt-flash"><b>{flash.name}</b> {flash.text}</div>}
+      <div className="wt-sounds wt-sounds--fullscreen" role="group" aria-label="Закадровые звуки">{soundButtons}</div>
       {nextOffer && canControl && (
         <button type="button" className="btn btn-primary wt-next" onClick={() => pickEpisode(nextOffer.season, nextOffer.episode)}>
           Следующая серия: {nextOffer.episode}{nextOffer.season !== media?.season ? `, сезон ${nextOffer.season}` : ""}
@@ -618,6 +668,17 @@ function Room({ code, secret, name, apiKey, onExit }) {
             {waitingFor.length > 0 && play?.playing && <p className="wt-note">Загружается: {waitingFor.join(", ")}</p>}
           </div>
 
+          <div className="wt-sounds" role="group" aria-label="Закадровые звуки">
+            {soundButtons}
+            <button
+              type="button"
+              className="wt-sound wt-sound--mute"
+              aria-pressed={soundsOff}
+              title={soundsOff ? "Включить звуки комнаты у себя" : "Выключить звуки комнаты у себя"}
+              aria-label={soundsOff ? "Включить звуки комнаты у себя" : "Выключить звуки комнаты у себя"}
+              onClick={toggleSounds}
+            >{soundsOff ? "🔇" : "🔊"}</button>
+          </div>
           <div className="wt-reactions" role="group" aria-label="Реакции">
             {REACTIONS.map((emoji) => (
               <button key={emoji} type="button" aria-label={`Реакция ${emoji}`} onClick={() => connRef.current?.send({ t: "react", emoji })}>{emoji}</button>
