@@ -415,4 +415,6 @@ Post-deploy /tmp/lampa-postdeploy-smoke-report.json: HaikyuuS1E14 иFightClub ×
 
 Проверки: браузерные `mobile-layout`, `redesign`, `smoke`, `watch-together`, `player`, `habster-native`, `habster`, `cub`, `player-autoplay-completion`, `search`, `personal-cinema-ui` 139 pass, 5 fail, те же 2 recovery и 3 startup watchdog, что и раньше. Unit 160 pass, 3 skipped; `check-source-host-client` PASS; сборка PASS. Ревью своими силами: исправлены скачки времени окончания, пропавшая кнопка картинки в картинке, короткая полоса перемотки на средних экранах, кнопка следующей серии под капсулой. Не убраны мелкие остатки: `GearI`, класс `torrplayer--paused`, комментарии к удалённым стилям в `global.css`.
 
-Не проверено: настоящий телефон, Safari, полноэкранный режим iPhone, Electron, вид на настоящем фильме на основном сайте.
+Выложено по просьбе пользователя: `main` на GitHub и production `dpl_F8BHBYaP5xA4vDBg5gQ78H5aKj1j`, коммит `8cc9b07`; откат `dpl_6Pf3sunemDqyyR6sXcWn6xxoRKda`. Пуш в `main` сборку сам не запускает, у репозитория нет связи с Vercel: выкладка остаётся вызовом `create_deployment`. На основном сайте подтверждены новые стили и чанк плеера. Настоящий фильм проверен на пробной сборке `dpl_6aJv8zS7APT9FiLCfa656AJcBrBx` того же коммита, метаданные TMDB подставные: клик → воспроизведение 340 мс на компьютере и 317 мс в эмуляции телефона, цвет из постера, ошибок страницы нет.
+
+Не проверено: настоящий телефон, Safari, полноэкранный режим iPhone, Electron, плеер в браузере на самом production (пароль сайта).
