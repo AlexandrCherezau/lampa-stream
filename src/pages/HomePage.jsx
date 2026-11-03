@@ -1,15 +1,16 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import MediaCard from "../components/MediaCard";
 import ProgressiveGrid from "../utils/useProgressiveList.jsx";
-import TrendingCarousel from "../components/TrendingCarousel";
-import { PlayIcon, StarIcon } from "../components/Icons";
+import PosterCoverflow from "../components/PosterCoverflow";
+import PosterRow from "../components/PosterRow";
+import TonightFitRow from "../components/TonightFitRow";
+import CollectionDecks from "../components/CollectionDecks";
 import {
-  imgUrl,
   tmdbFetch,
   filterAnime,
-  backdropSize,
 } from "../utils/api";
-import { useRatings, getRatingForItem } from "../utils/useRatings";
+import { clockAfter, minutesLeft, useMinuteClock } from "../utils/endTime";
+import { useRatings, getRatingForItem, clearedForAge } from "../utils/useRatings";
 import { isRestricted } from "../utils/ageRating";
 import { loadHomeLayout, loadHomeViewMode } from "../utils/homeLayout";
 
@@ -37,6 +38,9 @@ function getRecentHistoryItems(history, count = 5) {
   return unique;
 }
 
+const CONTINUE_LIMIT = 12; // The whole list lives in the library.
+const TODAY = new Date().toISOString().slice(0, 10);
+
 export default function HomePage({
   trending,
   trendingTV,
@@ -51,29 +55,11 @@ export default function HomePage({
   onMarkUnwatched,
   history,
   apiKey,
+  onNavigate,
 }) {
   // Drop anime from every discovery surface when the "Hide anime" setting is on.
   const trendingMoviesRaw = useMemo(() => filterAnime(trending), [trending]);
   const trendingTVRaw = useMemo(() => filterAnime(trendingTV), [trendingTV]);
-  const hero = trendingMoviesRaw[0];
-
-  const [mainWidth, setMainWidth] = useState(0);
-  const mainRef = useRef(null);
-  useEffect(() => {
-    const el = mainRef.current;
-    if (!el) return;
-    if (typeof ResizeObserver === "undefined") {
-      setMainWidth(el.clientWidth || 0);
-      return;
-    }
-    const ro = new ResizeObserver(([entry]) => {
-      const w = Math.round(entry.contentRect?.width || el.clientWidth || 0);
-      setMainWidth((prev) => (Math.abs(prev - w) > 1 ? w : prev));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
   const [recommendedItems, setRecommendedItems] = useState([]);
   const [topRatedItems, setTopRatedItems] = useState([]);
 
@@ -221,6 +207,22 @@ export default function HomePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKey, offline]);
 
+  // Wide cards need a still and a runtime, and history entries carry neither.
+  const [continueDetails, setContinueDetails] = useState({});
+  const continueItems = useMemo(() => inProgress.slice(0, CONTINUE_LIMIT), [inProgress]);
+  const continueIds = continueItems.map((item) => `${item.media_type === "tv" ? "tv" : "movie"}/${item.id}`).join(",");
+  useEffect(() => {
+    if (!apiKey || offline || !continueIds) return undefined;
+    const controller = new AbortController();
+    continueIds.split(",").forEach((key) => {
+      tmdbFetch(`/${key}`, apiKey, { signal: controller.signal, priority: "low" })
+        .then((data) => setContinueDetails((prev) => ({ ...prev, [key]: data })))
+        .catch(() => {});
+    });
+    return () => controller.abort();
+  }, [apiKey, offline, continueIds]);
+  const now = useMinuteClock();
+
   // Stable pre-built item arrays for carousels, capped at 10
   const trendingMovieItems = useMemo(
     () => trendingMoviesRaw.slice(0, 10).map((i) => ({ ...i, media_type: "movie" })),
@@ -231,9 +233,15 @@ export default function HomePage({
     [trendingTVRaw],
   );
   const visibleTopRated = useMemo(() => filterAnime(topRatedItems), [topRatedItems]);
+  const heroItems = useMemo(
+    () => trendingMovieItems
+      .filter((item) => (item.release_date || "") <= TODAY && clearedForAge(item, ratingsMap, ageLimitSetting))
+      .slice(0, 7),
+    [trendingMovieItems, ratingsMap, ageLimitSetting],
+  );
 
   return (
-    <div className="fade-in" ref={mainRef}>
+    <div className="fade-in">
       {/* ── Offline ── */}
       {offline && (
         <div
@@ -286,81 +294,96 @@ export default function HomePage({
         </div>
       )}
 
-      {!loading && hero && (
-        <div className="hero">
-          <div
-            className="hero-bg"
-            style={{
-              backgroundImage: `url(${imgUrl(
-                hero.backdrop_path,
-                backdropSize(mainWidth || 1280),
-              )})`,
-            }}
-          />
-          <div className="hero-gradient" />
-          <div className="hero-content">
-            <div className="hero-type">В тренде · фильм</div>
-            <div className="hero-title">{hero.title || hero.name}</div>
-            <div className="hero-meta">
-              <span className="hero-rating">
-                <StarIcon /> {hero.vote_average?.toFixed(1)}
-              </span>
-              <span>{hero.release_date?.slice(0, 4)}</span>
-            </div>
-            <div className="hero-overview">{hero.overview}</div>
-            <div className="hero-actions">
-              <button
-                className="btn btn-primary"
-                onClick={() => onSelect(hero)}
-              >
-                <PlayIcon /> Смотреть
-              </button>
-              <button
-                className="btn btn-secondary"
-                onClick={() => onSelect(hero)}
-              >
-                Подробнее
-              </button>
-            </div>
-          </div>
-        </div>
+      {!offline && !loading && heroItems.length > 0 && (
+        <PosterCoverflow
+          items={heroItems}
+          apiKey={apiKey}
+          progress={progress}
+          watched={watched}
+          onSelect={onSelect}
+        />
       )}
 
       {/* ── Rows in user-configured order ── */}
+      <div className="home-shelves">
       {rowOrder.map((id) => {
         if (!rowVisible[id]) return null;
 
         if (id === "continue") {
           if (inProgress.length === 0) return null;
           return (
-            <div key="continue" className="section">
-              <div className="section-title">Продолжить просмотр</div>
-              <ProgressiveGrid items={inProgress}>
-                {(visible) => visible.map((item) => {
-                  const pk =
-                    item.media_type === "movie"
-                      ? `movie_${item.id}`
-                      : `tv_${item.id}_s${item.season}e${item.episode}`;
-                  const rating = getRating(item);
-                  const restricted = itemRestricted(item);
-                  return (
-                    <MediaCard
-                      key={`${item.media_type}_${item.id}`}
-                      item={item}
-                      onClick={onSelect}
-                      progress={progress[pk] || 0}
-                      watched={watched}
-                      onMarkWatched={onMarkWatched}
-                      onMarkUnwatched={onMarkUnwatched}
-                      ageRating={rating.cert}
-                      restricted={restricted}
-                    />
-                  );
-                })}
-              </ProgressiveGrid>
-            </div>
+            <PosterRow key="continue" title="Продолжить просмотр" wide>
+              {continueItems.map((item) => {
+                const type = item.media_type === "tv" ? "tv" : "movie";
+                const isSeries = type === "tv";
+                const pk = isSeries
+                  ? `tv_${item.id}_s${item.season}e${item.episode}`
+                  : `movie_${item.id}`;
+                const pct = progress[pk] || 0;
+                const full = continueDetails[`${type}/${item.id}`];
+                const runtime = isSeries ? full?.episode_run_time?.[0] : full?.runtime;
+                const place = isSeries ? `S${item.season}E${item.episode}` : null;
+                const ends = runtime > 0 ? `закончите в ${clockAfter(minutesLeft(runtime, pct), now)}` : null;
+                const rating = getRating(item);
+                return (
+                  <MediaCard
+                    key={`${item.media_type}_${item.id}`}
+                    item={{ ...item, backdrop_path: item.backdrop_path || full?.backdrop_path }}
+                    onClick={onSelect}
+                    progress={pct}
+                    watched={watched}
+                    onMarkWatched={onMarkWatched}
+                    onMarkUnwatched={onMarkUnwatched}
+                    ageRating={rating.cert}
+                    restricted={itemRestricted(item)}
+                    wide
+                    note={[place, ends].filter(Boolean).join(", ") || null}
+                    noteTone="plain"
+                  />
+                );
+              })}
+            </PosterRow>
           );
         }
+
+        if (id === "tonightFit") {
+          return (
+            <TonightFitRow
+              key="tonightFit"
+              apiKey={offline ? null : apiKey}
+              history={history}
+              watched={watched}
+              onSelect={onSelect}
+              onMarkWatched={onMarkWatched}
+              onMarkUnwatched={onMarkUnwatched}
+            />
+          );
+        }
+
+        if (id === "collections") {
+          return <CollectionDecks key="collections" apiKey={offline ? null : apiKey} onNavigate={onNavigate} />;
+        }
+
+        const renderRow = (key, title, items, ranked = false) => (
+          <PosterRow key={key} title={title} ranked={ranked}>
+            {items.map((item) => {
+              const rd = enrichedRatingsMap[`${item.media_type === "tv" ? "tv" : "movie"}_${item.id}`] || {};
+              return (
+                <MediaCard
+                  key={`${item.media_type}_${item.id}`}
+                  item={item}
+                  onClick={onSelect}
+                  progress={0}
+                  watched={watched}
+                  onMarkWatched={onMarkWatched}
+                  onMarkUnwatched={onMarkUnwatched}
+                  ageRating={rd.cert}
+                  restricted={rd.restricted}
+                />
+              );
+            })}
+          </PosterRow>
+        );
 
         // Render a section as a flat cards-grid (list view)
         const renderList = (key, title, titleHighlight, items) => {
@@ -412,15 +435,7 @@ export default function HomePage({
               null,
               filteredRecommendedItems,
             );
-          return (
-            <TrendingCarousel
-              key="recommended"
-              items={filteredRecommendedItems}
-              title="Рекомендации для вас"
-              onSelect={onSelect}
-              ratingsMap={enrichedRatingsMap}
-            />
-          );
+          return renderRow("recommended", "Рекомендации для вас", filteredRecommendedItems);
         }
 
         if (id === "trendingMovies") {
@@ -432,15 +447,7 @@ export default function HomePage({
               null,
               trendingMovieItems,
             );
-          return (
-            <TrendingCarousel
-              key="trendingMovies"
-              items={trendingMovieItems}
-              title="Популярные фильмы"
-              onSelect={onSelect}
-              ratingsMap={enrichedRatingsMap}
-            />
-          );
+          return renderRow("trendingMovies", "Популярные фильмы", trendingMovieItems, true);
         }
 
         if (id === "trendingTV") {
@@ -452,34 +459,19 @@ export default function HomePage({
               null,
               trendingTVItems,
             );
-          return (
-            <TrendingCarousel
-              key="trendingTV"
-              items={trendingTVItems}
-              title="Популярные сериалы"
-              onSelect={onSelect}
-              ratingsMap={enrichedRatingsMap}
-            />
-          );
+          return renderRow("trendingTV", "Популярные сериалы", trendingTVItems);
         }
 
         if (id === "topRated") {
           if (visibleTopRated.length === 0) return null;
           if (viewMode === "list")
             return renderList("topRated", "С высоким рейтингом", null, visibleTopRated);
-          return (
-            <TrendingCarousel
-              key="topRated"
-              items={visibleTopRated}
-              title="С высоким рейтингом"
-              onSelect={onSelect}
-              ratingsMap={enrichedRatingsMap}
-            />
-          );
+          return renderRow("topRated", "С высоким рейтингом", visibleTopRated);
         }
 
         return null;
       })}
+      </div>
     </div>
   );
 }

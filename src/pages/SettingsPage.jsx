@@ -1336,7 +1336,7 @@ function BackupRestoreSection({ onRestored }) {
 // ── Appearance Section ────────────────────────────────────────────────────────
 function AppearanceSection() {
   const [accent, setAccent] = useState(
-    () => storage.get(STORAGE_KEYS.ACCENT_COLOR) || "red",
+    () => storage.get(STORAGE_KEYS.ACCENT_COLOR) || "mint",
   );
   const [fontSize, setFontSize] = useState(
     () => storage.get(STORAGE_KEYS.FONT_SIZE) || "normal",
@@ -1365,7 +1365,7 @@ function AppearanceSection() {
 
   // Remember the committed (saved) values to revert on unmount if unsaved
   const committedRef = useRef({
-    accent: storage.get(STORAGE_KEYS.ACCENT_COLOR) || "red",
+    accent: storage.get(STORAGE_KEYS.ACCENT_COLOR) || "mint",
     theme: storage.get(STORAGE_KEYS.THEME) || "dark",
     customVars: storage.get(STORAGE_KEYS.CUSTOM_THEME_VARS) || {
       ...DEFAULT_CUSTOM_VARS,

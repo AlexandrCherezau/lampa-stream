@@ -8,7 +8,6 @@ import { memo, useEffect, useRef, useState } from "react";
 import { BackIcon, DevicesIcon, MoreIcon, RecapIcon, SearchIcon, SettingsIcon, TonightIcon } from "./Icons";
 
 const TITLES = {
-  home: "Главная",
   discover: "Каталог",
   together: "Смотрим вместе",
   history: "Библиотека",
@@ -53,7 +52,7 @@ const MobileTopBar = memo(function MobileTopBar({ page, canGoBack, onBack, onSea
       >
         <BackIcon />
       </button>
-      <div className="mobile-topbar-title">{TITLES[page] || ""}</div>
+      <div className={`mobile-topbar-title${page === "home" ? " sidebar-wordmark" : ""}`}>{page === "home" ? "lampa" : TITLES[page] || ""}</div>
       <button className="mobile-topbar-btn" onClick={onSearch} aria-label="Поиск">
         <SearchIcon />
       </button>

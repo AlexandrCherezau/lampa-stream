@@ -88,7 +88,7 @@ test("the overflow check catches content wider than the screen", async ({ page }
 });
 
 const screens = [
-  ["home", "/", ".carousel-item--active"],
+  ["home", "/", ".flow-slide--active"],
   ["catalog", "/discover", ".cards-grid .card"],
   ["movie", "/movie/101", ".detail-title"],
   ["series", "/tv/201", ".episode-card"],
@@ -245,12 +245,14 @@ test.describe("landscape settings", () => {
 test.describe("desktop", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("keeps the sidebar without phone chrome", async ({ page }) => {
+  test("shows the top navigation without phone chrome", async ({ page }) => {
     await fixtures(page);
     await page.goto("/discover", { waitUntil: "domcontentloaded" });
     await page.locator(".cards-grid .card").first().waitFor();
     await expect(page.locator(".mobile-topbar")).toBeHidden();
-    await expect(page.locator(".sidebar-label").first()).toBeHidden();
+    await expect(page.locator(".sidebar .sidebar-label").first()).toBeVisible();
+    const bar = await page.locator(".sidebar").boundingBox();
+    expect(bar).toMatchObject({ x: 0, y: 0, width: 1440, height: 64 });
     expect(await overflowing(page)).toEqual({ page: 0, elements: [] });
   });
 });

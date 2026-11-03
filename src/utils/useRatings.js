@@ -4,8 +4,9 @@ import {
   fetchTVRating,
   getAgeLimitSetting,
   getRatingCountry,
+  isRestricted,
 } from "./ageRating";
-import { storage, getApiKey } from "./storage";
+import { storage, secureStorage } from "./storage";
 
 const CACHE_KEY = "ratingsCache";
 const CACHE_TTL = 1000 * 60 * 60 * 24 * 7; // 7 days
@@ -47,7 +48,16 @@ export function useRatings(items) {
   // which unmounts/remounts affected pages anyway, so useState(init) is correct.
   const [ageLimitSetting] = useState(() => getAgeLimitSetting(storage));
   const [ratingCountry] = useState(() => getRatingCountry(storage));
-  const [apiKey] = useState(() => getApiKey());
+  const [apiKey, setApiKey] = useState(null);
+
+  // The token lives in secure storage. Lookups go through our TMDB relay, so
+  // they run only when an age limit needs them, not just to decorate cards.
+  useEffect(() => {
+    if (ageLimitSetting === null) return undefined;
+    let live = true;
+    secureStorage.get("apikey").then((key) => { if (live) setApiKey(key || null); });
+    return () => { live = false; };
+  }, [ageLimitSetting]);
 
   const itemsKey = useMemo(() => {
     if (!items?.length) return "";
@@ -116,7 +126,8 @@ export function useRatings(items) {
         } catch {}
       }));
       // Write cache once at the end instead of after each item
-      if (cacheModified && !cancelled) writeCache(cache);
+      // Merged: several rows on one page fetch at once and share this cache.
+      if (cacheModified && !cancelled) writeCache({ ...readCache(), ...cache });
     })();
 
     return () => {
@@ -130,4 +141,13 @@ export function useRatings(items) {
 export function getRatingForItem(item, ratingsMap) {
   const type = item.media_type === "tv" ? "tv" : "movie";
   return ratingsMap[`${type}_${item.id}`] || { cert: null, minAge: null };
+}
+
+// For the most prominent places: with an age limit set, a rating that has not
+// arrived yet does not count as allowed. A failed lookup resolves to an empty
+// rating, so this does not hide a title forever.
+export function clearedForAge(item, ratingsMap, ageLimitSetting) {
+  if (ageLimitSetting === null || ageLimitSetting === undefined) return true;
+  const rating = ratingsMap[`${item.media_type === "tv" ? "tv" : "movie"}_${item.id}`];
+  return !!rating && !isRestricted(rating.minAge, ageLimitSetting);
 }

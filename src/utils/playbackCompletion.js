@@ -26,7 +26,10 @@ export function hasGenuinePlaybackForEnd(playedMediaSeconds, duration) {
   return playedMediaSeconds >= minimum;
 }
 
-export function shouldApplyResumePosition({ position, progressPercent, hasExplicitCheckpoint = false, duration = Infinity, completedPercent = 95, completedTailSeconds = 10 } = {}) {
+// From here on a title counts as finished and starts over instead of resuming.
+export const RESUME_MAX_PERCENT = 95;
+
+export function shouldApplyResumePosition({ position, progressPercent, hasExplicitCheckpoint = false, duration = Infinity, completedPercent = RESUME_MAX_PERCENT, completedTailSeconds = 10 } = {}) {
   if (!Number.isFinite(position) || position < 0.5) return false;
   // A checkpoint stores an exact paused position. The legacy "start over when
   // almost finished" heuristic only applies to old percentage/time maps.

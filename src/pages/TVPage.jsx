@@ -1816,14 +1816,12 @@ export default function TVPage({
             <div className="detail-content">
               <div className="detail-poster" ref={detailPosterRef}>
                 {d.poster_path ? (
-                  detailPosterWidth > 0 && (
-                    <img
-                      src={imgUrl(d.poster_path, posterSize(detailPosterWidth))}
-                      alt={title}
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  )
+                  // This box mounts after loading, too late for the width hook.
+                  <img
+                    src={imgUrl(d.poster_path, posterSize(detailPosterWidth || 280))}
+                    alt={title}
+                    decoding="async"
+                  />
                 ) : (
                   <div
                     style={{

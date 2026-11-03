@@ -4,6 +4,14 @@
 
 export const ACCENT_PRESETS = [
   {
+    id: "mint",
+    label: "Mint",
+    color: "#0f9468",
+    color2: "#3fe0a1",
+    dim: "rgba(63,224,161,0.14)",
+    glow: "0 0 30px rgba(63,224,161,0.22)",
+  },
+  {
     id: "red",
     label: "Red",
     color: "#e50914",
@@ -75,14 +83,14 @@ export const THEME_PRESETS = [
     label: "Dark",
     description: "Default dark theme",
     vars: {
-      "--bg": "#0a0a0a",
-      "--surface": "#111111",
-      "--surface2": "#1a1a1a",
-      "--surface3": "#222222",
-      "--border": "#2a2a2a",
-      "--text": "#f0f0f0",
-      "--text2": "#c0c0c0",
-      "--text3": "#909090",
+      "--bg": "#0b0c0d",
+      "--surface": "#141618",
+      "--surface2": "#191c1e",
+      "--surface3": "#24282a",
+      "--border": "#2a2e31",
+      "--text": "#e6e8ea",
+      "--text2": "#c9ccce",
+      "--text3": "#a0a3a6",
     },
   },
   {
@@ -179,4 +187,6 @@ export function applyTheme(themeId, customVars = null) {
   for (const [prop, value] of Object.entries(vars)) {
     root.style.setProperty(prop, value);
   }
+  // The soft mint of the ratings is unreadable on a light background.
+  root.style.setProperty("--score", themeId === "light" ? "#1b7f55" : "#7cc99b");
 }

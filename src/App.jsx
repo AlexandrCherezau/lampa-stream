@@ -172,7 +172,7 @@ export default function App() {
   // Computed once here and passed as a prop to MoviePage / TVPage so neither
   // page needs to touch storage.  Refreshed via "streambert:player-settings-changed".
   const readPlayerSettings = () => {
-    const accentId = storage.get(STORAGE_KEYS.ACCENT_COLOR) || "red";
+    const accentId = storage.get(STORAGE_KEYS.ACCENT_COLOR) || "mint";
     const inPlayer = storage.get(STORAGE_KEYS.ACCENT_IN_PLAYER) !== false; // default true
     const accentHex = inPlayer
       ? (ACCENT_PRESETS.find((p) => p.id === accentId)?.color ?? null)
@@ -693,7 +693,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     // Accent colour
-    const accent = storage.get(STORAGE_KEYS.ACCENT_COLOR) || "red";
+    const accent = storage.get(STORAGE_KEYS.ACCENT_COLOR) || "mint";
     applyAccentColor(accent);
     // Theme
     const theme = storage.get(STORAGE_KEYS.THEME) || "dark";
@@ -1226,6 +1226,7 @@ export default function App() {
                 onMarkUnwatched={markUnwatched}
                 history={history}
                 apiKey={apiKey}
+                onNavigate={navigate}
               />
             )}
             {page === "movie" && selected && (

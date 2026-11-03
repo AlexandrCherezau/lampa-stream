@@ -47,23 +47,25 @@
 }
 
 :root {
-    --bg: #0a0a0a;
-    --surface: #111111;
-    --surface2: #1a1a1a;
-    --surface3: #222222;
-    --border: #2a2a2a;
-    --red: #e50914;
-    --red2: #ff1a24;
-    --red-dim: rgba(229, 9, 20, 0.15);
-    --red-glow: 0 0 30px rgba(229, 9, 20, 0.3);
+    --bg: #0b0c0d;
+    --surface: #141618;
+    --surface2: #191c1e;
+    --surface3: #24282a;
+    --border: #2a2e31;
+    --red: #0f9468;
+    --red2: #3fe0a1;
+    --red-dim: rgba(63, 224, 161, 0.14);
+    --red-glow: 0 0 30px rgba(63, 224, 161, 0.22);
+    --danger: #e5484d;
+    --score: #7cc99b;
     --gold: #c8a84b;
-    --text: #f0f0f0;
-    --text2: #c0c0c0;
-    --text3: #909090;
+    --text: #e6e8ea;
+    --text2: #c9ccce;
+    --text3: #a0a3a6;
     --sidebar: 72px;
-    --radius: 8px;
-    --font-display: "Bebas Neue", sans-serif;
-    --font-body: "DM Sans", sans-serif;
+    --radius: 12px;
+    --font-display: "Onest", "DM Sans", sans-serif;
+    --font-body: "Onest", "DM Sans", sans-serif;
 }
 
 html,
@@ -872,7 +874,7 @@ body.no-anim *::after {
 }
 
 .search-history-remove:hover {
-    color: var(--red);
+    color: var(--danger);
 }
 
 /* ── Detail Page ────────────────────────────────────────────────────────── */
@@ -1471,8 +1473,8 @@ body.no-anim *::after {
 }
 
 .history-remove-btn:hover {
-    color: var(--red);
-    background: color-mix(in srgb, var(--red) 12%, transparent);
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
 /* ── API Key Setup ───────────────────────────────────────────────────────── */
@@ -2001,7 +2003,7 @@ kbd {
 
 .download-error {
     font-size: 12px;
-    color: var(--red);
+    color: var(--danger);
     margin-top: 8px;
     line-height: 1.5;
 }
@@ -3286,334 +3288,6 @@ kbd {
     opacity: 1;
 }
 
-.carousel-section {
-    padding: 14px 48px 18px;
-}
-
-.carousel-wrapper {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 312px;
-    overflow: hidden;
-    user-select: none;
-}
-
-.carousel-track {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-/* Directional slide animation on auto-cycle */
-@keyframes carouselSlideInFwd {
-    from {
-        transform: translateX(calc(var(--carousel-tx, 0px) + 55px)) scale(0.9);
-        opacity: 0.3;
-    }
-    to {
-        transform: translateX(var(--carousel-tx, 0px)) scale(1);
-        opacity: 1;
-    }
-}
-@keyframes carouselSlideInBwd {
-    from {
-        transform: translateX(calc(var(--carousel-tx, 0px) - 55px)) scale(0.9);
-        opacity: 0.3;
-    }
-    to {
-        transform: translateX(var(--carousel-tx, 0px)) scale(1);
-        opacity: 1;
-    }
-}
-
-.carousel-item {
-    position: absolute;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    transition:
-        transform 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-        opacity 0.42s ease;
-}
-/* will-change ONLY while a slide animation runs. A permanent promotion kept
-   ~20 compositor layers alive for the whole session (4 carousels × 5 slots),
-   costing VRAM and layer-tree work on every frame for a transition that runs
-   0.42 s every 4.5 s. */
-.carousel-item--animating {
-    will-change: transform, opacity;
-}
-
-.carousel-track--dir-fwd .carousel-item--active.carousel-item--animating {
-    animation: carouselSlideInFwd 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94)
-        both;
-}
-.carousel-track--dir-bwd .carousel-item--active.carousel-item--animating {
-    animation: carouselSlideInBwd 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94)
-        both;
-}
-
-/* No filter here on purpose: a filter is a main-thread raster effect that
-   re-ran on every frame of the slide animation. The wrapper's box-shadow
-   below is the same look, composited. */
-.carousel-item--active .carousel-poster-wrap {
-    box-shadow:
-        0 0 0 2px color-mix(in srgb, var(--text) 12%, transparent),
-        0 12px 36px color-mix(in srgb, var(--bg) 55%, transparent);
-}
-
-.carousel-poster-wrap {
-    position: relative;
-    display: block;
-    /* The wrapper, not the image, owns the poster's box. TrendingCarousel
-       measures this element to pick the TMDB rung and only renders the <img>
-       once it has a width, so a wrapper that sized itself from its child would
-       measure 0 forever. 170 × 3/2 = 255 and the mobile 120 × 3/2 = 180, i.e.
-       aspect-ratio reproduces both of the old explicit heights exactly. */
-    width: 170px;
-    aspect-ratio: 2 / 3;
-    border-radius: 8px;
-    overflow: hidden;
-    line-height: 0;
-}
-
-.carousel-poster {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    border-radius: 10px;
-    display: block;
-    background: var(--surface2);
-}
-
-.carousel-poster--placeholder {
-    width: 100%;
-    height: 100%;
-    background: var(--surface2);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 12px;
-    text-align: center;
-    font-size: 13px;
-    color: var(--text2);
-    line-height: 1.3;
-}
-
-.carousel-unreleased-overlay {
-    position: absolute;
-    inset: 0;
-    background: color-mix(in srgb, var(--bg) 68%, transparent);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    border-radius: 10px;
-    backdrop-filter: blur(2px);
-    padding: 8px;
-    overflow: hidden;
-    box-sizing: border-box;
-}
-
-.carousel-unreleased-label {
-    font-size: 11px;
-    font-weight: 700;
-    color: #fff;
-    letter-spacing: 0.4px;
-    text-align: center;
-    line-height: 1.3;
-    white-space: nowrap;
-}
-
-.carousel-unreleased-date {
-    font-size: 10px;
-    color: color-mix(in srgb, var(--text) 60%, transparent);
-    letter-spacing: 0.2px;
-    text-align: center;
-    line-height: 1.3;
-    white-space: nowrap;
-}
-
-.carousel-score {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    background: color-mix(in srgb, var(--bg) 72%, transparent);
-    color: #f5c518;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 4px;
-    backdrop-filter: blur(4px);
-    line-height: 1.5;
-    pointer-events: none;
-}
-
-.carousel-badge-wrap {
-    position: absolute;
-    bottom: 6px;
-    left: 6px;
-    pointer-events: none;
-}
-
-.carousel-anime-badge {
-    position: absolute;
-    top: 6px;
-    left: 6px;
-    pointer-events: none;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.4px;
-    padding: 1px 5px;
-    border-radius: 3px;
-    border: 1.5px solid rgba(167, 139, 250, 0.7);
-    background: rgba(109, 40, 217, 0.55);
-    color: #ddd6fe;
-    backdrop-filter: blur(3px);
-    line-height: 1.5;
-}
-
-.carousel-rating-badge {
-    display: inline-block;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.4px;
-    padding: 1px 5px;
-    border-radius: 3px;
-    border: 1.5px solid color-mix(in srgb, var(--text) 50%, transparent);
-    background: color-mix(in srgb, var(--bg) 62%, transparent);
-    color: var(--text);
-    backdrop-filter: blur(3px);
-    line-height: 1.5;
-}
-
-.carousel-rating-badge--restricted {
-    border-color: var(--red);
-    color: var(--red);
-    background: rgba(220, 38, 38, 0.15);
-}
-
-.carousel-info {
-    text-align: center;
-    max-width: 190px;
-}
-
-.carousel-info__title {
-    font-family: var(--font-display);
-    font-size: 15px;
-    letter-spacing: 0.4px;
-    color: var(--text);
-    margin-bottom: 3px;
-    line-height: 1.2;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-}
-
-.carousel-info__meta {
-    display: flex;
-    gap: 6px;
-    justify-content: center;
-    font-size: 12px;
-    color: var(--text2);
-    align-items: center;
-}
-
-.carousel-info__type {
-    background: var(--surface2);
-    border-radius: 3px;
-    padding: 1px 5px;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    color: var(--text3);
-    text-transform: uppercase;
-}
-
-.carousel-btn {
-    position: absolute;
-    top: 40%;
-    transform: translateY(-50%);
-    z-index: 20;
-    background: color-mix(in srgb, var(--bg) 80%, transparent);
-    border: 1px solid var(--border);
-    color: var(--text);
-    width: 34px;
-    height: 48px;
-    border-radius: 7px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition:
-        background 0.18s,
-        border-color 0.18s,
-        color 0.18s;
-    backdrop-filter: blur(4px);
-    padding: 0;
-}
-
-.carousel-btn:hover {
-    background: rgba(220, 38, 38, 0.85);
-    border-color: var(--red);
-    color: #fff;
-}
-
-.carousel-btn--left {
-    left: 0;
-}
-.carousel-btn--right {
-    right: 0;
-}
-
-.carousel-dots {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    margin-top: 10px;
-    flex-wrap: wrap;
-}
-
-.carousel-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--border);
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    transition:
-        background 0.2s,
-        transform 0.2s;
-}
-
-.carousel-dot--active {
-    background: var(--red);
-    transform: scale(1.5);
-}
-
-.carousel-dot:hover:not(.carousel-dot--active) {
-    background: var(--text2);
-}
-
-.carousel-dots__more {
-    font-size: 11px;
-    color: var(--text3);
-    margin-left: 4px;
-}
-
 .sidebar-context-menu {
     background: var(--surface3);
     border: 1px solid var(--border);
@@ -4269,7 +3943,7 @@ html[data-win-titlebar][data-maximized] .main {
     color: var(--text2);
 }
 .torrpicker-error {
-    color: var(--red);
+    color: var(--danger);
 }
 
 .torrpicker-tabs {
@@ -4901,10 +4575,6 @@ html[data-win-titlebar][data-maximized] .main {
      Sized on the wrapper — it owns the poster box now (see .carousel-poster-wrap)
      and the img/placeholder inside it fill 100 %. aspect-ratio 2/3 keeps the
      old 120 × 180. */
-  .carousel-section { padding: 16px !important; --carousel-step: clamp(104px, 29vw, 180px); }
-  .carousel-wrapper { height: 240px !important; }
-  .carousel-poster-wrap { width: 120px !important; }
-  .carousel-btn { width: 44px !important; height: 44px !important; }
 
   /* Horizontal scroll rows: momentum + snap. */
   .scroll-row {
@@ -5513,7 +5183,7 @@ html[data-web] .window-titlebar {
 .wt-roombar-code { font-size: 13px; color: var(--text3); }
 .wt-roombar-code b { color: var(--text); letter-spacing: 1px; font-variant-numeric: tabular-nums; }
 .wt-roombar-leave { margin-left: auto; }
-.wt-btn-danger { color: var(--red); }
+.wt-btn-danger { color: var(--danger); }
 
 .wt-stage {
   display: flex;
@@ -6362,12 +6032,6 @@ h1, h2, h3 {
 
   /* Finger-sized hit areas for controls that must stay visually small. */
   .settings-toggle::after,
-  .carousel-dot::after {
-    content: "";
-    position: absolute;
-    inset: -11px -3px;
-  }
-  .carousel-dot { position: relative; }
   /* Deliberately not 44 px: at that height it reaches the middle of a short card
      and takes the taps that should start the episode. */
   .episode-desc-toggle { padding-block: 6px; margin-block: -6px; width: fit-content; }

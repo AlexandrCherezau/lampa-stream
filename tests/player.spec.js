@@ -890,6 +890,14 @@ for (const mode of ["manual", "auto"]) test(`decoded movie playback skips confir
     window.electron.collapsResolve = async () => ({ ok: true, hls: "/fixture.m3u8" });
   });
   await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  // The source menu closes on scroll, and starting playback scrolls to the player.
+  let lastTop = -1;
+  await expect.poll(async () => {
+    const top = await page.locator(".main").evaluate((main) => main.scrollTop);
+    const settled = top === lastTop;
+    lastTop = top;
+    return settled;
+  }, { intervals: [300] }).toBe(true);
   await page.getByTitle("Сменить источник").click();
   await page.locator(".source-dropdown__item").filter({ hasText: "Онлайн" }).click();
   const video = page.locator("video");

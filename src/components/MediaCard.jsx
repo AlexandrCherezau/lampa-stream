@@ -24,6 +24,9 @@ const MediaCard = memo(function MediaCard({
   onMarkUnwatched,
   ageRating,
   restricted,
+  wide = false,
+  note = null,
+  noteTone = "score",
 }) {
   const title = item.title || item.name;
   const year = (item.release_date || item.first_air_date || "").slice(0, 4);
@@ -103,7 +106,14 @@ const MediaCard = memo(function MediaCard({
         onContextMenu={isUnreleased ? undefined : openMenu}
       >
         <div className="card-poster" ref={posterRef}>
-          {item.poster_path ? (
+          {wide && item.backdrop_path ? (
+            <img
+              src={imgUrl(item.backdrop_path, "w780")}
+              alt={title}
+              loading="lazy"
+              decoding="async"
+            />
+          ) : item.poster_path ? (
             posterWidth > 0 && (
               <img
                 src={imgUrl(item.poster_path, posterSize(posterWidth))}
@@ -131,6 +141,11 @@ const MediaCard = memo(function MediaCard({
               )}
               {ageRating}
             </div>
+          )}
+
+          {/* The anime and watched marks sit in the same corner. */}
+          {!wide && !isUnreleased && !isAnime && !isWatched && item.vote_average > 0 && (
+            <div className="card-score">{item.vote_average.toFixed(1)}</div>
           )}
 
           <div className="card-overlay">
@@ -162,17 +177,20 @@ const MediaCard = memo(function MediaCard({
           <div className="card-title" title={title}>
             {title}
           </div>
-          <div className="card-year">
+          {note && <div className={`card-note${noteTone === "plain" ? " card-note--plain" : ""} card-year`}>{note}</div>}
+          {!note && <div className="card-year">
             {isTV && item.season != null && item.episode != null
               ? `S${item.season}E${item.episode}${item.episodeName ? ` · ${item.episodeName}` : ""}`
               : `${year} · ${isTV ? "Сериал" : "Фильм"}`}
-          </div>
+          </div>}
         </div>
-        <span
-          className={`card-badge${isUnreleased ? " card-badge--unreleased" : ""}${isAnime && !isUnreleased ? " card-badge--anime" : ""}`}
-        >
-          {isUnreleased ? "СКОРО" : isAnime ? "АНИМЕ" : isTV ? "СЕРИАЛ" : "HD"}
-        </span>
+        {(isUnreleased || isAnime) && (
+          <span
+            className={`card-badge${isUnreleased ? " card-badge--unreleased" : " card-badge--anime"}`}
+          >
+            {isUnreleased ? "СКОРО" : "АНИМЕ"}
+          </span>
+        )}
       </div>
 
       {menu && (

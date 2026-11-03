@@ -35,7 +35,6 @@ import {
   BookmarkIcon,
   BookmarkFillIcon,
   BackIcon,
-  StarIcon,
   FilmIcon,
   DownloadIcon,
   WatchedIcon,
@@ -53,6 +52,13 @@ const DownloadModal = lazy(() => import("../components/DownloadModal"));
 const TrailerModal = lazy(() => import("../components/TrailerModal"));
 const BlockedStatsModal = lazy(() => import("../components/BlockedStatsModal"));
 const TorrPlayer = lazy(() => import("../components/TorrPlayer"));
+const formatClockPosition = (secs) => {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const sec = String(Math.floor(secs % 60)).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+};
+
 const loadOnlinePlayer = () => import("../components/OnlinePlayer");
 const OnlinePlayer = lazy(loadOnlinePlayer);
 const preloadOnlinePlayer = () => loadOnlinePlayer()
@@ -70,6 +76,8 @@ const prebufferAllowed = () => {
 };
 import { useBlockedStats } from "../utils/useBlockedStats";
 import { playerScrollBlock } from "../utils/playerScroll";
+import { RESUME_MAX_PERCENT, shouldApplyResumePosition } from "../utils/playbackCompletion";
+import { clockAfter, formatRuntime, minutesLeft, useMinuteClock } from "../utils/endTime";
 import useElementWidth from "../utils/useElementWidth";
 import MediaCard from "../components/MediaCard";
 import {
@@ -268,6 +276,16 @@ export default function MoviePage({
             : null;
     return { watchedSecs, totalSecs, displayPct, progressLabel };
   }, [progressKey, pct, d?.runtime]);
+
+  const now = useMinuteClock();
+  const resumable = !isWatched && displayPct > 0 && displayPct < RESUME_MAX_PERCENT;
+  const leftMinutes = d?.runtime ? minutesLeft(d.runtime, resumable ? displayPct : 0) : 0;
+  // The same saved position the player will seek to. A percentage alone is not
+  // exact enough to promise a timecode on the button.
+  const resumeSecs = storage.get(STORAGE_KEYS.RESUME_TIME)?.[progressKey];
+  const resumeAt = resumable && (playerSource === "online" || playerSource === "lampac") && shouldApplyResumePosition({ position: resumeSecs, progressPercent: displayPct })
+    ? formatClockPosition(resumeSecs)
+    : null;
 
   // Read threshold from settings (default 20s), stable across renders
   const [watchedThreshold] = useState(
@@ -852,17 +870,28 @@ export default function MoviePage({
               ))}
             </div>
             <div className="detail-meta">
-              {displayScore && (
-                <span className="detail-rating">
-                  <StarIcon /> {displayScore}
-                </span>
-              )}
               {year && <span>{year}</span>}
-              {d.runtime && <span>{d.runtime} мин</span>}
+              {d.runtime && <span>{formatRuntime(d.runtime)}</span>}
               {d.original_language && (
                 <span>{d.original_language?.toUpperCase()}</span>
               )}
             </div>
+            {(displayScore || d.runtime > 0) && (
+              <div className="detail-stats">
+                {displayScore && (
+                  <div className="detail-rating-stat">
+                    <span className="detail-stat__value detail-stat__value--score">{displayScore}</span>
+                    <span className="detail-stat__label">TMDB</span>
+                  </div>
+                )}
+                {d.runtime > 0 && !isUnreleased && (
+                  <div>
+                    <span className="detail-stat__value">{clockAfter(leftMinutes, now)}</span>
+                    <span className="detail-stat__label">{resumable ? `конец, осталось ${formatRuntime(leftMinutes)}` : "конец, если включить сейчас"}</span>
+                  </div>
+                )}
+              </div>
+            )}
             {rating.cert && (
               <div
                 className={`age-rating-pill${restricted ? " age-rating-pill--restricted" : ""}`}
@@ -924,7 +953,7 @@ export default function MoviePage({
                   }}
                   onClick={handlePlay}
                 >
-                  <PlayIcon /> {playing ? "Сначала" : "Смотреть"}
+                  <PlayIcon /> {playing ? "Сначала" : resumeAt ? `Смотреть с ${resumeAt}` : "Смотреть"}
                 </button>
               )}
               {trailerKey &&

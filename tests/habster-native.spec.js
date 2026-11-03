@@ -107,7 +107,7 @@ test("Habster HLS uses our player, full quality ladder, voice switching and save
   });
 
   await page.goto("/movie/969681");
-  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  await page.getByRole("button", { name: /^Смотреть/ }).click();
   const video = page.locator(".torrplayer > video");
   await expect(video).toBeVisible();
   await expect(page.locator('iframe[title="Плеер Habster · Alloha"]')).toHaveCount(0);
@@ -156,7 +156,7 @@ test("Habster HLS uses our player, full quality ladder, voice switching and save
   expect(resolutions.at(-1)?.id).toBe("alloha-eng");
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("streambert_resumeTime"))?.movie_969681);
   await page.reload();
-  await page.getByRole("button", { name: "Смотреть", exact: true }).click();
+  await page.getByRole("button", { name: /^Смотреть/ }).click();
   await expect.poll(() => video.evaluate((value) => value.currentTime)).toBeGreaterThanOrEqual(saved - 1);
 });
 

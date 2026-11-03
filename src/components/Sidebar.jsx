@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, memo } from "react";
 import { imgUrl } from "../utils/api";
 import {
-  StreambertLogo,
+  BookmarkIcon,
   HomeIcon,
   SearchIcon,
   HistoryIcon,
@@ -37,11 +37,11 @@ const Sidebar = memo(function Sidebar({
   const dragItem = useRef(null);
   const dragNode = useRef(null);
 
-  const [tooltip, setTooltip] = useState(null); // { title, y }
+  const [savedOpen, setSavedOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState(null); // { item, x, y }
 
   useEffect(() => {
-    const close = () => setContextMenu(null);
+    const close = () => { setContextMenu(null); setSavedOpen(false); };
     window.addEventListener("click", close);
     window.addEventListener("contextmenu", close);
     return () => {
@@ -53,8 +53,8 @@ const Sidebar = memo(function Sidebar({
   const handleContextMenu = (e, item) => {
     e.preventDefault();
     e.stopPropagation();
-    setTooltip(null);
-    setContextMenu({ item, x: e.clientX, y: e.clientY });
+    // The menu is 180px wide; near the right edge it must open inwards.
+    setContextMenu({ item, x: Math.min(e.clientX, window.innerWidth - 188), y: e.clientY });
   };
 
   const handleDragStart = (e, index) => {
@@ -97,32 +97,23 @@ const Sidebar = memo(function Sidebar({
     e.dataTransfer.dropEffect = "move";
   };
 
-  const handleMouseEnter = (e, title) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setTooltip({ title, y: rect.top + rect.height / 2 });
-  };
-
-  const handleMouseLeave = () => {
-    setTooltip(null);
-  };
-
   return (
     <nav className="sidebar" aria-label="Основная навигация">
-      <div
-        className="sidebar-logo"
+      <button
+        className="sidebar-logo sidebar-wordmark"
         onClick={() => onNavigate("home")}
-        title="Lampa-Stream"
-        style={{ position: "relative" }}
+        aria-label="Lampa, на главную"
       >
-        <StreambertLogo />
-      </div>
+        lampa
+      </button>
 
       {canGoBack && (
         <SideBtn onClick={onBack} icon={<BackIcon />} label="Назад (Ctrl+Z)" className="sidebar-back" />
       )}
 
-      <SideBtn onClick={onSearch} icon={<SearchIcon />} label="Поиск  (⌘F)" className="sidebar-search" />
+      <SideBtn onClick={onSearch} icon={<SearchIcon />} label="Поиск  (⌘F)" className="sidebar-search" extra={<span className="sidebar-search-label">Поиск</span>} />
       <SideBtn
+        className="sidebar-nav-first"
         active={page === "home"}
         onClick={() => onNavigate("home")}
         icon={<HomeIcon />}
@@ -160,13 +151,26 @@ const Sidebar = memo(function Sidebar({
       />
 
       <div className="sidebar-sep sidebar-feature-sep" />
-      <SideBtn className="sidebar-feature-nav" active={page === "tonight"} onClick={() => onNavigate("tonight")} icon={<TonightIcon />} label="На вечер" />
-      <SideBtn className="sidebar-feature-nav" active={page === "recap"} onClick={() => onNavigate("recap")} icon={<RecapIcon />} label="Итоги месяца" />
-      <SideBtn className="sidebar-feature-nav" active={page === "devices"} onClick={() => onNavigate("devices")} icon={<DevicesIcon />} label="Устройства" />
+      <SideBtn className="sidebar-feature-nav" active={page === "tonight"} onClick={() => onNavigate("tonight")} icon={<TonightIcon />} label="На вечер" mobileLabel="На вечер" />
+      <SideBtn className="sidebar-feature-nav sidebar-icon-only" active={page === "recap"} onClick={() => onNavigate("recap")} icon={<RecapIcon />} label="Итоги месяца" />
+      <SideBtn className="sidebar-feature-nav sidebar-icon-only" active={page === "devices"} onClick={() => onNavigate("devices")} icon={<DevicesIcon />} label="Устройства" />
 
       <div className="sidebar-sep" />
 
-      <div className="sidebar-saved">
+      {savedList.length > 0 && (
+        <button
+          className="sidebar-btn sidebar-saved-btn"
+          aria-label="Сохранённое"
+          aria-haspopup="true"
+          aria-expanded={savedOpen}
+          onClick={(e) => { e.stopPropagation(); setSavedOpen((open) => !open); }}
+        >
+          <BookmarkIcon />
+          <span className="tooltip">Сохранённое</span>
+        </button>
+      )}
+
+      <div className={`sidebar-saved${savedOpen && savedList.length > 0 ? " is-open" : ""}`} onClick={(e) => e.stopPropagation()}>
         {savedList.map((item, index) => {
           const key = `${item.media_type}_${item.id}`;
           const title = item.title || item.name;
@@ -180,12 +184,12 @@ const Sidebar = memo(function Sidebar({
               onDragEnter={(e) => handleDragEnter(e, index)}
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, index)}
-              onClick={() =>
-                onNavigate(item.media_type === "tv" ? "tv" : "movie", item)
-              }
+              onClick={() => {
+                setSavedOpen(false);
+                onNavigate(item.media_type === "tv" ? "tv" : "movie", item);
+              }}
               onContextMenu={(e) => handleContextMenu(e, item)}
-              onMouseEnter={(e) => handleMouseEnter(e, title)}
-              onMouseLeave={handleMouseLeave}
+              title={title}
               style={{ cursor: "grab", position: "relative" }}
             >
               {item.poster_path ? (
@@ -213,12 +217,6 @@ const Sidebar = memo(function Sidebar({
           );
         })}
       </div>
-
-      {tooltip && (
-        <div className="saved-thumb-tooltip" style={{ top: tooltip.y }}>
-          {tooltip.title}
-        </div>
-      )}
 
       {contextMenu && (
         <div
@@ -255,21 +253,23 @@ const Sidebar = memo(function Sidebar({
           icon={<SettingsIcon />}
           label="Настройки"
         />
-        <button
-          className="sidebar-btn"
-          onClick={() => window.electron?.quitApp?.()}
-          title="Выйти из приложения"
-          style={{ color: "#e53e3e", marginTop: 4 }}
-        >
-          <QuitIcon />
-          <span className="tooltip">Выйти из приложения</span>
-        </button>
+        {!window.__webShim && (
+          <button
+            className="sidebar-btn"
+            onClick={() => window.electron?.quitApp?.()}
+            title="Выйти из приложения"
+            style={{ color: "#e53e3e" }}
+          >
+            <QuitIcon />
+            <span className="tooltip">Выйти из приложения</span>
+          </button>
+        )}
       </div>
     </nav>
   );
 });
 
-function SideBtn({ active, onClick, icon, label, mobileLabel, badge, className = "" }) {
+function SideBtn({ active, onClick, icon, label, mobileLabel, extra, badge, className = "" }) {
   return (
     <button
       className={`sidebar-btn ${active ? "active" : ""} ${className}`}
@@ -280,6 +280,7 @@ function SideBtn({ active, onClick, icon, label, mobileLabel, badge, className =
     >
       {icon}
       {mobileLabel && <span className="sidebar-label">{mobileLabel}</span>}
+      {extra}
       <span className="tooltip">{label}</span>
       {badge && (
         <span

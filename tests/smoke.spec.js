@@ -126,24 +126,24 @@ test("boots, renders the home page, navigates to a movie, mounts the player", as
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.locator(".sidebar")).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator(".carousel-section .section-title")).toHaveText([
+  await expect(page.locator(".poster-row:not(.poster-row--wide):not(.collection-decks) .section-title").filter({ hasNotText: "Успею сегодня" })).toHaveText([
     "Рекомендации для вас",
     "Популярные фильмы",
     "Популярные сериалы",
     "С высоким рейтингом",
   ], { timeout: 20_000 });
-  await expect(page.locator(".hero")).toHaveCount(1);
-  await expect(page.locator(".hero")).toBeVisible();
+  await expect(page.locator(".flow-hero")).toHaveCount(1);
+  await expect(page.locator(".flow-hero")).toBeVisible();
   await expect(page.getByText("Продолжить просмотр", { exact: true })).toBeVisible();
   expect(removedCatalogRequests).toEqual([]);
 
   // The progressive grid reveals the first batch of cards without mounting all.
-  const cards = page.locator(".carousel-item");
+  const cards = page.locator(".poster-row .card");
   await expect(cards.first()).toBeVisible({ timeout: 20_000 });
   expect(await cards.count()).toBeGreaterThan(0);
 
-  // Click the centre (active) carousel slot → detail page.
-  await page.locator(".carousel-poster-wrap").nth(2).click({ force: true });
+  // The centre poster of the hero opens the detail page.
+  await page.locator(".flow-slide--active").click();
   await expect(page.getByRole("button", { name: /Смотреть/ })).toBeVisible({ timeout: 20_000 });
   await expect(page).toHaveURL(/\/movie\/\d+$/);
 
