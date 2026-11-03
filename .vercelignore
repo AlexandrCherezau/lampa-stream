@@ -1,16 +1,10 @@
-# Exclude desktop-only / large files from Vercel deploy
-binaries/
-screenshots/
-server/
-node_modules/
-src/ipc/
-preload.js
-popout-preload.js
-index.js
-launch.sh
-kill.sh
-launch.cmd
-*.log
-.env
-.gitignore
-.git/
+# Same file set as earlier source-host deployments: everything but what the container image copies.
+**
+!Dockerfile.vercel
+!vercel.json
+!source-host/
+!source-host/**
+!infrastructure/
+!infrastructure/lampac/
+!infrastructure/lampac/**
+source-host/tests/
