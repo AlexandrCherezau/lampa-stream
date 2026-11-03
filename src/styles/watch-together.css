@@ -275,7 +275,7 @@ body.no-anim .wt-float { animation: wt-fade 2.6s linear forwards !important; }
   .wt-reactions { padding: 2px 6px; }
   .wt-send input { font-size: 16px; }
   .wt-flash { bottom: 72px; font-size: 13px; }
-  .wt-next { bottom: 60px; right: 10px; }
+  .wt-next { bottom: 76px; right: 10px; }
   .wt-float { font-size: 26px; bottom: 40px; }
   .wt-toast { top: 8px; font-size: 13px; }
 

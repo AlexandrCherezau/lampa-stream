@@ -169,6 +169,8 @@ import {
 import { fetchAniSkipTimings, resolveAnimeEpisode } from "../utils/aniSkip";
 import { fetchIntroDbTimings, mergeTimings, providerSkipRanges } from "../utils/introDetect";
 import { createSyncTracker, expectedPosition, syncVideo } from "../utils/watchParty";
+import { clockAfter, useMinuteClock } from "../utils/endTime";
+import usePosterGlow from "../utils/usePosterGlow";
 import { storage, STORAGE_KEYS, getStoredVolume, getStoredMuted, setStoredVolume, setStoredMuted, setCappedMap } from "../utils/storage";
 import { getPlaybackCheckpoint, waitForViewingProfile, savePlaybackCheckpoint, flushViewingProfile, recordViewingSession, registerViewingProfileClosingCapture } from "../utils/viewingProfile";
 import { crossedPlaybackPosition, crossedWatchedThreshold, hasGenuinePlaybackForEnd, shouldApplyResumePosition } from "../utils/playbackCompletion";
@@ -250,19 +252,19 @@ function loadDashJs() {
 }
 
 // ── Icons ────────────────────────────────────────────────────────────────────
-const PauseI = () => (<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>);
+const PauseI = () => (<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><rect x="6" y="4" width="4" height="16" rx="1.2" /><rect x="14" y="4" width="4" height="16" /></svg>);
 const PlayI = () => (<svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><polygon points="5 3 19 12 5 21 5 3" /></svg>);
-const FullscreenI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>);
-const VolumeI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" /><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14" /></svg>);
-const MuteI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>);
-const AudioI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" /></svg>);
-const SubI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="M7 15h4M15 15h2M7 11h2M13 11h4" /></svg>);
-const GearI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>);
-const Back10I = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><path d="M12 5V2L7 6l5 4V7a6 6 0 1 1-6 6" /><text x="12" y="17" fontSize="7" fill="currentColor" stroke="none" textAnchor="middle" fontWeight="700">10</text></svg>);
-const Fwd10I = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><path d="M12 5V2l5 4-5 4V7a6 6 0 1 0 6 6" /><text x="12" y="17" fontSize="7" fill="currentColor" stroke="none" textAnchor="middle" fontWeight="700">10</text></svg>);
+const FullscreenI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>);
+const VolumeI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" /><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14" /></svg>);
+const MuteI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>);
+const AudioI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" /></svg>);
+const SubI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="M7 15h4M15 15h2M7 11h2M13 11h4" /></svg>);
+const GearI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>);
+const Back10I = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><path d="M12 5V2L7 6l5 4V7a6 6 0 1 1-6 6" /><text x="12" y="17" fontSize="7" fill="currentColor" stroke="none" textAnchor="middle" fontWeight="700">10</text></svg>);
+const Fwd10I = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><path d="M12 5V2l5 4-5 4V7a6 6 0 1 0 6 6" /><text x="12" y="17" fontSize="7" fill="currentColor" stroke="none" textAnchor="middle" fontWeight="700">10</text></svg>);
 // Fleet-only glyphs (Lampac): balancer = stacked servers, voice/dub = globe+dot.
-const BalancerI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><rect x="3" y="4" width="18" height="6" rx="1.5" /><rect x="3" y="14" width="18" height="6" rx="1.5" /><line x1="7" y1="7" x2="7.01" y2="7" /><line x1="7" y1="17" x2="7.01" y2="17" /></svg>);
-const VoiceI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>);
+const BalancerI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><rect x="3" y="4" width="18" height="6" rx="1.5" /><rect x="3" y="14" width="18" height="6" rx="1.5" /><line x1="7" y1="7" x2="7.01" y2="7" /><line x1="7" y1="17" x2="7.01" y2="17" /></svg>);
+const VoiceI = () => (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="22" height="22"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>);
 
 export default function OnlinePlayer({
   apiKey, item, details, type = "movie", season = null, episode = null,
@@ -458,6 +460,9 @@ export default function OnlinePlayer({
   const nextFiredRef = useRef(false);
 
   const [controlsVisible, setControlsVisible] = useState(true);
+  // Asked for only once the film is on screen: nothing may compete with the prebuffer.
+  const posterGlow = usePosterGlow(prebuffering ? null : item?.poster_path);
+  useMinuteClock(); // Keeps the end time right while paused, when nothing else re-renders.
   const [hoverTime, setHoverTime] = useState(null);
 
   // Fullscreen mirror (ref) so the mobile landscape auto-fullscreen effect can
@@ -2575,7 +2580,8 @@ export default function OnlinePlayer({
 
   return (
     <div
-      className={"torrplayer" + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor")}
+      className={"torrplayer" + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor") + (playing ? "" : " torrplayer--paused")}
+      style={posterGlow ? { "--player-glow": posterGlow } : undefined}
       ref={containerRef}
       onMouseMove={showControls}
       onMouseLeave={() => { if (videoRef.current && !videoRef.current.paused) setControlsVisible(false); }}
@@ -2650,18 +2656,36 @@ export default function OnlinePlayer({
           </div>
         </div>
       )}
+      {fullscreen && (
+        <div className={"torrplayer-heading" + (controlsVisible ? "" : " torrplayer-heading--hidden")}>
+          <strong>{item?.title || item?.name}</strong>
+          {type === "tv" && season != null && <span>Сезон {season}, серия {episode}</span>}
+        </div>
+      )}
       <div className={"torrplayer-controls" + (controlsVisible ? "" : " torrplayer-controls--hidden")}>
-        <button className="torrplayer-btn torrplayer-btn--seekback" onClick={() => seekBy(-10)} title="Назад 10с (← / J)"><Back10I /></button>
-        <button className="torrplayer-btn torrplayer-btn--play" onClick={togglePlay} title={playing ? "Пауза (Space / K)" : "Смотреть (Space / K)"}>{playing ? <PauseI /> : <PlayI />}</button>
-        <button className="torrplayer-btn torrplayer-btn--seekfwd" onClick={() => seekBy(10)} title="Вперёд 10с (→ / L)"><Fwd10I /></button>
-        <button className="torrplayer-btn torrplayer-btn--mute" onClick={toggleMute} title={muted ? "Включить звук (M)" : "Выключить звук (M)"}>{muted || volume === 0 ? <MuteI /> : <VolumeI />}</button>
-        <input className="torrplayer-volume" type="range" min={0} max={1} step={0.05} value={muted ? 0 : volume} onChange={(e) => changeVol(e.target.value)} title="Громкость (↑ / ↓)" />
-        <span className="torrplayer-time">{fmt(current)} / {fmt(duration)}</span>
+        <div className="torrplayer-transport">
+          <button className="torrplayer-btn torrplayer-btn--seekback" onClick={() => seekBy(-10)} title="Назад 10с (← / J)"><Back10I /></button>
+          <button className="torrplayer-btn torrplayer-btn--play" onClick={togglePlay} title={playing ? "Пауза (Space / K)" : "Смотреть (Space / K)"}>{playing ? <PauseI /> : <PlayI />}</button>
+          <button className="torrplayer-btn torrplayer-btn--seekfwd" onClick={() => seekBy(10)} title="Вперёд 10с (→ / L)"><Fwd10I /></button>
+        </div>
+        <div className="torrplayer-sound">
+          <button className="torrplayer-btn torrplayer-btn--mute" onClick={toggleMute} title={muted ? "Включить звук (M)" : "Выключить звук (M)"}>{muted || volume === 0 ? <MuteI /> : <VolumeI />}</button>
+          <input className="torrplayer-volume" type="range" min={0} max={1} step={0.05} value={muted ? 0 : volume} style={{ "--level": `${(muted ? 0 : volume) * 100}%` }} onChange={(e) => changeVol(e.target.value)} title="Громкость (↑ / ↓)" />
+        </div>
+        <span className="torrplayer-time">{fmt(current)}</span>
         <div className="torrplayer-seek" onClick={onSeekClick} onMouseMove={onSeekMove} onMouseLeave={onSeekLeave} title="Перемотка (0–9)">
-          {duration > 0 && buffered > 0 && <div className="torrplayer-seek-buffer" style={{ width: `${(buffered / duration) * 100}%` }} />}
-          <div className="torrplayer-seek-fill" style={{ width: `${duration ? (current / duration) * 100 : 0}%` }} />
+          <div className="torrplayer-seek-track">
+            {duration > 0 && buffered > 0 && <div className="torrplayer-seek-buffer" style={{ width: `${(buffered / duration) * 100}%` }} />}
+            <div className="torrplayer-seek-fill" style={{ width: `${duration ? (current / duration) * 100 : 0}%` }} />
+          </div>
+          <div className="torrplayer-seek-thumb" style={{ left: `${duration ? (current / duration) * 100 : 0}%` }} />
           {hoverTime != null && <div className="torrplayer-seek-hover" style={{ left: `${duration ? (hoverTime / duration) * 100 : 0}%` }}>{fmt(hoverTime)}</div>}
         </div>
+        <div className="torrplayer-remain">
+          <span>−{fmt(Math.max(0, duration - current))}</span>
+          {duration > current && <span className="torrplayer-ends">до {clockAfter((duration - current) / 60 / (rate || 1))}</span>}
+        </div>
+        <div className="torrplayer-tools">
 
         {/* ── Fleet: Balancer picker (Lampac only) ─────────────────────────── */}
         {isLampac && balansers.length > 0 && (
@@ -2721,7 +2745,7 @@ export default function OnlinePlayer({
 
         {/* Speed */}
         <div className="torrplayer-audio torrplayer-speed">
-          <button className="torrplayer-btn" onClick={() => { setShowSpeed((v) => !v); setShowTracks(false); setShowQuality(false); setShowSubs(false); setShowBalanser(false); setShowVoice(false); }} title="Скорость (< >)"><GearI /><span className="torrplayer-audio-label">{rate}×</span></button>
+          <button className="torrplayer-btn" onClick={() => { setShowSpeed((v) => !v); setShowTracks(false); setShowQuality(false); setShowSubs(false); setShowBalanser(false); setShowVoice(false); }} title="Скорость (< >)"><span className="torrplayer-audio-label">{rate}×</span></button>
           {showSpeed && (
             <div className={menuClass}>
               {SPEEDS.map((s) => (<button key={s} className={"torrplayer-audio-item" + (s === rate ? " active" : "")} onClick={() => setSpeed(s)}>{s}×{s === 1 ? " (норма)" : ""}</button>))}
@@ -2802,6 +2826,7 @@ export default function OnlinePlayer({
 
         {isMobile && typeof document !== "undefined" && document.pictureInPictureEnabled && (<button className={"torrplayer-btn torrplayer-btn--pip" + (pipActive ? " torrplayer-btn--active" : "")} onClick={togglePiP} title="Картинка в картинке"><PiPIcon /></button>)}
         <button className="torrplayer-btn torrplayer-btn--fs" onClick={toggleFullscreen} title="Полный экран (F)"><FullscreenI /></button>
+        </div>
       </div>
     </div>
   );

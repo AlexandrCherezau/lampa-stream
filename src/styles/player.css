@@ -1,0 +1,342 @@
+/* The player: controls gather in one capsule of frosted glass floating over the
+   picture, tinted by the poster. Nothing else sits on the film. */
+
+.torrplayer {
+  --player-glow: var(--red2);
+  --player-light: color-mix(in oklab, var(--player-glow) 58%, white);
+  --capsule-gap: 12px;
+  container-type: size;
+  overflow: hidden;
+  color: #fff;
+  background: #000;
+  border-radius: 16px;
+}
+.torrplayer:fullscreen,
+.wt-player > .torrplayer { border-radius: 0; }
+.torrplayer--hidden-cursor { cursor: none; }
+
+.torrplayer-heading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 24;
+  display: grid;
+  gap: 2px;
+  padding: 24px 32px 56px;
+  text-shadow: 0 1px 12px rgb(0 0 0 / 0.7);
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.torrplayer-heading strong { font-size: clamp(18px, 2.2vw, 28px); font-weight: 600; letter-spacing: -0.01em; }
+.torrplayer-heading span { font-size: 14px; color: rgb(255 255 255 / 0.8); }
+.torrplayer-heading--hidden { opacity: 0; }
+
+.torrplayer-controls {
+  position: absolute;
+  left: var(--capsule-gap);
+  right: var(--capsule-gap);
+  bottom: var(--capsule-gap);
+  z-index: 28; /* Its menus open over the skip button and the state overlays. */
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 52px;
+  padding: 4px 8px;
+  background: color-mix(in oklab, var(--player-glow) 14%, rgb(18 20 23 / 0.62));
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1), 0 10px 34px rgb(0 0 0 / 0.38);
+  backdrop-filter: blur(22px) saturate(1.5);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+/* Hidden means not composited: blurring over a playing video costs every frame. */
+.torrplayer-controls--hidden {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0.2s;
+}
+
+.torrplayer-transport,
+.torrplayer-sound,
+.torrplayer-tools { display: flex; flex: none; align-items: center; gap: 1px; }
+
+.torrplayer-time,
+.torrplayer-remain {
+  flex: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.torrplayer-time { min-width: 38px; padding-left: 6px; text-align: right; }
+.torrplayer-remain { display: flex; gap: 10px; padding-right: 4px; color: rgb(255 255 255 / 0.78); }
+.torrplayer-ends { color: rgb(255 255 255 / 0.55); }
+
+/* The line of the film */
+.torrplayer-seek {
+  position: relative;
+  flex: 1 1 120px;
+  min-width: 60px;
+  height: 32px;
+  margin: 0 8px;
+  cursor: pointer;
+  touch-action: none;
+}
+.torrplayer-seek-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 0.22);
+  border-radius: 4px;
+  transform: translateY(-50%);
+  transition: height 0.12s ease;
+}
+.torrplayer-seek:hover .torrplayer-seek-track { height: 6px; }
+.torrplayer-seek-buffer,
+.torrplayer-seek-fill { position: absolute; top: 0; bottom: 0; left: 0; transition: width 0.25s linear; }
+.torrplayer-seek-buffer { background: rgb(255 255 255 / 0.3); }
+.torrplayer-seek-fill { background: #fff; }
+.torrplayer-seek-thumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 16px 4px color-mix(in oklab, var(--player-glow) 80%, transparent);
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform 0.12s ease, left 0.25s linear;
+}
+.torrplayer-seek:hover .torrplayer-seek-thumb { transform: translate(-50%, -50%) scale(1); }
+.torrplayer-seek-hover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  padding: 4px 9px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  background: rgb(18 20 23 / 0.9);
+  border-radius: 8px;
+  transform: translateX(-50%);
+}
+
+.torrplayer-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 8px;
+  color: rgb(255 255 255 / 0.92);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.torrplayer-btn:hover { color: #fff; background: rgb(255 255 255 / 0.14); }
+.torrplayer-btn:focus-visible,
+.torrplayer-audio-item:focus-visible,
+.torrplayer-bigplay:focus-visible,
+.torrplayer-volume:focus-visible { outline: 2px solid var(--player-light); outline-offset: 1px; }
+.torrplayer-btn--active,
+.torrplayer-btn--active:hover { color: var(--player-light); }
+.torrplayer-btn--pip { display: none; }
+.torrplayer-btn svg { flex: none; }
+
+.torrplayer-volume {
+  width: 64px;
+  height: 22px;
+  margin: 0 6px 0 2px;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+}
+.torrplayer-volume::-webkit-slider-runnable-track {
+  height: 4px;
+  background: linear-gradient(to right, #fff var(--level, 100%), rgb(255 255 255 / 0.26) var(--level, 100%));
+  border-radius: 4px;
+}
+.torrplayer-volume::-moz-range-track { height: 4px; background: rgb(255 255 255 / 0.26); border-radius: 4px; }
+.torrplayer-volume::-moz-range-progress { height: 4px; background: #fff; border-radius: 4px; }
+.torrplayer-volume::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  background: #fff;
+  border-radius: 50%;
+  appearance: none;
+}
+.torrplayer-volume::-moz-range-thumb { width: 12px; height: 12px; background: #fff; border: 0; border-radius: 50%; }
+
+/* Source, voice, speed, subtitles, quality */
+.torrplayer-audio { position: relative; }
+.torrplayer-audio-label { max-width: 112px; overflow: hidden; text-overflow: ellipsis; }
+.torrplayer-audio-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 14px);
+  z-index: 30;
+  display: grid;
+  gap: 1px;
+  min-width: 150px;
+  max-height: min(340px, calc(100cqh - 92px));
+  padding: 6px;
+  overflow-y: auto;
+  background: rgb(22 24 27 / 0.97);
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1), 0 18px 50px rgb(0 0 0 / 0.55);
+}
+.torrplayer-audio-menu--wide { width: min(340px, 90cqw); }
+.torrplayer-audio-head { padding: 8px 10px 4px; color: rgb(255 255 255 / 0.5); font-size: 12px; }
+.torrplayer-audio-item {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px 7px 30px;
+  color: rgb(255 255 255 / 0.88);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.torrplayer-audio-item:hover { color: #fff; background: rgb(255 255 255 / 0.1); }
+.torrplayer-audio-item.active { position: relative; color: var(--player-light); font-weight: 600; }
+.torrplayer-audio-item.active::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  width: 7px;
+  height: 7px;
+  background: currentColor;
+  border-radius: 50%;
+  transform: translateY(-50%);
+}
+
+.torrplayer-bigplay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 26;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  color: #fff;
+  background: color-mix(in oklab, var(--player-glow) 18%, rgb(18 20 23 / 0.5));
+  border: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14), 0 10px 34px rgb(0 0 0 / 0.4);
+  cursor: pointer;
+  backdrop-filter: blur(22px) saturate(1.5);
+  transform: translate(-50%, -50%);
+  transition: transform 0.14s ease;
+}
+.torrplayer-bigplay:hover { transform: translate(-50%, -50%) scale(1.06); }
+.torrplayer:has(.torrplayer-audio-menu) .torrplayer-bigplay { display: none; }
+.torrplayer-bigplay svg { width: 30px; height: 30px; margin-left: 3px; }
+
+/* Everything else that appears over the picture */
+.torrplayer-spinner { border-color: rgb(255 255 255 / 0.18); border-top-color: var(--player-light); }
+.torrplayer-skip {
+  bottom: 80px;
+  right: var(--capsule-gap);
+  flex-direction: row;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 16px;
+  background: color-mix(in oklab, var(--player-glow) 14%, rgb(18 20 23 / 0.7));
+  border: 0;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12);
+  backdrop-filter: blur(22px) saturate(1.5);
+}
+.torrplayer-skip-title,
+.torrplayer-skip-sub { font-size: 13px; font-weight: 600; letter-spacing: 0; color: inherit; text-transform: lowercase; }
+.torrplayer-skip-title::first-letter { text-transform: uppercase; }
+.torrplayer-cast { bottom: 80px; }
+.torrplayer-notice { background: rgb(22 24 27 / 0.92); border: 0; border-radius: 12px; }
+.torrplayer-state-overlay,
+.torrplayer-switching { backdrop-filter: blur(6px); }
+
+/* The page's source switcher belongs to the same layer of controls. */
+.player-wrap .player-overlay-group { transition: opacity 0.25s ease; }
+.player-wrap .player-overlay-btn {
+  color: #fff;
+  background: rgb(18 20 23 / 0.55);
+  border: 0;
+  border-radius: 12px;
+  backdrop-filter: blur(22px);
+}
+.player-wrap:has(.torrplayer--hidden-cursor) .player-overlay-group { opacity: 0; pointer-events: none; }
+
+/* Narrower players (a room's stage, a small window) give way step by step. */
+@container (max-width: 1150px) { .torrplayer-ends { display: none; } }
+@container (max-width: 1100px) {
+  .torrplayer-audio-label { display: none; }
+  .torrplayer-btn:not(:has(svg)) .torrplayer-audio-label { display: inline; }
+}
+@container (max-width: 760px) {
+  .torrplayer-volume, .torrplayer-btn--seekback, .torrplayer-btn--seekfwd { display: none; }
+}
+
+/* Phone: the capsule takes two lines, the film's line above the buttons. */
+@media (max-width: 768px), (max-width: 1024px) and (max-height: 500px) and (pointer: coarse) {
+  .torrplayer { --capsule-gap: 6px; border-radius: 12px; }
+  .torrplayer-controls {
+    flex-wrap: wrap;
+    gap: 0;
+    padding: 0 6px 2px;
+    min-height: 0;
+    border-radius: 14px;
+  }
+  .torrplayer-time { order: 1; min-width: 0; padding-left: 4px; font-size: 11px; }
+  .torrplayer-seek { order: 1; flex: 1 1 calc(100% - 96px); height: 24px; min-width: 0; margin: 0 8px; }
+  .torrplayer-seek::before { content: ""; position: absolute; inset: -6px 0; }
+  .torrplayer-seek-thumb { transform: translate(-50%, -50%) scale(0.85); }
+  .torrplayer-remain { order: 1; padding-right: 4px; font-size: 11px; }
+  .torrplayer-ends, .torrplayer-volume { display: none; }
+  .torrplayer-transport, .torrplayer-sound, .torrplayer-tools { order: 2; }
+  .torrplayer-tools { margin-left: auto; }
+  .torrplayer-btn { min-width: 34px; height: 36px; padding: 0 5px; font-size: 12px; }
+  .torrplayer-btn--seekback, .torrplayer-btn--seekfwd { display: inline-flex; }
+  @media (min-width: 481px) { .torrplayer-btn--pip { display: inline-flex; } }
+  /* The smallest phones keep play and pause: ten-second jumps are on the line. */
+  @media (max-width: 360px) { .torrplayer-btn--seekback, .torrplayer-btn--seekfwd { display: none; } }
+  .torrplayer-audio-label { display: none; }
+  .torrplayer-btn:not(:has(svg)) .torrplayer-audio-label { display: inline; }
+  /* A menu takes the capsule's width and scrolls within the picture. */
+  .torrplayer-audio { position: static; }
+  .torrplayer-audio-menu,
+  .torrplayer-audio-menu--wide {
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 6px);
+    width: auto;
+    max-height: calc(100cqh - 88px);
+  }
+  .torrplayer-bigplay { top: calc((100% - 74px) / 2); width: 60px; height: 60px; }
+  .torrplayer-bigplay svg { width: 24px; height: 24px; }
+  .torrplayer-skip { bottom: 76px; }
+  .torrplayer-cast { bottom: 76px; }
+  .player-wrap .player-overlay-btn { min-height: 30px; padding: 0 10px; font-size: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .torrplayer-controls, .torrplayer-seek-thumb, .torrplayer-seek-fill, .torrplayer-seek-buffer { transition: none; }
+}

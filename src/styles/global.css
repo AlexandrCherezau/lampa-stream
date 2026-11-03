@@ -3646,145 +3646,15 @@ html[data-win-titlebar][data-maximized] .main {
 }
 
 /* Controls bar */
-.torrplayer-controls {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0));
-    z-index: 25;
-}
-.torrplayer-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 8px;
-    color: var(--text);
-    cursor: pointer;
-    padding: 7px 9px;
-    font-size: 13px;
-    font-family: var(--font-body);
-    transition: background 0.15s, border-color 0.15s;
-    white-space: nowrap;
-}
-.torrplayer-btn:hover {
-    background: rgba(229, 9, 20, 0.22);
-    border-color: rgba(229, 9, 20, 0.5);
-}
+
 /* PiP button is mobile-only: hidden on desktop by default (render-gated too). */
-.torrplayer-btn--pip {
-    display: none;
-}
-.torrplayer-time {
-    font-size: 12px;
-    color: var(--text2);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-.torrplayer-volume {
-    width: 84px;
-    accent-color: var(--red);
-}
-.torrplayer-seek {
-    flex: 1 1 auto;
-    height: 6px;
-    background: rgba(255, 255, 255, 0.16);
-    border-radius: 3px;
-    cursor: pointer;
-    position: relative;
-    overflow: hidden;
-}
-.torrplayer-seek-fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    background: var(--red);
-    border-radius: 3px;
-    transition: width 0.1s linear;
-}
 
 /* Audio track selector */
-.torrplayer-audio {
-    position: relative;
-}
-.torrplayer-audio-label {
-    font-size: 12px;
-    max-width: 120px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.torrplayer-audio-menu {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    right: 0;
-    min-width: 180px;
-    max-width: 260px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 4px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    /* Cap height so the menu never escapes the player area; scrolls if long.
-       .torrplayer-stage is overflow:hidden, so an over-tall menu would clip. */
-    max-height: min(45vh, 260px);
-    overflow-y: auto;
-    z-index: 40;
-}
-.torrplayer-audio-item {
-    text-align: left;
-    background: transparent;
-    border: none;
-    color: var(--text2);
-    padding: 8px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-family: var(--font-body);
-}
-.torrplayer-audio-item:hover {
-    background: var(--surface3);
-    color: var(--text);
-}
-.torrplayer-audio-item.active {
-    background: rgba(229, 9, 20, 0.18);
-    color: var(--text);
-}
 
 /* ── Lampac fleet extras: wider picker menus, section headers, the seamless-
    switch overlay and the inline (non-fatal) balancer notice. Collaps never
    needs these; they render only when provider === "lampac". ───────────────── */
-.torrplayer-audio-menu--wide {
-    /* Balancer / dub names run long ("Дубляж [Лицензия] · 2", torrent meta). */
-    min-width: 220px;
-    max-width: 340px;
-}
-.torrplayer-audio-head {
-    /* Section label inside the two-part Quality menu (Источник / Поток ABR)
-       and can head any grouped picker. Not a button — never clickable. */
-    padding: 6px 10px 2px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
-    color: var(--text3, var(--text2));
-    opacity: 0.75;
-    pointer-events: none;
-    user-select: none;
-}
-.torrplayer-audio-head:not(:first-child) {
-    margin-top: 4px;
-    border-top: 1px solid var(--border);
-    padding-top: 8px;
-}
+
 /* Seamless re-attach overlay: a balancer/dub/quality switch re-resolves a new
    file while <video> stays mounted. Dim + spinner, but do NOT blank the frame
    (the old frame keeps showing until the new media paints). Cleared on
@@ -4187,14 +4057,6 @@ html[data-win-titlebar][data-maximized] .main {
 .torrplayer--hidden-cursor {
     cursor: none;
 }
-.torrplayer-controls--hidden {
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
-}
-.torrplayer-controls {
-    transition: opacity 0.3s ease;
-}
 
 /* Watch Together, when only the host may control: no transport controls. Sound,
    source, voice, quality and fullscreen stay, because those are each viewer's own. */
@@ -4209,42 +4071,8 @@ html[data-win-titlebar][data-maximized] .main {
 .torrplayer--follower .torrplayer-seek { pointer-events: none; }
 
 /* Active state for toggle buttons (subs on, audio selected) */
-.torrplayer-btn--active {
-    background: rgba(229, 9, 20, 0.28) !important;
-    border-color: rgba(229, 9, 20, 0.6) !important;
-    color: #fff !important;
-}
 
 /* Center big-play button (when paused) */
-.torrplayer-bigplay {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 76px;
-    height: 76px;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.55);
-    border: 2px solid rgba(255, 255, 255, 0.25);
-    color: #fff;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 26;
-    transition: background 0.18s, transform 0.18s, border-color 0.18s;
-    backdrop-filter: blur(4px);
-}
-.torrplayer-bigplay:hover {
-    background: rgba(229, 9, 20, 0.8);
-    border-color: rgba(229, 9, 20, 0.9);
-    transform: translate(-50%, -50%) scale(1.06);
-}
-.torrplayer-bigplay svg {
-    width: 34px;
-    height: 34px;
-    margin-left: 4px;
-}
 
 /* Cast-on-pause panel (Kinopoisk-style: real name + character + photo) */
 .torrplayer-cast {
@@ -4377,53 +4205,10 @@ html[data-win-titlebar][data-maximized] .main {
 }
 
 /* Buffer bar on the seek track */
-.torrplayer-seek-buffer {
-    position: absolute;
-    inset: 0 auto 0 0;
-    background: rgba(255, 255, 255, 0.32);
-    border-radius: 3px;
-}
-.torrplayer-seek {
-    overflow: visible;
-}
-.torrplayer-seek-fill {
-    z-index: 2;
-}
 
 /* Hover timestamp tooltip on the seek bar */
-.torrplayer-seek-hover {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.9);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 3px 7px;
-    font-size: 11px;
-    color: var(--text);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    pointer-events: none;
-    z-index: 30;
-}
 
 /* Slightly wider controls row so all buttons fit */
-.torrplayer-controls {
-    flex-wrap: wrap;
-    /* NO overflow here: an overflow value other than visible turns this into a
-       scroll container and clips the absolutely-positioned dropdown menus
-       (quality/speed/audio/subs). Let buttons wrap to a 2nd row on narrow widths
-       instead of clipping the menus. */
-    row-gap: 6px;
-    padding-bottom: 12px;
-}
-.torrplayer-seek {
-    flex: 1 1 200px;
-    min-width: 120px;
-}
-.torrplayer-time {
-    flex-shrink: 0;
-}
 
 /* ════════════════════════════════════════════════════════════════════════════
    Mobile / web responsive — sidebar → bottom dock, fluid cards, full-screen
@@ -4501,23 +4286,11 @@ html[data-win-titlebar][data-maximized] .main {
   .apikey-box { margin: auto; padding: 28px 20px; }
 
   /* Player controls: wrap, bigger touch targets, full-width seek. */
-  .torrplayer-controls {
-    flex-wrap: wrap !important;
-    padding: 8px 8px 12px !important;
-    row-gap: 6px !important;
-  }
-  .torrplayer-btn {
-    padding: 10px 12px !important;
-    min-width: 40px;
-    min-height: 40px;
-  }
-  .torrplayer-seek {
-    flex: 1 1 160px !important;
-    min-width: 120px !important;
-    order: 99;
-  }
-  .torrplayer-volume { width: 70px !important; }
-  .torrplayer-audio-label { max-width: 90px !important; }
+  
+  
+  
+  
+  
   .torrplayer-skip { bottom: 70px !important; }
 
   /* Player fills viewport on mobile (handles mobile URL bar). */
@@ -4606,11 +4379,11 @@ html[data-win-titlebar][data-maximized] .main {
     gap: 8px !important;
   }
   .card-title { font-size: 11px !important; }
-  .torrplayer-time { font-size: 11px !important; }
+  
   /* Hide the volume slider on very small screens (use device volume). */
-  .torrplayer-volume { display: none !important; }
+  
   /* Speed/audio/subs/quality labels shorter. */
-  .torrplayer-audio-label { max-width: 64px !important; font-size: 11px !important; }
+  
 }
 
 /* Web platform: never show the desktop window titlebar. */
@@ -4844,42 +4617,14 @@ html[data-web] .window-titlebar {
   }
 
   /* Player controls — already wrapped via earlier @media; refine further */
-  .torrplayer-controls {
-    flex-wrap: wrap !important;
-    gap: 6px !important;
-    padding: 6px 8px 10px !important;
-  }
-  .torrplayer-btn {
-    min-width: 38px !important;
-    min-height: 38px !important;
-    padding: 8px 10px !important;
-  }
-  .torrplayer-btn svg {
-    width: 18px !important;
-    height: 18px !important;
-  }
-  .torrplayer-time {
-    font-size: 11px !important;
-    order: -1;
-  }
-  .torrplayer-seek {
-    order: 10;
-    flex: 1 1 100% !important;
-    height: 5px !important;
-  }
-  .torrplayer-audio-label {
-    max-width: 70px !important;
-    font-size: 11px !important;
-  }
-  .torrplayer-audio-menu {
-    min-width: 160px !important;
-    max-width: 90vw !important;
-    bottom: calc(100% + 4px) !important;
-  }
-  .torrplayer-audio-menu--wide {
-    min-width: 200px !important;
-    max-width: 92vw !important;
-  }
+  
+  
+  
+  
+  
+  
+  
+  
   .torrplayer-notice {
     top: 8px !important;
     max-width: 92% !important;
@@ -4899,14 +4644,8 @@ html[data-web] .window-titlebar {
   .torrplayer-skip-title {
     font-size: 11px !important;
   }
-  .torrplayer-bigplay {
-    width: 60px !important;
-    height: 60px !important;
-  }
-  .torrplayer-bigplay svg {
-    width: 26px !important;
-    height: 26px !important;
-  }
+  
+  
 
   /* Sections in detail page (similar, cast, etc.) */
   .section {
@@ -4929,9 +4668,9 @@ html[data-web] .window-titlebar {
   .detail-title { font-size: 18px !important; }
   .detail-overview { -webkit-line-clamp: 4; }
   .episode-thumb { width: 80px !important; min-width: 80px !important; }
-  .torrplayer-time { display: none !important; }
-  .torrplayer-audio-label { display: none !important; }
-  .torrplayer-btn { min-width: 36px !important; padding: 7px 9px !important; }
+  
+  
+  
   .cards-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)) !important; }
 }
 
@@ -4968,144 +4707,48 @@ html[data-web] .window-titlebar {
   }
 
   /* ── Controls: 2-row layout like YouTube ─────────────────────────────── */
-  .torrplayer-controls {
-    position: absolute !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    display: flex !important;
-    flex-wrap: wrap !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    gap: 0 !important;
-    padding: 8px 6px 10px !important;
-    background: linear-gradient(to top, rgba(0,0,0,0.95) 40%, rgba(0,0,0,0.6) 70%, transparent) !important;
-    z-index: 30 !important;
-  }
+  
 
   /* Line-break pseudo-element: forces row 2 to wrap below row 1. A pseudo-
      element on a flex container becomes a flex item itself. flex-basis:100%
      makes it claim a full row, pushing anything after it (order >= 10) to the
      next line. */
-  .torrplayer-controls::after {
-    content: "" !important;
-    display: block !important;
-    flex: 1 1 100% !important;
-    height: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    order: 5 !important;
-    pointer-events: none;
-  }
+  
 
   /* ── Row 1: play/pause, time, seek (grows), fullscreen ──────────────── */
-  .torrplayer-btn--play {
-    order: 1 !important;
-    width: 44px !important;
-    height: 44px !important;
-    padding: 0 !important;
-    flex: 0 0 44px !important;
-    display: flex !important;
-    align-items: center;
-    justify-content: center;
-  }
+  
 
-  .torrplayer-time {
-    order: 2 !important;
-    font-size: 12px !important;
-    color: #ddd !important;
-    flex: 0 0 auto !important;
-    margin: 0 4px;
-    font-variant-numeric: tabular-nums;
-  }
+  
 
   /* Seek: grows to fill remaining row-1 width (play + time + fs + seek = 1 row).
      The ::after pseudo-break above forces row-2 items to wrap below. */
-  .torrplayer-seek {
-    order: 3 !important;
-    flex: 1 1 0 !important;
-    min-width: 0 !important;
-    height: 6px !important;
-    margin: 0 6px;
-  }
+  
 
   /* PiP button (mobile only): mirrors .torrplayer-btn--fs, sits just before it
      in row 1 (order 3, same group as the growing seek; source order places it
      after seek and before fs). display:flex !important overrides the desktop
      `display:none` base rule — belt-and-suspenders with the isMobile render gate. */
-  .torrplayer-btn--pip {
-    order: 3 !important;
-    width: 44px !important;
-    height: 44px !important;
-    padding: 0 !important;
-    flex: 0 0 44px !important;
-    display: flex !important;
-    align-items: center;
-    justify-content: center;
-  }
+  
 
-  .torrplayer-btn--fs {
-    order: 4 !important;
-    width: 44px !important;
-    height: 44px !important;
-    padding: 0 !important;
-    flex: 0 0 44px !important;
-    display: flex !important;
-    align-items: center;
-    justify-content: center;
-  }
+  
 
   /* ── Row 2: ±10, mute, speed, subs, audio, quality, external ────────── */
   /* Force wrap: row 2 items take 100% of the next line via a pseudo-break.
      We set flex-basis so they fit several per row (each ~36-44px). They wrap
      naturally because row 1 already consumed the full width via seek(grows). */
-  .torrplayer-btn--seekback,
-  .torrplayer-btn--seekfwd,
-  .torrplayer-btn--mute,
-  .torrplayer-btn--audio,
-  .torrplayer-btn--external,
-  .torrplayer-controls > .torrplayer-audio,
-  .torrplayer-volume {
-    order: 10 !important;
-    flex: 0 0 auto !important;
-    margin: 0 2px;
-  }
+  
 
-  .torrplayer-volume {
-    display: none !important;
-  }
+  
 
-  .torrplayer-btn {
-    min-width: 44px !important;
-    min-height: 44px !important;
-    padding: 6px 8px !important;
-    border-radius: 6px !important;
-    font-size: 12px !important;
-  }
-  .torrplayer-btn svg {
-    width: 18px !important;
-    height: 18px !important;
-  }
-  .torrplayer-btn svg text {
-    font-size: 6px !important;
-  }
+  
+  
+  
 
   /* Labels shorter on mobile */
-  .torrplayer-audio-label {
-    max-width: 60px !important;
-    font-size: 11px !important;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  
 
   /* Dropdown menus — appear above controls, not clipped */
-  .torrplayer-audio-menu {
-    bottom: calc(100% + 4px) !important;
-    max-height: 200px !important;
-    max-width: 180px !important;
-    overflow-y: auto;
-  }
+  
 
   /* Skip button — higher up, smaller */
   .torrplayer-skip {
@@ -5117,14 +4760,8 @@ html[data-web] .window-titlebar {
   .torrplayer-skip-sub { font-size: 9px !important; }
 
   /* Big play — centered, semi-transparent */
-  .torrplayer-bigplay {
-    width: 64px !important;
-    height: 64px !important;
-  }
-  .torrplayer-bigplay svg {
-    width: 28px !important;
-    height: 28px !important;
-  }
+  
+  
 
   /* Spinner — smaller */
   .torrplayer-spinner {
@@ -5134,16 +4771,10 @@ html[data-web] .window-titlebar {
   }
 
   /* Seek hover tooltip — smaller, above seek bar */
-  .torrplayer-seek-hover {
-    font-size: 10px !important;
-    padding: 2px 5px !important;
-  }
+  
 
   /* Seek buffer bar — thinner */
-  .torrplayer-seek-fill,
-  .torrplayer-seek-buffer {
-    height: 100% !important;
-  }
+  
 
   /* In fullscreen: lock landscape orientation (best-effort, may not work on all
      browsers, but improves the experience where it does). */
@@ -5154,9 +4785,9 @@ html[data-web] .window-titlebar {
 
 /* Very small phones */
 @media (max-width: 420px) {
-  .torrplayer-time { display: none !important; }
-  .torrplayer-audio-label { display: none !important; }
-  .torrplayer-btn { min-width: 32px !important; min-height: 32px !important; padding: 5px 6px !important; }
+  
+  
+  
   .torrplayer-skip { bottom: 64px !important; padding: 6px 12px !important; }
 }
 
@@ -5205,7 +4836,6 @@ h1, h2, h3 {
 
 /* Counters / timers / timecodes keep steady width. */
 .card-year,
-.torrplayer-time,
 .detail-meta,
 .episode-info {
   font-variant-numeric: tabular-nums;
@@ -5423,31 +5053,12 @@ h1, h2, h3 {
   }
 
   /* The seek bar stays thin but takes a thumb-sized drag area. */
-  .torrplayer-seek::before { content: ""; position: absolute; inset: -14px 0; }
+  
 }
 
 /* Portrait phones: two control rows, with the time above the seek bar so it
    costs no row of its own. The quality button has no icon, so it keeps its text. */
-@media (max-width: 480px) {
-  .torrplayer-controls { padding: 6px 4px 8px !important; }
-  .torrplayer-time {
-    display: block !important;
-    position: absolute;
-    top: 8px;
-    left: 56px;
-    font-size: 11px !important;
-    line-height: 1;
-    pointer-events: none;
-  }
-  .torrplayer-btn--pip { display: none !important; }
-  .torrplayer-btn { min-width: 38px !important; min-height: 44px !important; padding: 0 !important; }
-  .torrplayer-controls > .torrplayer-audio,
-  .torrplayer-btn--seekback, .torrplayer-btn--seekfwd, .torrplayer-btn--mute { margin: 0 !important; }
-  .torrplayer-btn:not(:has(svg)) .torrplayer-audio-label { display: inline !important; }
-}
-@media (max-width: 350px) {
-  .torrplayer-btn { min-width: 34px !important; }
-}
+
 @media (max-height: 350px) and (pointer: coarse) {
   .detail-info > .genres { display: none; }
   .detail-content { padding-block: 8px !important; }

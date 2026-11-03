@@ -8,6 +8,7 @@ import { ensureSiteGate } from "./web/gate";
 import App from "./App";
 import "./styles/global.css";
 import "./styles/redesign.css";
+import "./styles/player.css";
 import "./styles/watch-together.css";
 
 // Web only: gate on the site password before mounting the app. On desktop this
