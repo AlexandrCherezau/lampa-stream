@@ -1,252 +1,451 @@
-// ── Watch Together client: transport + playback sync ─────────────────────────
-// Rooms live in a shared Upstash Redis. The backend (Vercel api/room.js or
-// Express /api/room) holds one JSON snapshot per room; we poll it adaptively and
-// apply host→follower playback sync with drift correction. Host-leader model:
-// the host's play/pause/seek is authoritative; followers match it. If the host
-// leaves, the backend auto-promotes a follower.
+// Watch Together client: the connection to a room and the playback sync.
 //
-// Identity/auth: the TMDB token is the per-peer secret, sent as
-// `Authorization: Bearer`; peerId = sha256(token). The room `code` is the
-// shareable secret. (Same auth model as /api/tmdb.)
+// A room is one Durable Object (workers-api/rooms-worker.mjs). Everyone holds a
+// WebSocket to it, so a pause reaches the others in a network round trip. If the
+// socket cannot open, the same commands go over HTTP with polling, directly or
+// through /api/room when the Worker's host itself is unreachable. Each peer
+// resolves its own stream; only playback state is shared.
+//
+// `room.play` is the shared clock, stamped with server time. Every player steers
+// towards it, including whoever just changed it, so nobody has to be the source
+// of truth for position and a peer's wrong local clock cannot cause drift.
 
-import { storage, STORAGE_KEYS } from "./storage";
 import { isWebBuild } from "./api";
 
-// Seek only if local vs expected position differs by more than this. 0.5s
-// looked "tight" but fought the transport: the host only pushes on
-// play/pause/seek, so between pushes the follower's expected position is
-// EXTRAPOLATED from play.updatedAt — any clock skew or push latency > 0.5s
-// produced a correction twice per second (the 500ms tick), and each correction
-// is a real seek, i.e. a re-buffer at the new position. 1.5s is still far
-// below what a viewer perceives as desync while letting the extrapolation
-// breathe.
-const DRIFT_THRESHOLD = 1.5; // seconds
-// Minimum spacing between two drift corrections. Without it, a single bad
-// push (or a slow network) chained corrections: seek → buffer → still drifted
-// → seek again, each one stuttering playback for the follower.
-const SEEK_COOLDOWN_MS = 2500;
-let _lastSeekAt = 0;
+const WORKER_URL = import.meta.env.VITE_ROOMS_URL || "https://lampa-rooms.ocr-gemini-proxy.workers.dev";
 
-// ── Web Crypto sha256 (hex) — peerId from the WT peer secret ─────────────────
-async function sha256Hex(str) {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+const OPEN_TIMEOUT_MS = 5000;
+const PING_MS = 15_000;
+const PONG_TIMEOUT_MS = 10_000;
+const RECONNECT_MIN_MS = 500;
+const RECONNECT_MAX_MS = 15_000;
+const POLL_MS = 1000;
+const HTTP_JOIN_MS = 15_000;
+const CLOCK_SAMPLES = 3;
+const CLOCK_RESYNC_MS = 5 * 60_000;
+const REQUEST_TIMEOUT_MS = 4000;
+// How long a change made here outranks a poll that left before the server had it.
+const LOCAL_PLAY_HOLD_MS = 1500;
 
-export async function myPeerId(token) {
-  if (!token) return null;
-  try {
-    return await sha256Hex(String(token).trim());
-  } catch {
-    return null;
-  }
-}
+const PEER_SECRET_KEY = "lampa_stream_wt_peer";
 
-// ── Per-browser peer secret (the WT Bearer + identity) ──────────────────────
-// We use a random per-browser secret as the room `Authorization: Bearer` and as
-// the input to myPeerId() — NOT the TMDB token. Two reasons:
-//  1. Identity: on the Express web server every visitor shares the SAME TMDB
-//     token (handed out by /api/config), so sha256(token) would be identical
-//     for all visitors → host-only checks collapse (any visitor could delete or
-//     hijack anyone's room) and `who` collapses to a single presence entry. A
-//     per-browser random secret gives each visitor a unique peerId on every
-//     deployment (Express, Vercel, desktop) and fixes the collapse.
-//  2. Security: the TMDB token is no longer sent to /api/room; only the random
-//     secret is. The room server only ever sees sha256(secret) as the peerId.
-// Persisted in localStorage so a browser keeps a stable identity across reloads
-// (a host stays the host of rooms they created); generated synchronously via
-// crypto.getRandomValues (available in all renderer/browser contexts).
-const WT_PEER_KEY = "lampa_stream_wt_peer";
+// A random per-browser secret: the peer id is its hash, and it stays stable across
+// reloads so a reloading host is still the host.
+let memorySecret = null;
+const newSecret = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => b.toString(16).padStart(2, "0")).join("");
 export function getWtPeerSecret() {
   try {
-    let s = localStorage.getItem(WT_PEER_KEY);
-    if (!s) {
-      const bytes = new Uint8Array(24);
-      crypto.getRandomValues(bytes);
-      s = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
-      localStorage.setItem(WT_PEER_KEY, s);
+    let secret = localStorage.getItem(PEER_SECRET_KEY);
+    if (!secret) {
+      secret = newSecret();
+      localStorage.setItem(PEER_SECRET_KEY, secret);
     }
-    return s;
+    return secret;
   } catch {
-    return null;
+    // Storage blocked: this visit still gets an identity of its own.
+    memorySecret ??= newSecret();
+    return memorySecret;
   }
 }
 
-// ── /api/room endpoint ───────────────────────────────────────────────────────
-// Web → same-origin /api/room (Vercel fn or Express route). Desktop → a
-// user-configured WT_ENDPOINT, else a build-time VITE_WATCH_ENDPOINT, else null
-// (the UI shows "backend not configured" so the user can set it).
-//
-// We detect "web" via isWebBuild() (reads window.__webShim at CALL time) AND a
-// direct `!window.electron` fallback. isWebBuild() MUST be lazy (a function),
-// not a module-load const: api.js is bundled into a chunk that can execute
-// BEFORE src/web/shim.js sets window.__webShim, so a const would capture
-// `false` and permanently break web detection — Watch Together would show
-// "backend not configured" on the website even though the backend is fine.
-// Reading at call time (after the shim ran) fixes it. The `!window.electron`
-// fallback covers the rare no-shim-at-all case.
-export function roomEndpoint() {
-  const isWeb =
-    isWebBuild() ||
-    (typeof window !== "undefined" && !window.electron);
-  if (isWeb) return "/api/room";
-  let v = storage.get(STORAGE_KEYS.WT_ENDPOINT) || import.meta.env.VITE_WATCH_ENDPOINT || "";
-  v = String(v || "").trim().replace(/\/$/, "");
-  if (!v) return null;
-  if (/\/api\/room\/?$/.test(v)) return v;
-  return v.replace(/\/$/, "") + "/api/room";
+async function peerIdOf(secret) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export function setRoomEndpoint(url) {
-  const clean = (url || "").trim().replace(/\/$/, "");
-  if (clean) storage.set(STORAGE_KEYS.WT_ENDPOINT, clean);
-  else storage.remove(STORAGE_KEYS.WT_ENDPOINT);
-}
+export const normalizeRoomCode = (value) => String(value ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 
-export async function createRoom(token, { name, media } = {}) {
-  const ep = roomEndpoint();
-  if (!ep) throw new Error("sync endpoint not configured");
-  const r = await fetch(ep, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name, media }),
+// ── HTTP ─────────────────────────────────────────────────────────────────────
+const canProxy = () => isWebBuild() || (typeof window !== "undefined" && !window.electron);
+let useProxy = false;
+
+const directUrl = (code) => `${WORKER_URL}/rooms${code ? `/${encodeURIComponent(code)}` : ""}`;
+const proxyUrl = (code) => `/api/room${code ? `?code=${encodeURIComponent(code)}` : ""}`;
+
+async function request(code, secret, init = {}) {
+  const options = {
+    ...init,
     cache: "no-store",
-  });
-  if (!r.ok) throw new Error(`create ${r.status}`);
-  return r.json(); // { code, room }
+    // A blocked host often drops packets instead of refusing them.
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    headers: { Authorization: `Bearer ${secret}`, ...(init.body ? { "Content-Type": "application/json" } : {}) },
+  };
+  const attempt = (proxied) => fetch(proxied ? proxyUrl(code) : directUrl(code), options);
+  try {
+    return await attempt(useProxy);
+  } catch (error) {
+    if (!canProxy()) throw error;
+    const response = await attempt(!useProxy);
+    useProxy = !useProxy;
+    return response;
+  }
 }
 
-export async function pollRoom(token, code) {
-  const ep = roomEndpoint();
-  if (!ep) throw new Error("sync endpoint not configured");
-  const r = await fetch(`${ep}?code=${encodeURIComponent(code)}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  if (!r.ok) throw new Error(`poll ${r.status}`);
-  return r.json(); // { room } | { room: null }
+async function jsonOrThrow(response, label) {
+  const data = await response.json().catch(() => null);
+  if (!data) throw new Error(`${label} ${response.status}`);
+  return data;
 }
 
-export async function hostPushPlay(token, code, { playing, position }) {
-  const ep = roomEndpoint();
-  const r = await fetch(`${ep}?code=${encodeURIComponent(code)}&op=play`, {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ playing, position }),
-    cache: "no-store",
-    keepalive: true,
-  });
-  return r.ok;
+export async function createRoom(secret, name) {
+  const response = await request(null, secret, { method: "POST", body: JSON.stringify({ name }) });
+  const data = await jsonOrThrow(response, "create");
+  if (!response.ok || !data.code) throw new Error(data.error || `create ${response.status}`);
+  return data.code;
 }
 
-export async function hostPushMedia(token, code, media) {
-  const ep = roomEndpoint();
-  const r = await fetch(`${ep}?code=${encodeURIComponent(code)}&op=media`, {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ media }),
-    cache: "no-store",
-    keepalive: true,
-  });
-  return r.ok;
+export async function fetchRoom(secret, code) {
+  const response = await request(code, secret);
+  const data = await jsonOrThrow(response, "room");
+  if (!response.ok && response.status !== 404) throw new Error(data.error || `room ${response.status}`);
+  return { room: data.room ?? null, now: data.now };
 }
 
-export async function heartbeat(token, code, name) {
-  const ep = roomEndpoint();
-  const r = await fetch(`${ep}?code=${encodeURIComponent(code)}&op=heartbeat`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
-    cache: "no-store",
-    keepalive: true,
-  });
-  return r.ok;
+async function postCommand(secret, code, command, keepalive = false) {
+  const response = await request(code, secret, { method: "POST", body: JSON.stringify(command), keepalive });
+  return jsonOrThrow(response, "command");
 }
 
-export async function sendChat(token, code, text) {
-  const ep = roomEndpoint();
-  const r = await fetch(`${ep}?code=${encodeURIComponent(code)}&op=chat`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-    cache: "no-store",
-    keepalive: true,
-  });
-  return r.ok;
-}
+// ── Connection ───────────────────────────────────────────────────────────────
+export class RoomConnection {
+  constructor({ code, secret, name, onRoom, onLink, onEvent, onClosed }) {
+    Object.assign(this, { code, secret, name, onRoom, onLink, onEvent, onClosed });
+    this.room = null;
+    this.peerId = null;
+    this.offset = 0; // server time minus local time
+    this.bestRtt = Infinity;
+    this.stopped = false;
+    this.ws = null;
+    this.live = false;
+    this.attempts = 0;
+    this.timers = new Set();
+    this.pollTimer = null;
+    this.pollRun = 0;
+    this.leaving = false;
+    this.serverPlay = null;
+    this.localPlayAt = 0;
+    this.onWake = () => { if (!this.live && !this.stopped) this.connect(); };
+  }
 
-export async function closeRoom(token, code) {
-  const ep = roomEndpoint();
-  const r = await fetch(`${ep}?code=${encodeURIComponent(code)}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  return r.ok;
-}
+  now() { return Date.now() + this.offset; }
 
-// ── Voice-chat signaling (rides on the room HTTP API; SDP/ICE are opaque) ────
-// The server stores each message in a per-recipient mailbox (Redis LIST
-// sig:{code}:{targetPeerId}, TTL 60s) and drains it on poll. `msg` is an opaque
-// WebRTC payload (SDP or ICE candidate) — we never inspect it here, and the
-// server never inspects it either. keepalive on send so a signaling write
-// survives even if the tab is backgrounded mid-negotiation. Same Bearer-token
-// auth as the rest of /api/room (token = the WT per-peer secret).
-export async function sendSignal(token, code, target, msg) {
-  const ep = roomEndpoint();
-  if (!ep) return false;
-  const r = await fetch(`${ep}?code=${encodeURIComponent(code)}&op=signal`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ target, msg }),
-    cache: "no-store",
-    keepalive: true,
-  });
-  return r.ok;
-}
+  start() {
+    window.addEventListener("online", this.onWake);
+    document.addEventListener("visibilitychange", this.onWake);
+    // Polling never gets the server's answer, so the id is also worked out here.
+    peerIdOf(this.secret).then((id) => { this.peerId ??= id; }).catch(() => {});
+    this.connect();
+  }
 
-export async function pollSignals(token, code) {
-  const ep = roomEndpoint();
-  if (!ep) return [];
-  const r = await fetch(`${ep}?code=${encodeURIComponent(code)}&op=signal-poll`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  if (!r.ok) return [];
-  const data = await r.json().catch(() => ({}));
-  return Array.isArray(data.signals) ? data.signals : [];
-}
+  stop() {
+    this.stopped = true;
+    window.removeEventListener("online", this.onWake);
+    document.removeEventListener("visibilitychange", this.onWake);
+    this.clearTimers();
+    this.stopPolling();
+    if (this.ws) { const ws = this.ws; this.ws = null; try { ws.close(1000); } catch { /* already closed */ } }
+  }
 
-/**
- * Enforce host playback state on a follower's <video>. Idempotent + cheap; call
- * on each poll and on each syncState change. Computes the host's expected
- * position accounting for elapsed time since `play.updatedAt`, seeks only on
- * drift > threshold, and matches play/pause immediately.
- *
- * When the host is PAUSED, we seek to the exact `play.position` (not the
- * elapsed-corrected expected) so a follower lands precisely where the host
- * paused, with no drift from time-since-updateAt.
- *
- * Returns true if a seek was applied (caller can bump the poll to fast mode).
- */
-export function applySync(video, play) {
-  if (!video || !play) return false;
-  if (!video.duration || !isFinite(video.duration)) return false;
-  const now = Date.now();
-  // Host paused → exact position. Host playing → position + elapsed since the
-  // host's update (the host keeps playing in real time between pushes).
-  const expected = play.playing
-    ? play.position + (now - play.updatedAt) / 1000
-    : play.position;
-  let sought = false;
-  const myPos = video.currentTime || 0;
-  if (Math.abs(myPos - expected) > DRIFT_THRESHOLD) {
-    if (now - _lastSeekAt >= SEEK_COOLDOWN_MS) {
-      _lastSeekAt = now;
-      try { video.currentTime = Math.max(0, Math.min(video.duration, expected)); sought = true; } catch {}
+  later(fn, ms) {
+    const id = setTimeout(() => { this.timers.delete(id); fn(); }, ms);
+    this.timers.add(id);
+    return id;
+  }
+
+  every(fn, ms) {
+    const id = setInterval(fn, ms);
+    this.timers.add(id);
+    return id;
+  }
+
+  clearTimers() {
+    for (const id of this.timers) { clearTimeout(id); clearInterval(id); }
+    this.timers.clear();
+  }
+
+  connect() {
+    if (this.stopped || (this.ws && this.ws.readyState <= WebSocket.OPEN)) return;
+    this.clearTimers();
+    let ws;
+    try {
+      ws = new WebSocket(`${WORKER_URL.replace(/^http/, "ws")}/rooms/${encodeURIComponent(this.code)}/ws`);
+    } catch {
+      this.dropped(null);
+      return;
+    }
+    this.ws = ws;
+    const openTimer = this.later(() => { if (!this.live) { try { ws.close(); } catch { /* ignored */ } this.dropped(ws); } }, OPEN_TIMEOUT_MS);
+    ws.onopen = () => ws.send(JSON.stringify({ t: "hello", secret: this.secret, name: this.name }));
+    ws.onmessage = (event) => {
+      if (ws !== this.ws) return;
+      if (event.data === "pong") { this.lastPong = Date.now(); return; }
+      let message;
+      try { message = JSON.parse(event.data); } catch { return; }
+      if (message.t === "snapshot" && !this.live) { clearTimeout(openTimer); this.timers.delete(openTimer); this.wentLive(ws); }
+      this.handle(message);
+    };
+    ws.onclose = (event) => {
+      if (ws !== this.ws) return;
+      if (event.code === 4000 || event.code === 4004) { this.finish(); return; }
+      if (event.code === 4003) { this.finish("room_full"); return; }
+      this.dropped(ws);
+    };
+    ws.onerror = () => {};
+  }
+
+  wentLive(ws) {
+    this.live = true;
+    this.attempts = 0;
+    this.stopPolling();
+    this.onLink?.("live");
+    this.measureClock(ws);
+    this.every(() => this.measureClock(ws), CLOCK_RESYNC_MS);
+    this.lastPong = Date.now();
+    this.lastPing = 0;
+    this.every(() => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      // Measured from the last ping: a hidden tab's timer may be a minute late.
+      if (this.lastPing > this.lastPong && Date.now() - this.lastPing > PONG_TIMEOUT_MS) {
+        try { ws.close(); } catch { /* ignored */ }
+        this.dropped(ws);
+        return;
+      }
+      this.lastPing = Date.now();
+      ws.send("ping");
+    }, PING_MS);
+  }
+
+  dropped(ws) {
+    if (this.stopped || (ws && ws !== this.ws)) return;
+    this.ws = null;
+    this.live = false;
+    this.clearTimers();
+    this.fallBack();
+    const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** this.attempts);
+    this.attempts += 1;
+    this.later(() => this.connect(), delay + Math.random() * 300);
+  }
+
+  // Keeps the room usable while the socket is away.
+  fallBack() {
+    if (this.pollTimer || this.stopped) return;
+    this.onLink?.("polling");
+    this.lastHttpJoin = 0;
+    this.pollRun += 1;
+    const run = this.pollRun;
+    const current = () => run === this.pollRun && !this.stopped;
+    const poll = async () => {
+      if (!current()) return;
+      try {
+        if (Date.now() - this.lastHttpJoin > HTTP_JOIN_MS) {
+          this.lastHttpJoin = Date.now();
+          const joined = await postCommand(this.secret, this.code, { t: "join", name: this.name });
+          if (joined.error === "room_full") { this.finish("room_full"); return; }
+        }
+        const sent = Date.now();
+        const { room, now } = await fetchRoom(this.secret, this.code);
+        if (!current()) return;
+        this.sampleClock(sent, now);
+        if (!room) { this.finish(); return; }
+        this.acceptPolled(room);
+        this.onLink?.("polling");
+      } catch {
+        if (!current()) return;
+        this.onLink?.("lost");
+      }
+      this.pollTimer = setTimeout(poll, POLL_MS);
+    };
+    this.pollTimer = setTimeout(poll, 0);
+  }
+
+  stopPolling() {
+    this.pollRun += 1;
+    if (this.pollTimer) clearTimeout(this.pollTimer);
+    this.pollTimer = null;
+  }
+
+  acceptPolled(room) {
+    this.serverPlay = room.play;
+    const holdLocal = this.room && Date.now() - this.localPlayAt < LOCAL_PLAY_HOLD_MS && room.rev === this.room.rev;
+    this.room = holdLocal ? { ...room, play: this.room.play } : room;
+    this.onRoom?.(this.room);
+  }
+
+  measureClock(ws) {
+    this.bestRtt = Infinity; // Re-measure: the route and the local clock both change.
+    for (let i = 0; i < CLOCK_SAMPLES; i += 1) {
+      this.later(() => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: "time", sent: Date.now() }));
+      }, i * 400);
     }
   }
-  if (play.playing && video.paused) video.play().catch(() => {});
+
+  // The fastest round trip gives the most honest clock estimate.
+  sampleClock(sent, serverNow) {
+    if (!Number.isFinite(serverNow)) return;
+    const received = Date.now();
+    const rtt = received - sent;
+    if (rtt < 0 || rtt > this.bestRtt) return;
+    this.bestRtt = rtt;
+    this.offset = serverNow - (sent + received) / 2;
+  }
+
+  handle(message) {
+    switch (message.t) {
+      case "snapshot":
+        this.peerId = message.peerId;
+        if (this.bestRtt === Infinity) this.offset = message.now - Date.now();
+        this.room = message.room;
+        this.serverPlay = message.room.play;
+        this.onRoom?.(this.room);
+        break;
+      case "patch": {
+        if (!this.room) return;
+        const chat = message.chat && !this.room.chat.some((m) => m.id === message.chat.id)
+          ? [...this.room.chat, message.chat].slice(-60)
+          : this.room.chat;
+        this.room = { ...this.room, ...message.patch, chat };
+        if (message.patch?.play) this.serverPlay = message.patch.play;
+        this.onRoom?.(this.room);
+        // Dropped by the server while still here (another tab left, a long sleep).
+        if (message.patch?.who && !message.patch.who[this.peerId]) this.rejoin();
+        if (message.reaction) this.onEvent?.({ type: "reaction", ...message.reaction });
+        if (message.joined) this.onEvent?.({ type: "joined", ...message.joined });
+        if (message.left) this.onEvent?.({ type: "left", ...message.left });
+        break;
+      }
+      case "time":
+        this.sampleClock(message.sent, message.now);
+        break;
+      case "error":
+        if (message.error === "not_joined") this.rejoin();
+        if (message.for === "play") this.undoLocalPlay();
+        this.onEvent?.({ type: "error", error: message.error, for: message.for });
+        break;
+      case "closed":
+        this.finish();
+        break;
+      default:
+    }
+  }
+
+  rejoin() {
+    if (this.leaving || !this.live || this.ws?.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify({ t: "hello", secret: this.secret, name: this.name }));
+  }
+
+  undoLocalPlay() {
+    if (!this.room || !this.serverPlay) return;
+    this.localPlayAt = 0;
+    this.room = { ...this.room, play: this.serverPlay };
+    this.onRoom?.(this.room);
+  }
+
+  finish(reason = "closed") {
+    if (this.stopped) return;
+    this.stop();
+    this.onClosed?.(reason);
+  }
+
+  // Resolves { ok } or { error }. Over a live socket the answer is the broadcast.
+  async send(command) {
+    if (this.stopped) return { error: "stopped" };
+    if (command.t === "leave") this.leaving = true;
+    if (this.live && this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(command));
+      return { ok: true };
+    }
+    try {
+      const result = await postCommand(this.secret, this.code, command, command.t === "leave");
+      if (result.error === "not_joined") this.lastHttpJoin = 0;
+      if (result.error && command.t === "play") this.undoLocalPlay();
+      if (result.now) this.pollSoon();
+      return result;
+    } catch {
+      return { error: "network" };
+    }
+  }
+
+  pollSoon() {
+    if (!this.pollTimer) return;
+    fetchRoom(this.secret, this.code).then(({ room }) => {
+      if (room && !this.stopped) this.acceptPolled(room);
+    }).catch(() => {});
+  }
+
+  // Shows a local change at once; the server's broadcast then confirms it.
+  setPlayLocally(play) {
+    if (!this.room) return;
+    this.localPlayAt = Date.now();
+    this.room = { ...this.room, play: { ...this.room.play, ...play } };
+    this.onRoom?.(this.room);
+  }
+}
+
+// ── Sync ─────────────────────────────────────────────────────────────────────
+const IN_SYNC = 0.15; // seconds: close enough to stop steering
+const STEER_FROM = 0.3; // below this a viewer cannot tell
+const SEEK_FROM = 2.5;
+// A viewer whose network cannot keep up would otherwise loop seek → rebuffer →
+// behind again. After repeated seeks only speed steers, until the gap gets large.
+const SEEK_FROM_STRUGGLING = 10;
+const SEEK_COOLDOWN_MS = 3000;
+const STRUGGLE_WINDOW_MS = 30_000;
+const STRUGGLE_SEEKS = 2;
+const STEER_RATE = 0.08;
+
+export const createSyncTracker = () => ({ seeks: [], lastSeekAt: 0, steering: false, appliedRate: null });
+
+export function expectedPosition(play, serverNow) {
+  if (!play) return 0;
+  if (!play.playing) return play.position;
+  return play.position + (Math.max(0, serverNow - play.updatedAt) / 1000) * (play.rate || 1);
+}
+
+// Moves one <video> towards the room's clock. Called on every state change and on
+// a short tick, so it must be cheap and safe to repeat.
+export function syncVideo(video, play, serverNow, tracker, wallNow = Date.now()) {
+  if (!video || !play) return;
+  const duration = video.duration;
+  if (!duration || !Number.isFinite(duration)) return;
+  const baseRate = play.rate || 1;
+  const expected = Math.min(duration, Math.max(0, expectedPosition(play, serverNow)));
+  const setRate = (rate) => {
+    tracker.steering = rate !== baseRate;
+    tracker.appliedRate = rate;
+    if (Math.abs(video.playbackRate - rate) > 0.001) video.playbackRate = rate;
+  };
+
+  // Finished here while the room's clock also ran out: stay on the last frame.
+  if (video.ended && expected >= duration - 2) return;
+
+  if (play.playing && video.paused) video.play()?.catch?.(() => {});
   else if (!play.playing && !video.paused) video.pause();
-  return sought;
+
+  if (video.seeking) return;
+  const drift = expected - (video.currentTime || 0);
+  const gap = Math.abs(drift);
+
+  const seekTo = () => {
+    tracker.lastSeekAt = wallNow;
+    tracker.seeks = [...tracker.seeks.filter((at) => wallNow - at < STRUGGLE_WINDOW_MS), wallNow];
+    try { video.currentTime = expected; } catch { /* not seekable yet */ }
+  };
+
+  if (!play.playing) {
+    setRate(baseRate);
+    if (gap > STEER_FROM && wallNow - tracker.lastSeekAt >= 500) seekTo();
+    return;
+  }
+
+  const recentSeeks = tracker.seeks.filter((at) => wallNow - at < STRUGGLE_WINDOW_MS).length;
+  const seekFrom = recentSeeks >= STRUGGLE_SEEKS ? SEEK_FROM_STRUGGLING : SEEK_FROM;
+  if (gap > seekFrom) {
+    setRate(baseRate);
+    if (wallNow - tracker.lastSeekAt >= SEEK_COOLDOWN_MS) seekTo();
+  } else if (gap > STEER_FROM || (tracker.steering && gap > IN_SYNC)) {
+    setRate(baseRate * (1 + Math.sign(drift) * STEER_RATE));
+  } else {
+    setRate(baseRate);
+  }
 }

@@ -141,13 +141,10 @@ export const STORAGE_KEYS = {
   // sortBy }) so reopening the tab restores the user's filter selection.
   DISCOVER_FILTERS: "discoverFilters",
   // ── Watch Together (watch-party rooms) ─────────────────────────────────────
-  // Display name shown to other viewers in a room; the room code itself is the
-  // shareable secret (kept in component state / URL ?room=, not persisted long).
+  // Display name shown to other viewers in a room, and the room to return to after
+  // a reload or a visit to another tab. Leaving a room clears it.
   WT_NAME: "wtName",
   WT_LAST_CODE: "wtLastCode",
-  // Desktop only: the /api/room URL the Electron app talks to (web uses
-  // same-origin). Optional — if unset the tab shows "backend not configured".
-  WT_ENDPOINT: "wtEndpoint",
 };
 
 export const getApiKey = () => storage.get(STORAGE_KEYS.API_KEY);

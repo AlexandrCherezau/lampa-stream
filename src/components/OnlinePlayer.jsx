@@ -168,7 +168,7 @@ import {
 } from "../utils/api";
 import { fetchAniSkipTimings, resolveAnimeEpisode } from "../utils/aniSkip";
 import { fetchIntroDbTimings, mergeTimings, providerSkipRanges } from "../utils/introDetect";
-import { applySync as applyWatchSync } from "../utils/watchParty";
+import { createSyncTracker, expectedPosition, syncVideo } from "../utils/watchParty";
 import { storage, STORAGE_KEYS, getStoredVolume, getStoredMuted, setStoredVolume, setStoredMuted, setCappedMap } from "../utils/storage";
 import { getPlaybackCheckpoint, waitForViewingProfile, savePlaybackCheckpoint, flushViewingProfile, recordViewingSession, registerViewingProfileClosingCapture } from "../utils/viewingProfile";
 import { crossedPlaybackPosition, crossedWatchedThreshold, hasGenuinePlaybackForEnd, shouldApplyResumePosition } from "../utils/playbackCompletion";
@@ -216,6 +216,9 @@ const providerQualityLabel = (source) => source.qualityHeight >= 2160 ? "4K" : `
 const FLEET_STALL_MS = 7000;
 const PLAYBACK_STALL_MS = 20_000;
 const MIN_DISPLAY_MS = 250;
+const SYNC_TICK_MS = 500;
+// A video event this soon after the viewer touched the player is their doing.
+const SYNC_INPUT_WINDOW_MS = 1500;
 
 // ── Load dash.js once from the local vendor bundle ───────────────────────────
 let _dashLoader = null;
@@ -286,9 +289,12 @@ export default function OnlinePlayer({
   // is known). The parent (TVPage) turns this into the autoplay-next countdown.
   onNext = null,
   // ── Watch Together (optional; no-op when absent — normal MoviePage/TVPage) ──
-  syncRole = null, // "host" | "follower" | null
-  syncState = null, // follower: { playing, position, updatedAt } from the room
-  onPlaybackState = null, // host: cb({ playing, position }) on local control changes
+  syncRole = null, // "host" (may control playback) | "follower" | null
+  syncState = null, // the room's clock: { playing, position, rate, updatedAt }
+  syncClock = Date.now, // server time, the clock syncState is stamped with
+  onPlaybackState = null, // cb({ playing, position, rate }) after the viewer's own control
+  onSyncStatus = null, // cb({ buffering, duration }) so the room can show who is waiting
+  overlay = null, // rendered inside the fullscreen container
 }) {
   const videoRef = useRef(null);
   const [prebuffering, setPrebuffering] = useState(prebuffer);
@@ -348,6 +354,11 @@ export default function OnlinePlayer({
   // show an inline notice (a switch failed but the current media is fine).
   const hadPlayedRef = useRef(false);
   const userPausedRef = useRef(false);
+  const syncTrackerRef = useRef(null);
+  if (!syncTrackerRef.current) syncTrackerRef.current = createSyncTracker();
+  // Which title the attached stream belongs to. After a title change the old one
+  // stays attached until the new one resolves, and it must not follow the room.
+  const attachedKeyRef = useRef(null);
   const recoveryPendingRef = useRef(false);
   const recoveryInFlightRef = useRef(false);
   const recoveryFailedRef = useRef(false);
@@ -502,16 +513,19 @@ export default function OnlinePlayer({
   const refreshFleetSourceRef = useRef(null);
   refreshFleetSourceRef.current = isLampac ? lampac.refreshCurrent : null;
   const saveResumeTime = useCallback((t) => {
-    if (prebufferingRef.current) return;
+    // A room's position is the room's; the viewer's own place in the title stays.
+    if (prebufferingRef.current || syncRole) return;
     try {
       const map = storage.get(STORAGE_KEYS.RESUME_TIME) || {};
       map[progressKey] = Math.max(0, Math.round(t * 10) / 10); // 0.1s precision
       setCappedMap(STORAGE_KEYS.RESUME_TIME, map);
     } catch {}
-  }, [progressKey]);
+  }, [progressKey, syncRole]);
   const persistCheckpoint = useCallback((position, preferencePatch = null, flush = false, updateState = true) => {
     if (prebufferingRef.current) return;
     if (!progressKey || !checkpointItem.id) return;
+    if (syncRole && !preferencePatch) return;
+    if (syncRole) position = NaN; // Voice and quality choices are kept, the position is not.
     const previous = checkpointRef.current || {};
     const preferences = preferencePatch ? { ...(previous.preferences || {}), ...preferencePatch } : (previous.preferences || {});
     const value = {
@@ -658,6 +672,8 @@ export default function OnlinePlayer({
   // data saved by an older build), so existing users keep working.
   const resumeAt = useCallback((v) => {
     if (resumeDoneRef.current) return;
+    // In a room the position is the room's; only a source failover restores one.
+    if (syncRole && resumeTargetRef.current == null) return;
     const dur = v.duration;
     if (!dur || !isFinite(dur)) return; // not ready yet (HLS can fire early)
     try {
@@ -679,7 +695,7 @@ export default function OnlinePlayer({
       v.currentTime = t;
       resumeDoneRef.current = true;
     } catch {}
-  }, [progressKey]);
+  }, [progressKey, syncRole]);
 
   // ── Prefetch the HLS engine chunk on mount ──────────────────────────────────
   // loadHls() used to be called only after the stream URL was already in hand,
@@ -913,8 +929,10 @@ export default function OnlinePlayer({
       v.removeEventListener("loadedmetadata", onMeta);
       v.removeEventListener("pause", onPause);
     };
+    // A room starts paused, so its first real chance to judge the source is when
+    // someone presses play.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prebuffering, isLampac, stream, fleetFailover]);
+  }, [prebuffering, isLampac, stream, fleetFailover, syncState?.playing]);
 
   // A fatal engine error is not the only way a relay can stop: some stalls emit
   // neither an error nor `waiting`. After real playback, refresh the SAME source
@@ -926,16 +944,23 @@ export default function OnlinePlayer({
     let lastTime = v.currentTime || 0;
     let stalledSince = Date.now();
     let finished = false;
+    let syncSeekSeen = 0;
     const resetStall = (now = Date.now()) => {
       lastTime = v.currentTime || 0;
       stalledSince = now;
     };
     const checkStall = (now = Date.now()) => {
       const time = v.currentTime || 0;
-      if (document.hidden || !fleetPlayedRef.current || v.paused || userPausedRef.current || v.ended || v.seeking
+      // The room's own seeks are not progress: on a dead stream it keeps seeking
+      // forward, and that must not hide the stall from this watchdog.
+      if (document.hidden || !fleetPlayedRef.current || v.paused || userPausedRef.current || v.ended || (v.seeking && !syncRole)
         || v.readyState >= 3 || switching || recoveryInFlightRef.current || recoveryPendingRef.current) {
         resetStall(now);
         return;
+      }
+      if (syncRole && syncTrackerRef.current.lastSeekAt > syncSeekSeen) {
+        syncSeekSeen = syncTrackerRef.current.lastSeekAt;
+        lastTime = time;
       }
       if (time > lastTime + 0.1) {
         resetStall(now);
@@ -953,7 +978,7 @@ export default function OnlinePlayer({
     const onReset = () => resetStall();
     const onVisibility = () => resetStall();
     const timer = setInterval(() => checkStall(), 2500);
-    const resetEvents = ["pause", "play", "seeking", "seeked", "canplay", "playing", "loadeddata"];
+    const resetEvents = syncRole ? ["pause", "play", "playing", "loadeddata"] : ["pause", "play", "seeking", "seeked", "canplay", "playing", "loadeddata"];
     for (const event of resetEvents) {
       v.addEventListener(event, onReset);
     }
@@ -965,7 +990,7 @@ export default function OnlinePlayer({
       }
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [prebuffering, isLampac, stream, switching, saveResumeTime, refreshCurrentSource]);
+  }, [prebuffering, isLampac, stream, switching, saveResumeTime, refreshCurrentSource, syncRole]);
 
   // ── AniList + AniSkip (intro/outro) for anime ───────────────────────────────
   useEffect(() => {
@@ -1089,8 +1114,9 @@ export default function OnlinePlayer({
     const v = videoRef.current;
     if (!v) return;
     destroyAll();
+    attachedKeyRef.current = progressKey;
     const recoveringStream = recoveryPendingRef.current;
-    if (!recoveringStream) userPausedRef.current = false;
+    if (!recoveringStream) userPausedRef.current = !!syncStateRef.current && !syncStateRef.current.playing;
     recoveryPendingRef.current = false;
     resumeDoneRef.current = false; // allow one resume seek for this stream
     subsAddedRef.current = false;  // re-add subtitle <track>s for the new media
@@ -1372,7 +1398,8 @@ export default function OnlinePlayer({
         const t = resumeTargetRef.current ?? checkpointRef.current?.position ?? tMap[progressKey];
         const pct = pMap[progressKey];
         const explicitCheckpoint = Number.isFinite(checkpointRef.current?.position) || resumeTargetRef.current != null;
-        if (shouldApplyResumePosition({ position: t, progressPercent: pct, hasExplicitCheckpoint: explicitCheckpoint })) startPosition = t;
+        if (syncRole && syncStateRef.current) startPosition = resumeTargetRef.current ?? expectedPosition(syncStateRef.current, syncClockRef.current());
+        else if (shouldApplyResumePosition({ position: t, progressPercent: pct, hasExplicitCheckpoint: explicitCheckpoint })) startPosition = t;
       } catch {}
       // Buffer config (defaults were maxBufferLength 30 s / maxMaxBufferLength
       // 600 s / maxBufferSize 60 MB): a 30 s forward buffer leaves the playhead
@@ -1689,7 +1716,10 @@ export default function OnlinePlayer({
       seekTargetTimerRef.current = null;
       if (isLampac) lampac.clearSwitching();
     };
-    const onRate = () => setRate(v.playbackRate || 1);
+    const onRate = () => {
+      const tracker = syncTrackerRef.current;
+      if (!tracker.steering || v.playbackRate !== tracker.appliedRate) setRate(v.playbackRate || 1);
+    };
     const onVol = () => { if (!prebufferingRef.current) { setVolume(v.volume); setMuted(v.muted); } };
     const onWaiting = () => setWaiting(true);
     // Playback actually running → clear the switch freeze even when no resume
@@ -1752,53 +1782,96 @@ export default function OnlinePlayer({
   }, [stream, progressKey, persistCheckpoint]);
 
   // ── Watch Together sync ─────────────────────────────────────────────────────
-  // Follower: enforce the host's playback state (drift-correct + play/pause)
-  // immediately on every syncState change AND on a 500ms tick (expected
-  // position advances with time, so we keep correcting between polls).
-  //
-  // syncState is a NEW object reference every poll (JSON.parse of the room
-  // snapshot). We stash it in a ref so the 500ms tick reads the latest, and we
-  // ALSO re-apply immediately whenever syncState changes (the [syncState] dep)
-  // — this is the low-latency path: the moment a poll delivers a host
-  // play/pause/seek, we apply it without waiting for the next tick.
+  // Everyone steers towards the room's clock, on every room update and on a short
+  // tick, because the expected position keeps moving between updates. Only the
+  // viewer's own control is reported: a start-up autoplay or a correction from
+  // the sync must not move the room.
   const syncStateRef = useRef(syncState);
   syncStateRef.current = syncState;
-  useEffect(() => {
-    if (prebuffering || syncRole !== "follower" || !syncState) return;
+  const syncClockRef = useRef(syncClock);
+  syncClockRef.current = syncClock;
+  const lastInputAtRef = useRef(0);
+  const progressKeyRef = useRef(progressKey);
+  progressKeyRef.current = progressKey;
+  const switchingRef = useRef(switching);
+  switchingRef.current = switching;
+  const applyRoomClock = useCallback(() => {
     const v = videoRef.current;
-    if (!v) return;
-    applyWatchSync(v, syncState);
-  }, [prebuffering, syncRole, syncState]);
+    const play = syncStateRef.current;
+    if (!v || !play || prebufferingRef.current) return;
+    if (attachedKeyRef.current !== progressKeyRef.current) {
+      if (!v.paused) v.pause();
+      return;
+    }
+    userPausedRef.current = !play.playing;
+    syncVideo(v, play, syncClockRef.current(), syncTrackerRef.current);
+  }, []);
   useEffect(() => {
-    if (prebuffering || syncRole !== "follower") return;
+    if (syncRole) applyRoomClock();
+  }, [syncRole, syncState, applyRoomClock]);
+  useEffect(() => {
+    if (!syncRole) return undefined;
     const v = videoRef.current;
-    if (!v) return;
-    const apply = () => { if (syncStateRef.current) applyWatchSync(v, syncStateRef.current); };
-    const tick = setInterval(apply, 500);
-    return () => clearInterval(tick);
-  }, [prebuffering, syncRole, stream]);
+    const tick = setInterval(applyRoomClock, SYNC_TICK_MS);
+    v?.addEventListener("loadedmetadata", applyRoomClock);
+    v?.addEventListener("canplay", applyRoomClock);
+    document.addEventListener("visibilitychange", applyRoomClock);
+    return () => {
+      clearInterval(tick);
+      v?.removeEventListener("loadedmetadata", applyRoomClock);
+      v?.removeEventListener("canplay", applyRoomClock);
+      document.removeEventListener("visibilitychange", applyRoomClock);
+    };
+  }, [syncRole, stream, applyRoomClock]);
 
   useEffect(() => {
-    if (prebuffering || syncRole !== "host" || !onPlaybackState) return;
     const v = videoRef.current;
-    if (!v) return;
-    const report = () => onPlaybackState({ playing: !v.paused, position: v.currentTime || 0 });
-    const onPlay = () => report();
-    const onPause = () => report();
-    const onSeeked = () => report();
-    const onRate = () => report();
-    v.addEventListener("play", onPlay);
-    v.addEventListener("pause", onPause);
-    v.addEventListener("seeked", onSeeked);
-    v.addEventListener("ratechange", onRate);
-    return () => {
-      v.removeEventListener("play", onPlay);
-      v.removeEventListener("pause", onPause);
-      v.removeEventListener("seeked", onSeeked);
-      v.removeEventListener("ratechange", onRate);
+    if (!v || !syncRole || !onPlaybackState) return undefined;
+    // Only a settled player speaks for the room: not while loading or switching
+    // source, and not because the film ran out here. A position restored after a
+    // switch lands near the room's and is dropped as unchanged by the page.
+    const settled = () => Number.isFinite(v.duration) && v.duration > 0 && !v.ended
+      && attachedKeyRef.current === progressKeyRef.current && !switchingRef.current;
+    const recentInput = () => Date.now() - lastInputAtRef.current <= SYNC_INPUT_WINDOW_MS;
+    const report = (seeked) => {
+      const tracker = syncTrackerRef.current;
+      const ours = Math.abs(v.playbackRate - (tracker.appliedRate ?? -1)) < 0.001;
+      onPlaybackState({
+        playing: !v.paused,
+        position: v.currentTime || 0,
+        rate: ours ? syncStateRef.current?.rate || 1 : v.playbackRate || 1,
+        seeked,
+      });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prebuffering, syncRole, onPlaybackState, stream]);
+    // Play and pause count whatever caused them (the lock screen, a headset, iOS's
+    // own fullscreen controls), except that a hidden page gets paused by the system.
+    const onPlayState = () => { if (settled() && !document.hidden) report(false); };
+    // A seek needs an input: the sync and the stream engine both seek on their own.
+    const onSeeking = () => { if (settled() && (recentInput() || v.webkitDisplayingFullscreen)) report(true); };
+    const onRateChange = () => { if (settled() && recentInput()) report(false); };
+    const onKey = (event) => {
+      const tag = (event.target?.tagName || "").toLowerCase();
+      if (tag !== "input" && tag !== "textarea") lastInputAtRef.current = Date.now();
+    };
+    v.addEventListener("play", onPlayState);
+    v.addEventListener("pause", onPlayState);
+    v.addEventListener("seeking", onSeeking);
+    v.addEventListener("ratechange", onRateChange);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      v.removeEventListener("play", onPlayState);
+      v.removeEventListener("pause", onPlayState);
+      v.removeEventListener("seeking", onSeeking);
+      v.removeEventListener("ratechange", onRateChange);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [syncRole, onPlaybackState, stream]);
+
+  const syncStale = !!stream && attachedKeyRef.current !== progressKey;
+  const syncBuffering = waiting || state === "loading" || switching || syncStale;
+  useEffect(() => {
+    onSyncStatus?.({ buffering: syncBuffering, duration: !syncStale && Number.isFinite(duration) ? duration : null });
+  }, [onSyncStatus, syncBuffering, syncStale, duration]);
 
   // ── Progress reporting ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -1956,7 +2029,8 @@ export default function OnlinePlayer({
         } else {
           setSkipPrompt(seg);
           // Unclassified provider ranges require a click, even in automatic mode.
-          if (typeof seg === "string" && activeSkipMode === "auto" && !v.paused && !v.seeking) {
+          // In a room nobody jumps alone: the skip stays a button everyone sees move.
+          if (typeof seg === "string" && activeSkipMode === "auto" && !syncRole && !v.paused && !v.seeking) {
             v.currentTime = skipEndFor(seg, skipTimings);
             setSkipPrompt(null);
           }
@@ -2445,6 +2519,7 @@ export default function OnlinePlayer({
   if (state === "loading" && !hasMedia) {
     return (
       <div className="torrpicker">
+        {overlay}
         <div className="torrpicker-head">
           <div className="torrplayer-title">{srcTitle}</div>
           <div className="torrpicker-status"><span className="torrpicker-busy">Поиск источника{meta ? ` · ${meta}` : ""}…</span></div>
@@ -2456,6 +2531,7 @@ export default function OnlinePlayer({
   if (state === "error" && !hasMedia) {
     return (
       <div className="torrpicker">
+        {overlay}
         <div className="torrpicker-head">
           <div className="torrplayer-title">{isLampac ? "Lampac" : "Онлайн (Collaps)"}</div>
           <div className="torrpicker-status"><span className="torrpicker-error">{error}</span></div>
@@ -2503,9 +2579,12 @@ export default function OnlinePlayer({
       ref={containerRef}
       onMouseMove={showControls}
       onMouseLeave={() => { if (videoRef.current && !videoRef.current.paused) setControlsVisible(false); }}
+      onPointerDownCapture={syncRole ? () => { lastInputAtRef.current = Date.now(); } : undefined}
+      onPointerUpCapture={syncRole ? () => { lastInputAtRef.current = Date.now(); } : undefined}
     >
       <video ref={videoRef} className="torrplayer-video" playsInline crossOrigin="anonymous" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
       {waiting && <div className="torrplayer-spinner" />}
+      {overlay}
       {/* Re-resolving over a LIVE element (fleet failover mid-film, a retry):
           the element and its buffer stay mounted, only the overlay shows. */}
       {state === "loading" && hasMedia && (
@@ -2641,7 +2720,7 @@ export default function OnlinePlayer({
         )}
 
         {/* Speed */}
-        <div className="torrplayer-audio">
+        <div className="torrplayer-audio torrplayer-speed">
           <button className="torrplayer-btn" onClick={() => { setShowSpeed((v) => !v); setShowTracks(false); setShowQuality(false); setShowSubs(false); setShowBalanser(false); setShowVoice(false); }} title="Скорость (< >)"><GearI /><span className="torrplayer-audio-label">{rate}×</span></button>
           {showSpeed && (
             <div className={menuClass}>

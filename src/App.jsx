@@ -125,6 +125,8 @@ export default function App() {
   const routeIndexRef = useRef(window.history.state?.appIndex || 0);
   const currentRouteRef = useRef({ page: initialPage, selected: initialRoute.selected });
   const [wtInitialCode, setWtInitialCode] = useState(null); // ?room= deep-link
+  // Someone who came by an invitation can watch without a TMDB token of their own.
+  const [wtGuest, setWtGuest] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [dlSearchOpen, setDlSearchOpen] = useState(false);
   const [librarySort, setLibrarySort] = useState(
@@ -728,6 +730,7 @@ export default function App() {
       const code = new URLSearchParams(window.location.search).get("room");
       if (code) {
         setWtInitialCode(code.toUpperCase());
+        setWtGuest(true);
         setPage("together");
         setSelected(null);
         const route = { page: "together", selected: null };
@@ -1141,7 +1144,7 @@ export default function App() {
   );
 
   if (!apiKeyLoaded) return null; // wait for secure storage to resolve
-  if (!apiKey && !skipped && page !== "devices" && page !== "settings")
+  if (!apiKey && !skipped && page !== "devices" && page !== "settings" && !(page === "together" && (wtGuest || storage.get(STORAGE_KEYS.WT_LAST_CODE))))
     return <SetupScreen onSave={saveApiKey} onSkip={() => setSkipped(true)} />;
 
   const hasCustomTitlebar = platform === "win32" || platform === "linux";
@@ -1304,10 +1307,7 @@ export default function App() {
               <WatchTogetherPage
                 apiKey={apiKey}
                 initialCode={wtInitialCode}
-                progress={progress}
-                watched={watched}
-                onMarkWatched={markWatched}
-                onMarkUnwatched={markUnwatched}
+                onInitialCodeUsed={() => setWtInitialCode(null)}
               />
             )}
             {page === "settings" && (

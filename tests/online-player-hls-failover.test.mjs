@@ -148,7 +148,7 @@ test("same-URL automatic recovery forces a fresh media-engine attachment", () =>
 });
 
 test("a fresh same-source attachment retains an explicit user pause", () => {
-  const attachPause = new Function("recoveryPendingRef", "userPausedRef", pauseAttachBody);
+  const attachPause = new Function("recoveryPendingRef", "userPausedRef", "syncStateRef = { current: null }", pauseAttachBody);
   const userPausedRef = { current: true };
   const recoveryPendingRef = { current: true };
   attachPause(recoveryPendingRef, userPausedRef);
@@ -188,6 +188,8 @@ function createStallMonitor(overrides = {}) {
     setState: (state) => calls.push(["state", state]),
     setError: (error) => calls.push(["error", error]),
     PLAYBACK_STALL_MS: 20_000,
+    syncRole: null,
+    syncTrackerRef: { current: { lastSeekAt: 0 } },
     ...overrides,
   };
   const make = new Function(...Object.keys(env), `${monitorBody}; return { checkStall, resetStall };`);
@@ -297,4 +299,29 @@ test("stale refresh completion after a new source selection cannot replace its s
   resolveRefresh(false);
   assert.equal(await pending, undefined);
   assert.deepEqual(helper.calls, [["recovering", true], ["error", ""], ["state", "loading"], ["recovering", false]]);
+});
+
+test("in a room, the room's own seeks do not hide a stalled stream from the watchdog", () => {
+  const syncTrackerRef = { current: { lastSeekAt: 0 } };
+  const monitor = createStallMonitor({ syncRole: "host", syncTrackerRef });
+  // Every 10 s the sync jumps forward over a stream that has stopped delivering.
+  for (let at = 10_000; at <= 20_000; at += 10_000) {
+    monitor.v.currentTime += 10;
+    syncTrackerRef.current.lastSeekAt = at;
+    monitor.v.seeking = true;
+    monitor.checkStall(at);
+  }
+  assert.deepEqual(monitor.calls.at(-1), ["refreshCurrentSource"]);
+});
+
+test("in a room, a paused room holds a fresh attachment paused and a playing one does not", () => {
+  const attach = (playing) => {
+    const userPausedRef = { current: !playing };
+    new Function("recoveryPendingRef", "userPausedRef", "syncStateRef", pauseAttachBody)(
+      { current: false }, userPausedRef, { current: { playing } },
+    );
+    return userPausedRef.current;
+  };
+  assert.equal(attach(false), true);
+  assert.equal(attach(true), false);
 });

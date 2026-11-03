@@ -8,6 +8,7 @@ import { ensureSiteGate } from "./web/gate";
 import App from "./App";
 import "./styles/global.css";
 import "./styles/redesign.css";
+import "./styles/watch-together.css";
 
 // Web only: gate on the site password before mounting the app. On desktop this
 // resolves immediately (no VITE_SITE_PWD_HASH → no gate).

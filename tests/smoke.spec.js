@@ -236,6 +236,7 @@ test("series link retains its season and episode after reload", async ({ page })
 test("room invitations still open Watch Together", async ({ page }) => {
   await mockTmdb(page);
   await page.route("**/api/room**", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Offline test" }) }));
+  await page.route("**/rooms/**", (route) => route.abort());
   await page.addInitScript(() => localStorage.setItem("lampa_stream_tmdb_token", "e2e-fake-token"));
   await page.goto("/?room=ab12cd");
   await expect(page).toHaveURL(/\/together$/);
