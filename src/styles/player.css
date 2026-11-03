@@ -286,7 +286,12 @@
 .player-wrap:has(.torrplayer--hidden-cursor) .player-overlay-group { opacity: 0; pointer-events: none; }
 
 /* Narrower players (a room's stage, a small window) give way step by step. */
-@container (max-width: 1150px) { .torrplayer-ends { display: none; } }
+/* The film's line needs the room more than these words do. */
+@container (max-width: 1500px) {
+  .torrplayer-ends,
+  .torrplayer-btn[title="Источник"] .torrplayer-audio-label,
+  .torrplayer-btn[title^="Субтитры"] .torrplayer-audio-label { display: none; }
+}
 @container (max-width: 1100px) {
   .torrplayer-audio-label { display: none; }
   .torrplayer-btn:not(:has(svg)) .torrplayer-audio-label { display: inline; }
@@ -305,19 +310,25 @@
     min-height: 0;
     border-radius: 14px;
   }
+  /* A zero-height line break: the film's line above, buttons below. */
+  .torrplayer-controls::before { content: ""; order: 2; flex-basis: 100%; height: 0; }
   .torrplayer-time { order: 1; min-width: 0; padding-left: 4px; font-size: 11px; }
-  .torrplayer-seek { order: 1; flex: 1 1 calc(100% - 96px); height: 24px; min-width: 0; margin: 0 8px; }
+  .torrplayer-seek { order: 1; flex: 1 1 0; height: 24px; min-width: 0; margin: 0 8px; }
   .torrplayer-seek::before { content: ""; position: absolute; inset: -6px 0; }
   .torrplayer-seek-thumb { transform: translate(-50%, -50%) scale(0.85); }
   .torrplayer-remain { order: 1; padding-right: 4px; font-size: 11px; }
   .torrplayer-ends, .torrplayer-volume { display: none; }
-  .torrplayer-transport, .torrplayer-sound, .torrplayer-tools { order: 2; }
-  .torrplayer-tools { margin-left: auto; }
-  .torrplayer-btn { min-width: 34px; height: 36px; padding: 0 5px; font-size: 12px; }
+  .torrplayer-transport, .torrplayer-sound, .torrplayer-tools { order: 3; }
+  /* The buttons stay on one line: what does not fit scrolls. Menus are positioned
+     from the capsule, so this does not clip them. */
+  .torrplayer-tools { flex: 1 1 0; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .torrplayer-tools::-webkit-scrollbar { display: none; }
+  .torrplayer-tools > :first-child { margin-left: auto; }
+  .torrplayer-btn { flex: none; min-width: 34px; height: 36px; padding: 0 5px; font-size: 12px; }
   .torrplayer-btn--seekback, .torrplayer-btn--seekfwd { display: inline-flex; }
   @media (min-width: 481px) { .torrplayer-btn--pip { display: inline-flex; } }
-  /* The smallest phones keep play and pause: ten-second jumps are on the line. */
-  @media (max-width: 360px) { .torrplayer-btn--seekback, .torrplayer-btn--seekfwd { display: none; } }
+  /* A phone held upright keeps play and pause: the line is there for jumps. */
+  @media (max-width: 420px) { .torrplayer-btn--seekback, .torrplayer-btn--seekfwd { display: none; } }
   .torrplayer-audio-label { display: none; }
   .torrplayer-btn:not(:has(svg)) .torrplayer-audio-label { display: inline; }
   /* A menu takes the capsule's width and scrolls within the picture. */
