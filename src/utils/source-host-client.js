@@ -238,6 +238,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   let active = null;
   let previous = null;
   let confirmed = false;
+  let hopped = false;
   let preparedCandidate = null;
   let preparedCandidateQueued = false;
   let preparedFallbackCandidate = null;
@@ -266,7 +267,8 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     publish({ ...state, balansers: providers, balanser: active?.candidate.providerId,
       voices: candidates.filter((value) => value.providerId === active?.candidate.providerId).map((value) => ({ id: value.id, name: value.voiceName })),
       voice: active?.candidate.id, quality: active?.result.selected?.label,
-      sourcePreference: active ? {
+      // A source the player fell back to on its own is not the viewer's choice to remember.
+      sourcePreference: active && !hopped ? {
         providerId: active.candidate.providerId,
         voiceId: active.candidate.voiceId || "",
         voiceName: active.candidate.voiceName || "",
@@ -332,8 +334,11 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       })
       .catch((error) => {
         if (attempt.token !== generation || attempt.epoch !== selectionEpoch || (controller.signal.aborted && !timedOut)) return;
-        if (quality == null) recordProviderFailure(candidate.providerId, error);
-        failed.add(candidate.id);
+        if (quality == null) {
+          recordProviderFailure(candidate.providerId, error);
+          failed.add(candidate.id);
+        // Only the saved rendition is gone: the source itself gets another try on its own quality.
+        } else sourcePreference = { ...sourcePreference, quality: "" };
         if (candidate.id === preparedCandidate?.id) queuePreparedFallback();
         if (sourcePreference && matchesSourcePreference(candidate, sourcePreference)) preferenceReleased = true;
       })
@@ -469,6 +474,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   }
   async function choose(candidate, quality, manual) {
     if (manual) {
+      hopped = false;
       cancelRefresh();
       refreshAttempts = 0;
       abortAutomaticAttempts();
@@ -496,7 +502,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
         emit({ switching: false, sourceError: { message: error.message || "Не удалось переключить источник" } });
         return false;
       }
-      failed.add(candidate.id);
+      if (quality == null) failed.add(candidate.id);
       if (candidate.id === preparedCandidate?.id) queuePreparedFallback();
       return false;
     } finally {
@@ -537,7 +543,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     preparedCandidateQueued = false;
     preparedFallbackCandidate = null;
     preparedFallbackQueued = false;
-    candidates = []; failed = new Set(); active = previous = null; confirmed = false; finished = false;
+    candidates = []; failed = new Set(); active = previous = null; confirmed = false; hopped = false; finished = false;
     state = { stream: null, switching: false, sourceError: null, meta: "Ищем источники…", qualities: [], subtitles: [], audioNames: [], skip: null };
     emit();
     const token = generation;
@@ -612,6 +618,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       failed.add(active.candidate.id);
       active = previous = null;
       confirmed = false;
+      hopped = true;
       emit({ stream: null, switching: false, sourceError: null, audioNames: [], skip: null });
       return next();
     },

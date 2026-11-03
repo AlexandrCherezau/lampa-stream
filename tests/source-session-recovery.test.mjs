@@ -118,3 +118,22 @@ test('resolve retries a transient failure once and leaves real refusals alone',a
   await assert.rejects(resolveSource('a',undefined,left.signal));assert.equal(calls,1);
  }finally{globalThis.fetch=realFetch;}
 });
+test('an automatic hop does not overwrite the viewer\'s saved source, a manual pick after it does',async()=>{
+ const f=fixture();await start(f);
+ assert.equal(f.state.sourcePreference.providerId,'p');
+ f.session.abandonCurrent();await flush();
+ assert.equal(f.state.balanser,'other');assert.equal(f.state.sourcePreference,null);
+ await f.session.selectBalanser('p');
+ assert.equal(f.state.sourcePreference.providerId,'p');f.session.stop();
+});
+test('a saved quality that no longer resolves falls back to the same source at automatic quality',async()=>{
+ let state;const calls=[];
+ const session=createSourceSession({publish:value=>state=value,
+  discover:async(_,{onEvent})=>{onEvent('candidate',candidate('a'));onEvent('candidate',candidate('b','other'));},
+  resolve:async(id,quality)=>{calls.push({id,quality});if(quality==='1080p')throw new Error('gone');return id==='a'?result('a'):new Promise(()=>{});},
+ });
+ await session.start({title:'Fixture',type:'tv',season:1,episode:2},{providerId:'p',voiceId:'dub',voiceName:'dub',quality:'1080p'});
+ await flush();await flush();await flush();
+ assert.deepEqual(calls.filter(c=>c.id==='a'),[{id:'a',quality:'1080p'},{id:'a',quality:undefined}]);
+ assert.equal(state.balanser,'p');assert.deepEqual(state.balansers.map(p=>p.id),['p','other']);session.stop();
+});
