@@ -4,12 +4,46 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
         <title>Nahflix</title>
-        <meta name="theme-color" content="#0a0a0a" />
+        <meta name="theme-color" content="#0b0c0d" />
         <!-- Absolute path: "./logo.png" resolves against the DOCUMENT url, so
-             on a deep-linked /movie/<id> load the favicon 404s. The SVG is
-             24 KB vs the PNG's 71 KB and Chrome fetches favicons at high
-             priority — it was competing with the CSS/JS on the critical path. -->
-        <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+             on a deep-linked /movie/<id> load the favicon 404s. Kept under 3 KB:
+             Chrome fetches favicons at high priority, competing with the CSS/JS
+             on the critical path. -->
+        <link rel="icon" type="image/png" href="/app-icons/favicon-64.png" />
+        <!-- Home-screen install. iOS ignores the manifest for the icon and launch
+             screen, so both need their own tags; scripts/generate-app-icons.mjs
+             renders the images and prints the launch-screen tags. -->
+        <link rel="manifest" href="/app-icons/manifest.webmanifest" />
+        <link rel="apple-touch-icon" href="/app-icons/apple-touch-icon.png" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content="Nahflix" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <link rel="apple-touch-startup-image" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/app-icons/startup-1320x2868.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/app-icons/startup-2868x1320.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/app-icons/startup-1290x2796.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/app-icons/startup-2796x1290.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/app-icons/startup-1284x2778.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/app-icons/startup-2778x1284.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/app-icons/startup-1260x2736.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/app-icons/startup-2736x1260.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/app-icons/startup-1242x2688.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/app-icons/startup-2688x1242.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/app-icons/startup-828x1792.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" href="/app-icons/startup-1792x828.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/app-icons/startup-1206x2622.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/app-icons/startup-2622x1206.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/app-icons/startup-1179x2556.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/app-icons/startup-2556x1179.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/app-icons/startup-1170x2532.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/app-icons/startup-2532x1170.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/app-icons/startup-1125x2436.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" href="/app-icons/startup-2436x1125.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/app-icons/startup-750x1334.png" />
+        <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" href="/app-icons/startup-1334x750.png" />
+        <!-- Paints before the stylesheet arrives, so the launch screen does not
+             flash white on its way into the app. -->
+        <style>html { background: #0b0c0d; }</style>
         <!-- Preload the UI font: it was discovered only AFTER the render-blocking
              global.css was downloaded and parsed, so the correct font could not
              paint until one extra RTT later (font-display:swap turns that into a
