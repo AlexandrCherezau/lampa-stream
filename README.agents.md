@@ -452,3 +452,10 @@ Post-deploy /tmp/lampa-postdeploy-smoke-report.json: HaikyuuS1E14 иFightClub ×
 Выложено с согласия пользователя: `main` коммит `843345d`, production сайта `dpl_4ZDnaj7SRWhrEKAmoBbJMUcEZUuo` на https://nahflix.vercel.app и https://lampa-stream-six.vercel.app, откат `dpl_HjnBbhYnfrHXXu3FNHKtac75zzuy`. Сервер `dpl_9AZBH5fhCbog2ccDaY48SCWvnHiU`, откат `dpl_J3RuC4gakHYW6XPzFM3k3EWA7Do2`.
 Выкладка сервера теперь без ручного манифеста: ветка `deploy/source-host` = `main` плюс коммит с раскладкой (`vercel.json` и `Dockerfile.vercel` из `infrastructure/lampac` в корне, свой `.vercelignore`), `create_deployment` c `gitSource` на эту ветку. Для новой выкладки: влить `main` в неё, запушить, собрать. Переменные окружения проекта не менялись.
 Проверка после выкладки: пробная сборка того же коммита `dpl_D4Ptjk2NxartiQGnEsE5kbBUn5ha` с новым сервером, настоящие фильмы: Phantom 2 раза (1 остался на нём, 1 вернулся на прошлый источник), экранов ошибки 0; обрыв 4/4, переход за 6 с, позиция сохранена. Одиночные запросы без повторов к Phantom по-прежнему падают (0 из 2), причина не устранена, спасают повторы и откат. Браузерные тесты на объединённом коде 144 pass, 1 fail: `habster.spec.js:17` упал один раз, затем 36 из 36 при повторе. На самом production плеер не проверялся: сайт закрыт паролем. Следующий обязательный шаг отсутствует; если жалоба на Alloha повторится, нужны город и провайдер пользователя. На GitHub остались ветки `fix/source-reliability` и `feat/rename-nahflix`, обе уже в `main`.
+
+## Иконка и заставка на iPhone — 4 ноября 2026 (опубликовано)
+
+- Картинки лежат в `public/app-icons`, их рисует `scripts/generate-app-icons.mjs` (нужны Playwright и ImageMagick). Теги заставки в `index.html` печатает тот же скрипт с `--tags`.
+- `tests/app-icons.test.mjs` сверяет размер каждой заставки с её экраном: при несовпадении даже на пиксель iOS заставку не покажет. Новый iPhone добавляется в `IPHONE_SCREENS`.
+- Старая свинка `logo.png` осталась на экране первой настройки и в десктопной версии, вкладка браузера теперь с N.
+- На настоящем iPhone не проверялось. Чтобы увидеть новую иконку, старый ярлык надо удалить и добавить заново.
