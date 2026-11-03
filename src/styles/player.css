@@ -209,7 +209,15 @@
   backdrop-filter: var(--bar-blur);
 }
 .torrplayer-settings.is-open { display: grid; gap: 1px; }
-.torrplayer-settings:has(.torrplayer-audio-menu) { overflow: visible; }
+/* An open list replaces the rows: taller than a phone's panel, they would spill over the bar. */
+.torrplayer-settings:has(.torrplayer-audio-menu) {
+  overflow: visible;
+  pointer-events: none;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.torrplayer-settings:has(.torrplayer-audio-menu) .torrplayer-btn { visibility: hidden; }
 .torrplayer-settings .torrplayer-btn {
   justify-content: space-between;
   width: 100%;
@@ -231,6 +239,7 @@
   max-height: calc(100cqh - 72px);
   padding: 6px;
   overflow-y: auto;
+  pointer-events: auto;
   background: rgb(22 25 28 / 0.97);
   border-radius: 16px;
   box-shadow: 0 14px 40px rgb(0 0 0 / 0.45);
