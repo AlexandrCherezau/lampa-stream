@@ -70,7 +70,9 @@ test("before starting, only our button shows and the viewer's click reaches the 
   const box = await playButton.boundingBox();
   const hit = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e.tagName + "." + e.className; }, [box.x + box.width / 2, box.y + box.height / 2]);
   expect(hit).toContain("torrplayer-embed");
+  await page.waitForTimeout(500); // a just-loaded frame's first input can be dropped by the browser
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect.poll(() => page.frames().find((f) => f.url().startsWith("https://befriend")).evaluate(() => window.clicked || 0)).toBe(1);
   await expect(page.locator(".torrplayer--embed-start")).toHaveCount(0);
   const clicked = await page.frames().find((f) => f.url().startsWith("https://befriend")).evaluate(() => window.clicked || 0);
   expect(clicked).toBe(1);
@@ -78,9 +80,11 @@ test("before starting, only our button shows and the viewer's click reaches the 
 
 test("the frame's own bars are cut off by the player's edge while ours are in charge", async ({ page }) => {
   await open(page);
-  const rect = (selector) => page.locator(selector).evaluate((element) => { const r = element.getBoundingClientRect(); return { y: r.y, height: r.height }; });
-  const player = await rect(".torrplayer");
-  const frame = await rect(".torrplayer-embed");
+  // Measured together: the page may still be settling between two separate reads.
+  const { player, frame } = await page.evaluate(() => {
+    const rect = (selector) => { const r = document.querySelector(selector).getBoundingClientRect(); return { y: r.y, height: r.height }; };
+    return { player: rect(".torrplayer"), frame: rect(".torrplayer-embed") };
+  });
   expect(player.y - frame.y).toBeGreaterThanOrEqual(96);
   expect(frame.y + frame.height - (player.y + player.height)).toBeGreaterThanOrEqual(96);
   expect(frame.y + frame.height / 2).toBeCloseTo(player.y + player.height / 2, 0);

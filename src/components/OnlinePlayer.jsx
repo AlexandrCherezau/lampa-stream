@@ -356,6 +356,7 @@ export default function OnlinePlayer({
   const errCountRef = useRef(0);
   const embedRef = useRef(null);
   const embedFrameRef = useRef(null);
+  const embedLoadedRef = useRef(false);
   const [embedStarted, setEmbedStarted] = useState(false);
   const [embedMenuOpen, setEmbedMenuOpen] = useState(false);
   const [embedExposed, setEmbedExposed] = useState(false);
@@ -405,6 +406,8 @@ export default function OnlinePlayer({
   }, [prebuffering, state, onPrebufferFailed]);
   const [error, setError] = useState("");
   const [stream, setStream] = useState(null); // {dash?, hls?}
+  // A new page only. Reattaching to the same frame must not forget that it loaded.
+  useEffect(() => { setEmbedLoaded(false); embedLoadedRef.current = false; }, [stream?.embed]);
   const [audioNames, setAudioNames] = useState([]);
   const [subtitles, setSubtitles] = useState([]);
   const [meta, setMeta] = useState("");
@@ -934,7 +937,7 @@ export default function OnlinePlayer({
     const t = setTimeout(() => {
       if (stream.embed) {
         // It may wait for a click without a word, so only a page that never loaded failed.
-        if (!embedRef.current?.responded) fleetFailover();
+        if (!embedRef.current?.responded && !embedLoadedRef.current) fleetFailover();
         return;
       }
       if (fleetPlayedRef.current || userPausedRef.current) return; // paused viewers never trigger startup failover
@@ -1188,7 +1191,7 @@ export default function OnlinePlayer({
     setAudioTracks([]); setAudioId(-1);
     setLevels([]); setCurrentLevel(-1);
     errCountRef.current = 0;
-    setEmbedStarted(false); setEmbedMenuOpen(false); setEmbedExposed(false); setEmbedLoaded(false);
+    setEmbedStarted(false); setEmbedMenuOpen(false); setEmbedExposed(false);
     // Guard so an async attachHls (which awaits the dynamic hls.js import) bails
     // out if the effect cleaned up (stream change / unmount) before Hls loaded —
     // otherwise we'd attach a new Hls to a gone video and leak it.
@@ -2674,7 +2677,7 @@ export default function OnlinePlayer({
       <video ref={videoRef} className="torrplayer-video" playsInline crossOrigin="anonymous" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
       {stream?.embed && !prebuffering && (
         <>
-          <iframe key={stream.embed} ref={embedFrameRef} className="torrplayer-embed" src={stream.embed} onLoad={() => setEmbedLoaded(true)}
+          <iframe key={stream.embed} ref={embedFrameRef} className="torrplayer-embed" src={stream.embed} onLoad={() => { embedLoadedRef.current = true; setEmbedLoaded(true); }}
             title="Плеер Alloha" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" />
           {/* Keeps the pointer away from the frame once ours take over. Until then its
               click has to land in the frame, or the player starts without sound. */}
