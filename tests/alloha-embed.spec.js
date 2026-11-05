@@ -16,7 +16,7 @@ const FRAME = `<!doctype html><body style="background:#123"><button id="native" 
   emit("pause");
 <\/script>`;
 
-async function open(page, { blockAutoplay = false } = {}) {
+async function open(page, { blockAutoplay = false, frameBody = null } = {}) {
   await page.addInitScript(() => localStorage.setItem("lampa_stream_tmdb_token", "fixture"));
   await page.addInitScript((candidate) => {
     const originalFetch = window.fetch.bind(window);
@@ -26,7 +26,7 @@ async function open(page, { blockAutoplay = false } = {}) {
   }, { id: "alloha", providerId: "habster:alloha", providerName: "Habster · Alloha", voiceName: "Озвучки в плеере", qualityHint: "До 4K" });
   await page.route("**/api/tmdb/**", (route) => route.fulfill({ json: { id: 969681, title: "Фильм", original_title: "Film", release_date: "2026-07-31", runtime: 120, imdb_id: "tt22084616", kinopoisk_id: 5494049, genres: [], credits: { cast: [] }, results: [], images: {} } }));
   await page.route("**/api/source-host?op=resolve", (route) => route.fulfill({ json: { kind: "embed", selected: { label: "auto", url: EMBED }, qualities: [], subtitles: [], audioNames: [] } }));
-  await page.route("https://befriend.stravers.live/**", (route) => route.fulfill({ contentType: "text/html", body: blockAutoplay ? FRAME.replace("window.received = [];", "window.received = []; window.blockAutoplay = true;") : FRAME }));
+  await page.route("https://befriend.stravers.live/**", (route) => route.fulfill({ contentType: "text/html", body: frameBody || blockAutoplay ? frameBody || FRAME.replace("window.received = [];", "window.received = []; window.blockAutoplay = true;") : FRAME }));
   await page.goto("/movie/969681");
   await page.getByRole("button", { name: /^Смотреть/ }).first().click();
   await expect(page.locator(".torrplayer-embed")).toBeVisible();
@@ -59,6 +59,19 @@ test("a player waiting for a click gets it directly, then hands over to our cont
   await page.waitForTimeout(500);
   await frame.locator("#native").click();
   await expect(page.locator(".torrplayer--embed-front")).toHaveCount(0);
+});
+
+test("a silent player that waits for a click is not abandoned, and our controls stay reachable", async ({ page }) => {
+  test.setTimeout(60_000);
+  const silent = FRAME.replace('addEventListener("message"', 'if (false) addEventListener("message"').replace('emit("pause");\n<', '<');
+  await page.route("https://befriend.stravers.live/**", (route) => route.fulfill({ contentType: "text/html", body: silent }));
+  await open(page, { frameBody: silent });
+  await page.waitForTimeout(24_000);
+  await expect(page.locator(".torrplayer-embed")).toBeVisible();
+  await expect(page.locator(".torrplayer--embed-front")).toHaveCount(1);
+  await page.locator(".torrplayer-embed-back").click();
+  await expect(page.locator(".torrplayer--embed-front")).toHaveCount(0);
+  await expect(page.locator(".torrplayer-embed")).toBeVisible();
 });
 
 test("the Alloha button exposes its own menus and our button brings ours back", async ({ page }) => {

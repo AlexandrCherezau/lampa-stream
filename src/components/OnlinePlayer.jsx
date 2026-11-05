@@ -357,6 +357,7 @@ export default function OnlinePlayer({
   const embedFrameRef = useRef(null);
   const [embedStarted, setEmbedStarted] = useState(false);
   const [embedMenuOpen, setEmbedMenuOpen] = useState(false);
+  const [embedStartSkipped, setEmbedStartSkipped] = useState(false);
   const resumeDoneRef = useRef(false); // seek to saved timecode once per stream
   // True once ANY stream has actually attached. Used by the Lampac path to decide
   // whether a resolve error should blank the player (nothing ever played) or just
@@ -930,7 +931,7 @@ export default function OnlinePlayer({
     v.addEventListener("loadedmetadata", onMeta, { once: true });
     const t = setTimeout(() => {
       if (stream.embed) {
-        // The embedded player may wait for a click, so only silence means it failed.
+        // It may wait for a click without a word, so only a page that never loaded failed.
         if (!embedRef.current?.responded) fleetFailover();
         return;
       }
@@ -1155,7 +1156,7 @@ export default function OnlinePlayer({
     setAudioTracks([]); setAudioId(-1);
     setLevels([]); setCurrentLevel(-1);
     errCountRef.current = 0;
-    setEmbedStarted(false); setEmbedMenuOpen(false);
+    setEmbedStarted(false); setEmbedMenuOpen(false); setEmbedStartSkipped(false);
     // Guard so an async attachHls (which awaits the dynamic hls.js import) bails
     // out if the effect cleaned up (stream change / unmount) before Hls loaded —
     // otherwise we'd attach a new Hls to a gone video and leak it.
@@ -2566,6 +2567,7 @@ export default function OnlinePlayer({
   // failover paid a cold re-buffer (plus the 7 s stall watchdog) to get back.
   // The full-screen branches stay for the honest "nothing ever played" case.
   const hasMedia = !!stream || hadPlayedRef.current || fleetPlayedRef.current;
+  const embedFront = !!stream?.embed && (embedMenuOpen || (!embedStarted && !embedStartSkipped));
   if (state === "loading" && !hasMedia) {
     return (
       <div className="torrpicker">
@@ -2625,7 +2627,7 @@ export default function OnlinePlayer({
 
   return (
     <div
-      className={"torrplayer" + (stream?.embed ? " torrplayer--embed" : "") + (stream?.embed && (!embedStarted || embedMenuOpen) ? " torrplayer--embed-front" : "") + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor")}
+      className={"torrplayer" + (stream?.embed ? " torrplayer--embed" : "") + (embedFront ? " torrplayer--embed-front" : "") + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor")}
       ref={containerRef}
       onMouseMove={showControls}
       onMouseLeave={() => { if (videoRef.current && !videoRef.current.paused) setControlsVisible(false); }}
@@ -2639,7 +2641,7 @@ export default function OnlinePlayer({
             title="Плеер Alloha" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" />
           {/* Keeps the pointer away from the frame's own controls once ours take over. */}
           <div className="torrplayer-embed-shield" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
-          {embedMenuOpen && <button className="torrplayer-embed-back" onClick={() => setEmbedMenuOpen(false)}>Наши кнопки</button>}
+          {embedFront && <button className="torrplayer-embed-back" onClick={() => { setEmbedMenuOpen(false); setEmbedStartSkipped(true); }}>Наши кнопки</button>}
         </>
       )}
       {waiting && <div className="torrplayer-spinner" />}

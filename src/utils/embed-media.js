@@ -5,6 +5,8 @@
 const OVERRIDES = ["currentTime", "duration", "paused", "ended", "seeking", "readyState", "buffered", "play", "pause"];
 const EMPTY_RANGES = { length: 0, start: () => 0, end: () => 0 };
 const SEEK_ANSWER_MS = 4000;
+const PLAY_RETRY_MS = 1000;
+const PLAY_RETRIES = 10;
 
 function parseMessage(data) {
   try {
@@ -18,10 +20,11 @@ function parseMessage(data) {
 export function createEmbedMedia({ video, frame, url, onReady, target = window }) {
   const origin = new URL(url).origin;
   let time = 0, duration = NaN, paused = true, ended = false, seeking = false;
-  let ready = false, responded = false, wantsPlay = false, destroyed = false, metadataSent = false, seekTimer;
+  let ready = false, responded = false, wantsPlay = false, destroyed = false, metadataSent = false, seekTimer, playRetry;
 
   const fire = (type) => video.dispatchEvent(new Event(type));
   // The player only understands commands sent as JSON strings.
+  const stopPlayRetry = () => clearInterval(playRetry);
   const send = (command) => frame.contentWindow?.postMessage(JSON.stringify(command), origin);
   const finishSeek = () => {
     clearTimeout(seekTimer);
@@ -52,6 +55,7 @@ export function createEmbedMedia({ video, frame, url, onReady, target = window }
     } },
     pause: { value: () => {
       wantsPlay = false;
+      stopPlayRetry();
       send({ api: "pause" });
     } },
   };
@@ -63,6 +67,22 @@ export function createEmbedMedia({ video, frame, url, onReady, target = window }
     onReady?.();
   };
 
+  // The player is silent until it plays and registers its listener some time after
+  // load, so an early command is lost and a waiting player looks like a dead one.
+  const onLoad = () => {
+    responded = true;
+    if (!wantsPlay) return;
+    send({ api: "play" });
+    let retries = 0;
+    stopPlayRetry();
+    playRetry = setInterval(() => {
+      send({ api: "play" });
+      retries += 1;
+      if (retries >= PLAY_RETRIES) stopPlayRetry();
+    }, PLAY_RETRY_MS);
+  };
+  frame.addEventListener("load", onLoad);
+
   const onMessage = (event) => {
     if (event.source !== frame.contentWindow || event.origin !== origin) return;
     const message = parseMessage(event.data);
@@ -72,6 +92,7 @@ export function createEmbedMedia({ video, frame, url, onReady, target = window }
       // Sent before the frame had loaded, the first play request was lost.
       if (wantsPlay) send({ api: "play" });
     }
+    if (message.event === "play" || message.event === "timeupdate") stopPlayRetry();
     const value = Number(message.time);
     if (message.event === "timeupdate") {
       // A tick already in flight when a seek was sent still carries the old time.
@@ -117,6 +138,8 @@ export function createEmbedMedia({ video, frame, url, onReady, target = window }
       if (destroyed) return;
       destroyed = true;
       clearTimeout(seekTimer);
+      stopPlayRetry();
+      frame.removeEventListener("load", onLoad);
       target.removeEventListener("message", onMessage);
       for (const name of OVERRIDES) delete video[name];
     },

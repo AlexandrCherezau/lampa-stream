@@ -15,13 +15,15 @@ function fixture() {
     video.addEventListener(type, () => events.push(type));
   }
   let readyCalls = 0;
-  const media = createEmbedMedia({ video, frame: { contentWindow }, url: URL_, target, onReady: () => { readyCalls += 1; } });
+  const frame = new EventTarget();
+  frame.contentWindow = contentWindow;
+  const media = createEmbedMedia({ video, frame, url: URL_, target, onReady: () => { readyCalls += 1; } });
   const receive = (data, { source = contentWindow, origin = ORIGIN } = {}) => {
     const event = new Event("message");
     Object.assign(event, { data: typeof data === "string" ? data : JSON.stringify(data), source, origin });
     target.dispatchEvent(event);
   };
-  return { sent, video, events, media, receive, ready: () => readyCalls };
+  return { sent, video, frame, events, media, receive, ready: () => readyCalls };
 }
 
 test("controls reach the frame as JSON strings addressed to its origin only", async () => {
@@ -98,11 +100,49 @@ test("a seek holds the clock until answered, and a missing answer cannot leave i
 test("a play request made before the frame loaded is repeated when it first answers", async () => {
   const f = fixture();
   await f.video.play();
-  assert.equal(f.media.responded, false);
   f.receive({ event: "pause", time: 0 });
   f.receive({ event: "pause", time: 0 });
-  assert.equal(f.media.responded, true);
   assert.equal(f.sent.filter((value) => value.data.api === "play").length, 2);
+});
+
+test("a loaded frame counts as alive even though the player stays silent until clicked", () => {
+  const f = fixture();
+  assert.equal(f.media.responded, false);
+  f.frame.dispatchEvent(new Event("load"));
+  assert.equal(f.media.responded, true);
+});
+
+test("play is repeated after the frame loads until the player answers, and stops when told to", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const plays = (f) => f.sent.filter((value) => value.data.api === "play").length;
+  const f = fixture();
+  await f.video.play();
+  f.frame.dispatchEvent(new Event("load"));
+  const afterLoad = plays(f);
+  assert.equal(afterLoad, 2);
+  t.mock.timers.tick(1000);
+  t.mock.timers.tick(1000);
+  assert.equal(plays(f), afterLoad + 2);
+  f.receive({ event: "play", time: 0 });
+  t.mock.timers.tick(5000);
+  assert.equal(plays(f), afterLoad + 2, "the player answered");
+
+  const paused = fixture();
+  await paused.video.play();
+  paused.frame.dispatchEvent(new Event("load"));
+  paused.video.pause();
+  const before = plays(paused);
+  t.mock.timers.tick(5000);
+  assert.equal(plays(paused), before, "the viewer paused");
+
+  const gaveUp = fixture();
+  await gaveUp.video.play();
+  gaveUp.frame.dispatchEvent(new Event("load"));
+  t.mock.timers.tick(60_000);
+  const settled = plays(gaveUp);
+  t.mock.timers.tick(60_000);
+  assert.equal(plays(gaveUp), settled, "a player waiting for a click is not nagged forever");
+  gaveUp.media.destroy();
 });
 
 test("messages from another window, another origin or with bad data are ignored", () => {
@@ -112,7 +152,6 @@ test("messages from another window, another origin or with bad data are ignored"
   f.receive("{not json");
   f.receive({ event: "timeupdate", time: "soon" });
   assert.equal(f.video.currentTime, 0);
-  assert.equal(f.media.responded, true, "the bad-time message still came from the real frame");
   assert.deepEqual(f.events, []);
 });
 
