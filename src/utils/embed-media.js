@@ -18,7 +18,7 @@ function parseMessage(data) {
 export function createEmbedMedia({ video, frame, url, onReady, target = window }) {
   const origin = new URL(url).origin;
   let time = 0, duration = NaN, paused = true, ended = false, seeking = false;
-  let ready = false, responded = false, wantsPlay = false, destroyed = false, metadataSent = false, seekTimer;
+  let ready = false, responded = false, playAllowed = false, destroyed = false, metadataSent = false, seekTimer;
 
   const fire = (type) => video.dispatchEvent(new Event(type));
   // The player only understands commands sent as JSON strings.
@@ -45,13 +45,13 @@ export function createEmbedMedia({ video, frame, url, onReady, target = window }
     seeking: { get: () => seeking },
     readyState: { get: () => (ready ? 4 : 0) },
     buffered: { get: () => EMPTY_RANGES },
+    // Started without the viewer's own click inside the frame, the player runs muted,
+    // and sound can only be restored from its own menu.
     play: { value: () => {
-      wantsPlay = true;
-      send({ api: "play" });
+      if (playAllowed || ready) send({ api: "play" });
       return Promise.resolve();
     } },
     pause: { value: () => {
-      wantsPlay = false;
       send({ api: "pause" });
     } },
   };
@@ -63,15 +63,15 @@ export function createEmbedMedia({ video, frame, url, onReady, target = window }
     onReady?.();
   };
 
+  // The player says nothing until it plays, so a waiting player looks like a dead one.
+  const onLoad = () => { responded = true; };
+  frame.addEventListener("load", onLoad);
+
   const onMessage = (event) => {
     if (event.source !== frame.contentWindow || event.origin !== origin) return;
     const message = parseMessage(event.data);
     if (!message) return;
-    if (!responded) {
-      responded = true;
-      // Sent before the frame had loaded, the first play request was lost.
-      if (wantsPlay) send({ api: "play" });
-    }
+    responded = true;
     const value = Number(message.time);
     if (message.event === "timeupdate") {
       // A tick already in flight when a seek was sent still carries the old time.
@@ -113,10 +113,12 @@ export function createEmbedMedia({ video, frame, url, onReady, target = window }
 
   return {
     get responded() { return responded; },
+    allowPlayCommands() { playAllowed = true; },
     destroy() {
       if (destroyed) return;
       destroyed = true;
       clearTimeout(seekTimer);
+      frame.removeEventListener("load", onLoad);
       target.removeEventListener("message", onMessage);
       for (const name of OVERRIDES) delete video[name];
     },
