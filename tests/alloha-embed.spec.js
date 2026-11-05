@@ -3,7 +3,7 @@
 import { test, expect } from "@playwright/test";
 
 const EMBED = "https://befriend.stravers.live/?kp=5494049&token=t";
-const FRAME = `<!doctype html><body style="background:#123"><button id="native" style="position:fixed;inset:0;width:100%;height:100%">native</button><script>
+const FRAME = `<!doctype html><body style="background:#123"><button id="native" style="position:fixed;inset:0;width:100%;height:100%">native</button><div id="bar" style="position:fixed;left:0;right:0;bottom:10px;height:40px;pointer-events:none"></div><script>
   let time = 0, playing = false; window.received = [];
   const emit = (event, value = time) => parent.postMessage(JSON.stringify({ event, time: value }), "*");
   document.getElementById("native").onclick = () => { window.clicked = (window.clicked || 0) + 1; playing = true; emit("play"); };
@@ -12,7 +12,7 @@ const FRAME = `<!doctype html><body style="background:#123"><button id="native" 
     if (m.api === "pause") { playing = false; emit("pause"); }
     if (m.api === "seek") { time = m.value; emit("seek"); }
     if (m.api === "duration") emit("duration", 7200); });
-  setInterval(() => { if (playing) { time += 0.25; emit("timeupdate"); } }, 250);
+  setInterval(() => { if (playing && !window.freeze) { time += 0.25; emit("timeupdate"); } }, 250);
   emit("pause");
 <\/script>`;
 
@@ -38,7 +38,7 @@ const reveal = async (page) => { const box = await page.locator(".torrplayer").b
 test("our controls drive the embedded player and keep the pointer off its own", async ({ page }) => {
   const frame = await open(page);
   await frame.locator("#native").click();
-  await expect(page.locator(".torrplayer--embed-front")).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.locator(".torrplayer--embed-start")).toHaveCount(0, { timeout: 15_000 });
   await expect(page.locator(".torrplayer-embed-shield")).toBeVisible();
   await reveal(page);
   await expect(page.locator(".torrplayer-btn--mute")).toBeHidden();
@@ -58,34 +58,62 @@ test("the player is never started before the viewer's click", async ({ page }) =
   await open(page);
   await page.waitForTimeout(3000);
   expect((await received(page)).filter((m) => m.api === "play")).toHaveLength(0);
-  await expect(page.locator(".torrplayer--embed-front")).toHaveCount(1);
+  await expect(page.locator(".torrplayer--embed-start")).toHaveCount(1);
 });
 
-test("a player waiting for a click gets it directly, then hands over to our controls", async ({ page }) => {
-  const frame = await open(page, { blockAutoplay: true });
-  await expect(page.locator(".torrplayer--embed-front")).toHaveCount(1);
-  await page.waitForTimeout(500);
-  await frame.locator("#native").click();
-  await expect(page.locator(".torrplayer--embed-front")).toHaveCount(0);
+test("before starting, only our button shows and the viewer's click reaches the frame", async ({ page }) => {
+  await open(page);
+  await expect(page.locator(".torrplayer--embed-start")).toHaveCount(1);
+  const playButton = page.locator(".torrplayer-bigplay");
+  await expect(playButton).toBeVisible();
+  await expect(page.locator(".torrplayer-btn--play")).toBeHidden();
+  const box = await playButton.boundingBox();
+  const hit = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e.tagName + "." + e.className; }, [box.x + box.width / 2, box.y + box.height / 2]);
+  expect(hit).toContain("torrplayer-embed");
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.locator(".torrplayer--embed-start")).toHaveCount(0);
+  const clicked = await page.frames().find((f) => f.url().startsWith("https://befriend")).evaluate(() => window.clicked || 0);
+  expect(clicked).toBe(1);
 });
 
-test("a silent player that waits for a click is not abandoned, and our controls stay reachable", async ({ page }) => {
+test("the frame's own bars are cut off by the player's edge while ours are in charge", async ({ page }) => {
+  await open(page);
+  const rect = (selector) => page.locator(selector).evaluate((element) => { const r = element.getBoundingClientRect(); return { y: r.y, height: r.height }; });
+  const player = await rect(".torrplayer");
+  const frame = await rect(".torrplayer-embed");
+  expect(player.y - frame.y).toBeGreaterThanOrEqual(96);
+  expect(frame.y + frame.height - (player.y + player.height)).toBeGreaterThanOrEqual(96);
+  expect(frame.y + frame.height / 2).toBeCloseTo(player.y + player.height / 2, 0);
+});
+
+test("a player that does not start after the click is shown whole, so an ad can be used", async ({ page }) => {
   test.setTimeout(60_000);
-  const silent = FRAME.replace('addEventListener("message"', 'if (false) addEventListener("message"').replace('emit("pause");\n<', '<');
-  await page.route("https://befriend.stravers.live/**", (route) => route.fulfill({ contentType: "text/html", body: silent }));
-  await open(page, { frameBody: silent });
-  await page.waitForTimeout(24_000);
-  await expect(page.locator(".torrplayer-embed")).toBeVisible();
-  await expect(page.locator(".torrplayer--embed-front")).toHaveCount(1);
-  await page.locator(".torrplayer-embed-back").click();
-  await expect(page.locator(".torrplayer--embed-front")).toHaveCount(0);
-  await expect(page.locator(".torrplayer-embed")).toBeVisible();
+  const frameBody = FRAME.replace('playing = true; emit("play");', 'window.adShown = true;');
+  const frame = await open(page, { frameBody });
+  await expect(page.locator(".torrplayer--embed-exposed")).toHaveCount(0);
+  await frame.locator("#native").click();
+  await expect(page.locator(".torrplayer--embed-exposed")).toHaveCount(1, { timeout: 15_000 });
+  const player = await page.locator(".torrplayer").boundingBox();
+  const shown = await page.locator(".torrplayer-embed").boundingBox();
+  expect(shown.y).toBeCloseTo(player.y, 0);
+  await expect(page.locator(".torrplayer-embed-shield")).toBeHidden();
 });
 
-test("the Alloha button exposes its own menus and our button brings ours back", async ({ page }) => {
+test("a playing film whose clock stops is shown whole until it moves again", async ({ page }) => {
+  test.setTimeout(60_000);
   const frame = await open(page);
   await frame.locator("#native").click();
-  await expect(page.locator(".torrplayer--embed-front")).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.locator(".torrplayer--embed-start")).toHaveCount(0);
+  await page.frames().find((f) => f.url().startsWith("https://befriend")).evaluate(() => { window.freeze = true; });
+  await expect(page.locator(".torrplayer--embed-exposed")).toHaveCount(1, { timeout: 15_000 });
+  await page.frames().find((f) => f.url().startsWith("https://befriend")).evaluate(() => { window.freeze = false; });
+  await expect(page.locator(".torrplayer--embed-exposed")).toHaveCount(0, { timeout: 5_000 });
+});
+
+test("the settings button shows the whole frame and Готово brings ours back", async ({ page }) => {
+  const frame = await open(page);
+  await frame.locator("#native").click();
+  await expect(page.locator(".torrplayer--embed-start")).toHaveCount(0, { timeout: 15_000 });
   await reveal(page);
   await page.locator(".torrplayer-btn--embed-menu").click();
   await expect(page.locator(".torrplayer--embed-front")).toHaveCount(1);

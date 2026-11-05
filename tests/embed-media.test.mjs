@@ -28,7 +28,8 @@ function fixture() {
 
 test("controls reach the frame as JSON strings addressed to its origin only", async () => {
   const f = fixture();
-  f.media.allowPlayCommands();
+  f.receive({ event: "timeupdate", time: 1 });
+  f.sent.length = 0;
   await f.video.play();
   f.video.pause();
   f.video.currentTime = 600;
@@ -118,11 +119,24 @@ test("nothing starts the player before the viewer's own click, which would start
   assert.equal(plays(), 1, "once it runs, our button works");
 });
 
-test("a viewer who chose our controls before starting can start from them", async () => {
+test("a loaded frame counts as alive even though the player stays silent until clicked", () => {
   const f = fixture();
-  f.media.allowPlayCommands();
+  assert.equal(f.media.responded, false);
+  f.frame.dispatchEvent(new Event("load"));
+  assert.equal(f.media.responded, true);
+});
+
+test("nothing starts the player before the viewer's own click, which would start it muted", async () => {
+  const f = fixture();
+  const plays = () => f.sent.filter((value) => value.data.api === "play").length;
   await f.video.play();
-  assert.equal(f.sent.filter((value) => value.data.api === "play").length, 1);
+  f.frame.dispatchEvent(new Event("load"));
+  f.receive({ event: "pause", time: 0 });
+  assert.equal(plays(), 0);
+  f.receive({ event: "play", time: 0 });
+  f.receive({ event: "timeupdate", time: 0.3 });
+  await f.video.play();
+  assert.equal(plays(), 1, "once it runs, our button works");
 });
 
 test("messages from another window, another origin or with bad data are ignored", () => {
