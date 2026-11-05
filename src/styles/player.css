@@ -389,6 +389,7 @@
 /* For its menus, or when it may need the viewer, the frame is shown whole. */
 .torrplayer--embed-front .torrplayer-embed { top: 0; height: 100%; z-index: 40; }
 .torrplayer--embed-front .torrplayer-embed-shield { display: none; }
+.player-wrap:has(.torrplayer--embed-front) .player-overlay-group { display: none; }
 .torrplayer-embed-back {
   position: absolute;
   top: var(--capsule-gap);
