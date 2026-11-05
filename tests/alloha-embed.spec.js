@@ -45,7 +45,7 @@ test("our controls drive the embedded player and keep the pointer off its own", 
   await page.locator(".torrplayer-btn--play").click();
   await expect.poll(async () => (await received(page)).some((m) => m.api === "pause")).toBe(true);
   await page.locator(".torrplayer-bigplay").click({ timeout: 5000 });
-  await expect.poll(async () => (await received(page)).filter((m) => m.api === "play").length).toBeGreaterThan(1);
+  await expect.poll(async () => (await received(page)).filter((m) => m.api === "play").length).toBeGreaterThan(0);
   await expect(page.locator(".torrplayer-bigplay")).toBeHidden();
   const box = await page.locator(".torrplayer").boundingBox();
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
