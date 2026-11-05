@@ -51,7 +51,7 @@ test("the frame's messages become media events and element state", () => {
   assert.equal(f.video.seeking, false);
   f.receive({ event: "pause", time: 600 });
   assert.equal(f.video.paused, true);
-  assert.deepEqual(f.events, ["play", "playing", "loadedmetadata", "canplay", "timeupdate", "durationchange", "seeked", "timeupdate", "pause"]);
+  assert.deepEqual(f.events, ["play", "playing", "timeupdate", "durationchange", "loadedmetadata", "canplay", "seeked", "timeupdate", "pause"]);
 });
 
 test("the player counts as started only once its clock moves, and only once", () => {
@@ -62,6 +62,37 @@ test("the player counts as started only once its clock moves, and only once", ()
   f.receive({ event: "timeupdate", time: 0.6 });
   assert.equal(f.ready(), 1);
   assert.equal(f.sent.filter((value) => value.data.api === "duration").length >= 1, true);
+});
+
+test("metadata waits for the duration, because a resume seek needs it", () => {
+  const f = fixture();
+  let durationAtMetadata;
+  f.video.addEventListener("loadedmetadata", () => { durationAtMetadata = f.video.duration; });
+  f.receive({ event: "timeupdate", time: 0.3 });
+  assert.equal(durationAtMetadata, undefined);
+  f.receive({ event: "duration", time: 7200 });
+  f.receive({ event: "duration", time: 7200 });
+  assert.equal(durationAtMetadata, 7200);
+  assert.equal(f.events.filter((type) => type === "loadedmetadata").length, 1);
+});
+
+test("a seek holds the clock until answered, and a missing answer cannot leave it stuck", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = fixture();
+  f.receive({ event: "timeupdate", time: 10 });
+  f.video.currentTime = 600;
+  f.receive({ event: "timeupdate", time: 10.25 });
+  assert.equal(f.video.currentTime, 600, "a stale tick must not snap the seek bar back");
+  assert.equal(f.video.seeking, true);
+  t.mock.timers.tick(5000);
+  assert.equal(f.video.seeking, false);
+  assert.equal(f.events.filter((type) => type === "seeked").length, 1);
+  f.receive({ event: "timeupdate", time: 601 });
+  assert.equal(f.video.currentTime, 601);
+  f.video.currentTime = 900;
+  f.media.destroy();
+  t.mock.timers.tick(5000);
+  assert.equal(f.events.filter((type) => type === "seeked").length, 1, "no event after teardown");
 });
 
 test("a play request made before the frame loaded is repeated when it first answers", async () => {
