@@ -28,6 +28,7 @@ function fixture() {
 
 test("controls reach the frame as JSON strings addressed to its origin only", async () => {
   const f = fixture();
+  f.media.allowPlayCommands();
   await f.video.play();
   f.video.pause();
   f.video.currentTime = 600;
@@ -97,14 +98,6 @@ test("a seek holds the clock until answered, and a missing answer cannot leave i
   assert.equal(f.events.filter((type) => type === "seeked").length, 1, "no event after teardown");
 });
 
-test("a play request made before the frame loaded is repeated when it first answers", async () => {
-  const f = fixture();
-  await f.video.play();
-  f.receive({ event: "pause", time: 0 });
-  f.receive({ event: "pause", time: 0 });
-  assert.equal(f.sent.filter((value) => value.data.api === "play").length, 2);
-});
-
 test("a loaded frame counts as alive even though the player stays silent until clicked", () => {
   const f = fixture();
   assert.equal(f.media.responded, false);
@@ -112,37 +105,24 @@ test("a loaded frame counts as alive even though the player stays silent until c
   assert.equal(f.media.responded, true);
 });
 
-test("play is repeated after the frame loads until the player answers, and stops when told to", async (t) => {
-  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
-  const plays = (f) => f.sent.filter((value) => value.data.api === "play").length;
+test("nothing starts the player before the viewer's own click, which would start it muted", async () => {
   const f = fixture();
+  const plays = () => f.sent.filter((value) => value.data.api === "play").length;
   await f.video.play();
   f.frame.dispatchEvent(new Event("load"));
-  const afterLoad = plays(f);
-  assert.equal(afterLoad, 2);
-  t.mock.timers.tick(1000);
-  t.mock.timers.tick(1000);
-  assert.equal(plays(f), afterLoad + 2);
+  f.receive({ event: "pause", time: 0 });
+  assert.equal(plays(), 0);
   f.receive({ event: "play", time: 0 });
-  t.mock.timers.tick(5000);
-  assert.equal(plays(f), afterLoad + 2, "the player answered");
+  f.receive({ event: "timeupdate", time: 0.3 });
+  await f.video.play();
+  assert.equal(plays(), 1, "once it runs, our button works");
+});
 
-  const paused = fixture();
-  await paused.video.play();
-  paused.frame.dispatchEvent(new Event("load"));
-  paused.video.pause();
-  const before = plays(paused);
-  t.mock.timers.tick(5000);
-  assert.equal(plays(paused), before, "the viewer paused");
-
-  const gaveUp = fixture();
-  await gaveUp.video.play();
-  gaveUp.frame.dispatchEvent(new Event("load"));
-  t.mock.timers.tick(60_000);
-  const settled = plays(gaveUp);
-  t.mock.timers.tick(60_000);
-  assert.equal(plays(gaveUp), settled, "a player waiting for a click is not nagged forever");
-  gaveUp.media.destroy();
+test("a viewer who chose our controls before starting can start from them", async () => {
+  const f = fixture();
+  f.media.allowPlayCommands();
+  await f.video.play();
+  assert.equal(f.sent.filter((value) => value.data.api === "play").length, 1);
 });
 
 test("messages from another window, another origin or with bad data are ignored", () => {

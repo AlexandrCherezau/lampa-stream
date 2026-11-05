@@ -2641,7 +2641,7 @@ export default function OnlinePlayer({
             title="Плеер Alloha" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" />
           {/* Keeps the pointer away from the frame's own controls once ours take over. */}
           <div className="torrplayer-embed-shield" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
-          {embedFront && <button className="torrplayer-embed-back" onClick={() => { setEmbedMenuOpen(false); setEmbedStartSkipped(true); }}>Наши кнопки</button>}
+          {embedFront && <button className="torrplayer-embed-back" onClick={() => { embedRef.current?.allowPlayCommands(); setEmbedMenuOpen(false); setEmbedStartSkipped(true); }}>Наши кнопки</button>}
         </>
       )}
       {waiting && <div className="torrplayer-spinner" />}

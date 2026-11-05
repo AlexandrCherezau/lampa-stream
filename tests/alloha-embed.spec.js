@@ -36,7 +36,8 @@ const received = (page) => page.frames().find((frame) => frame.url().startsWith(
 const reveal = async (page) => { const box = await page.locator(".torrplayer").boundingBox(); await page.mouse.move(box.x + box.width / 2, box.y + box.height / 3); await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 3); };
 
 test("our controls drive the embedded player and keep the pointer off its own", async ({ page }) => {
-  await open(page);
+  const frame = await open(page);
+  await frame.locator("#native").click();
   await expect(page.locator(".torrplayer--embed-front")).toHaveCount(0, { timeout: 15_000 });
   await expect(page.locator(".torrplayer-embed-shield")).toBeVisible();
   await reveal(page);
@@ -50,7 +51,14 @@ test("our controls drive the embedded player and keep the pointer off its own", 
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect.poll(async () => (await received(page)).filter((m) => m.api === "pause").length).toBeGreaterThan(1);
   const clicked = await page.frames().find((f) => f.url().startsWith("https://befriend")).evaluate(() => window.clicked || 0);
-  expect(clicked).toBe(0);
+  expect(clicked).toBe(1);
+});
+
+test("the player is never started before the viewer's click", async ({ page }) => {
+  await open(page);
+  await page.waitForTimeout(3000);
+  expect((await received(page)).filter((m) => m.api === "play")).toHaveLength(0);
+  await expect(page.locator(".torrplayer--embed-front")).toHaveCount(1);
 });
 
 test("a player waiting for a click gets it directly, then hands over to our controls", async ({ page }) => {
@@ -76,6 +84,7 @@ test("a silent player that waits for a click is not abandoned, and our controls 
 
 test("the Alloha button exposes its own menus and our button brings ours back", async ({ page }) => {
   const frame = await open(page);
+  await frame.locator("#native").click();
   await expect(page.locator(".torrplayer--embed-front")).toHaveCount(0, { timeout: 15_000 });
   await reveal(page);
   await page.locator(".torrplayer-btn--embed-menu").click();
