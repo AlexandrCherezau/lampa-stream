@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+const EMBED_ORIGIN = "https://befriend.stravers.live";
 
 export const maxDuration = 300;
 
@@ -47,7 +48,9 @@ export default async function handler(req, res) {
           if (value.origin !== origin.origin || value.pathname !== "/v1/media" || !value.searchParams.get("token")) throw new Error("Invalid media URL");
           return value.toString();
         };
-        data.selected.url = absolute(data.selected.url);
+        // An embedded player is the third party's own page, not media on our host.
+        if (data.kind !== "embed") data.selected.url = absolute(data.selected.url);
+        else if (new URL(data.selected.url).origin !== EMBED_ORIGIN) throw new Error("Unexpected embedded player origin");
         data.qualities = (data.qualities || []).map((value) => ({ ...value, url: absolute(value.url) }));
         data.subtitles = (data.subtitles || []).map((value) => ({ ...value, url: absolute(value.url) }));
       }
