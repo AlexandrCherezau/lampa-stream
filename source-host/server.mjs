@@ -341,6 +341,11 @@ export function createSourceServer({ engineUrl, engineKey, engineReadyFile = "",
           if (!["vi3000", "habster", "vidsrc", "allmanga", "kinoarc"].includes(candidate.catalogSource)) await waitForEngine(controller.signal);
           const selectedAdapter = sourceAdapter(candidate.catalogSource);
           const resolved = await selectedAdapter.resolve(candidate, { signal: controller.signal });
+          if (resolved.embedUrl) {
+            json(res, 200, { source: publicCandidate(candidate), kind: "embed", selected: { label: "auto", url: resolved.embedUrl },
+              qualities: [], audioNames: [], subtitles: [] });
+            return;
+          }
           const qualities = resolved.qualities || [];
           if (!qualities.length) throw failure("Источник не предоставил видео", 502, "NO_MEDIA");
           const wanted = body.quality == null ? null : String(body.quality);

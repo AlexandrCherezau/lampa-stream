@@ -31,6 +31,22 @@ test('failed refresh is bounded even after notePlaying, and explicit selection r
  fail=false;await f.session.selectBalanser('p');f.session.notePlaying();
  assert.equal(await f.session.refreshCurrent(),true);f.session.stop();
 });
+test('a long film regains its refresh budget, so a third link expiry refreshes instead of leaving the source',async t=>{
+ t.mock.timers.enable({apis:['Date']});
+ const f=fixture();await start(f);const before=f.calls.length;
+ for(let i=0;i<4;i++){
+  assert.equal(await f.session.refreshCurrent(),true,`expiry ${i+1}`);f.session.notePlaying();
+  t.mock.timers.tick(15*60_000);
+ }
+ assert.equal(f.calls.length-before,4);assert.equal(f.state.balanser,'p');f.session.stop();
+});
+test('refreshes in quick succession stay bounded on a source that keeps dying',async t=>{
+ t.mock.timers.enable({apis:['Date']});
+ const f=fixture();await start(f);
+ assert.equal(await f.session.refreshCurrent(),true);f.session.notePlaying();t.mock.timers.tick(60_000);
+ assert.equal(await f.session.refreshCurrent(),true);f.session.notePlaying();t.mock.timers.tick(60_000);
+ assert.equal(await f.session.refreshCurrent(),false);f.session.stop();
+});
 test('concurrent refresh is coalesced and manual selection invalidates its late result',async()=>{
  let release,signal;let refreshing=false;
  const f=fixture({resolve:async(id,quality,s)=>{if(refreshing&&id==='a'){signal=s;return new Promise(r=>release=r);}return result(id);}});await start(f);refreshing=true;

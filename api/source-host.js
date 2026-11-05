@@ -47,7 +47,8 @@ export default async function handler(req, res) {
           if (value.origin !== origin.origin || value.pathname !== "/v1/media" || !value.searchParams.get("token")) throw new Error("Invalid media URL");
           return value.toString();
         };
-        data.selected.url = absolute(data.selected.url);
+        // An embedded player is the third party's own page, not media on our host.
+        if (data.kind !== "embed") data.selected.url = absolute(data.selected.url);
         data.qualities = (data.qualities || []).map((value) => ({ ...value, url: absolute(value.url) }));
         data.subtitles = (data.subtitles || []).map((value) => ({ ...value, url: absolute(value.url) }));
       }

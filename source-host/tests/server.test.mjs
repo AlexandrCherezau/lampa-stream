@@ -725,6 +725,29 @@ test("Zona catalog provenance retains exact IDs and uses Habster first followed 
     ["habster:collaps", "hdvb"]);
 });
 
+test("an embedded source is returned as its player page without any media probe", async (t) => {
+  const embedUrl = "https://befriend.stravers.live/?kp=5494049&token=t";
+  const habsterAdapter = {
+    async *discover() { yield candidate({ providerId: "habster:alloha", catalogSource: "habster", season: null,
+      episode: null, voiceId: "default", ref: { type: "movie", kinopoiskId: 5494049, voiceId: "default" } }); },
+    async resolve() { return { embedUrl }; },
+  };
+  const media = makeMedia();
+  const app = await start({ async *discover() {} }, media, "", undefined, { habsterAdapter });
+  t.after(() => app.close());
+  const discovery = await post(app.base, "/v1/discover", { type: "movie", title: "Movie", kinopoiskId: 5494049 });
+  const stream = sseReader(discovery.body);
+  const { data: { id } } = await stream.until("candidate");
+  await stream.drain();
+  const resolved = await post(app.base, "/v1/resolve", { id });
+  assert.equal(resolved.status, 200);
+  const result = await resolved.json();
+  assert.equal(result.kind, "embed");
+  assert.equal(result.selected.url, embedUrl);
+  assert.deepEqual(result.qualities, []);
+  assert.deepEqual(media.probes, []);
+});
+
 test("Habster Alloha uses sealed voice, real quality probes and Node media routing", async (t) => {
   let received;
   const quality = { label: "2160p", height: 2160, type: "hls", url: "https://cdn.example/4k.m3u8",

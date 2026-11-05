@@ -8,6 +8,9 @@ const AUTO_RESOLVE_TIMEOUT_MS = 10_000;
 const MAX_AUTO_RESOLVES = 2;
 const REFRESH_TIMEOUT_MS = 20_000;
 const MAX_AUTO_REFRESHES = 2;
+// Provider links expire while a film plays, so the budget limits how fast a source
+// may die, not how many expiries a three-hour film may survive.
+const REFRESH_BUDGET_WINDOW_MS = 10 * 60_000;
 const PROVIDER_COOLDOWN_MS = 30_000;
 const DISCOVER_BUSY_RETRY_MS = [800, 2_000, 4_000];
 const RESOLVE_RETRY_MS = 400;
@@ -206,6 +209,7 @@ function resolvedStream(result) {
   if (!url) throw new Error("Источник не предоставил видео");
   if (result.kind === "hls") return { hls: url };
   if (result.kind === "file") return { mp4: url };
+  if (result.kind === "embed" && url.startsWith("https://")) return { embed: url };
   throw new Error("Источник не предоставил поддерживаемое видео");
 }
 
@@ -231,6 +235,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   let resolving;
   let refreshing;
   let refreshAttempts = 0;
+  let lastRefreshAt = 0;
   let pending = false;
   let finished = false;
   let candidates = [];
@@ -396,6 +401,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   function refreshCurrent() {
     if (refreshing) return refreshing.promise;
     if (resolving) return Promise.resolve(undefined);
+    if (Date.now() - lastRefreshAt >= REFRESH_BUDGET_WINDOW_MS) refreshAttempts = 0;
     if (!active || !confirmed || refreshAttempts >= MAX_AUTO_REFRESHES) return Promise.resolve(false);
     const current = active;
     const controller = new AbortController();
@@ -404,6 +410,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
     const attempt = { controller };
     refreshing = attempt;
     refreshAttempts++;
+    lastRefreshAt = Date.now();
     let timedOut = false;
     let search;
     let onAbort;
