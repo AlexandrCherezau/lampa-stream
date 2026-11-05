@@ -15,7 +15,7 @@ Habster Alloha должен воспроизводиться внутри сущ
 
 ## Решения и границы
 
-`source-host/providers/alloha-protocol.mjs`: разбор публичных bootstrap/Borth/bundle guard, POST bnsi с обязательными пустыми audio/subtitle, короткий анонимный WebSocket. Скачанный JS не исполняется; Chromium и новые зависимости не нужны.
+(удалён 5 ноября 2026, см. «Alloha через родной плеер») `source-host/providers/alloha-protocol.mjs`: разбор публичных bootstrap/Borth/bundle guard, POST bnsi с обязательными пустыми audio/subtitle, короткий анонимный WebSocket. Скачанный JS не исполняется; Chromium и новые зависимости не нужны.
 `habster.mjs`: Alloha первый для фильма, Collaps запасной; фактические озвучки отдельными sealed candidates; shared cache до 8 фильмов/45 секунд, загрузка до 20 секунд. Native Alloha TV не добавлялся; существующий Collaps TV сохраняет точную серию.
 `transport.mjs`: POST до 64 KiB; public DNS pinning; чувствительные CDN headers не следуют на другой origin. `media.mjs` шифрует их в обычных media tokens и сохраняет ограничения у HLS children. Alloha и Collaps идут по Node, поскольку Worker не передаёт эти headers. Resolve Alloha до 30 секунд, Collaps до 8 секунд.
 `api/source-host.js` принимает только media URL собственного source-host. Старый embed contract удалён с сервера, шлюза и клиента.
@@ -459,3 +459,12 @@ Post-deploy /tmp/lampa-postdeploy-smoke-report.json: HaikyuuS1E14 иFightClub ×
 - `tests/app-icons.test.mjs` сверяет размер каждой заставки с её экраном: при несовпадении даже на пиксель iOS заставку не покажет. Новый iPhone добавляется в `IPHONE_SCREENS`.
 - Старая свинка `logo.png` осталась на экране первой настройки и в десктопной версии, вкладка браузера теперь с N.
 - На настоящем iPhone не проверялось. Чтобы увидеть новую иконку, старый ярлык надо удалить и добавить заново.
+
+## Alloha через родной плеер — 5 ноября 2026 (ветка `fix/alloha-switching`, не выложено)
+
+- Почему: CDN Alloha через 5–8 минут отвечает 403 на ретранслируемые ссылки, с Vercel и с постоянного IP, и новые ссылки тоже. Родной плеер в iframe на той же машине живёт дольше 10 минут. Обход их проверки сессии сознательно не делаем.
+- Решение: `resolve` отдаёт `{kind:"embed", selected:{url}}` (сериал: `&season=&episode=`), `src/utils/embed-media.js` подменяет свойства скрытого `<video>` и переводит сообщения iframe в события, поэтому панель, прогресс и синхронизация работают без отдельного кода. `api/source-host.js` пропускает только origin `befriend.stravers.live`.
+- Протокол плеера (неофициальный, найден опытом): JSON-строки `{"api":"play"}`, `{"api":"pause"}`, `{"api":"seek","value":N}`, `{"api":"duration"}`; в ответ `{"event":"play|pause|seek|timeupdate|duration","time":N}`. Громкость, скорость и качество снаружи не управляются: для них кнопка «Alloha» поднимает iframe над нашими кнопками.
+- Проверено: unit и `tests/alloha-embed.spec.js`; живой плеер на пробном домене 10 минут без 403, продолжение с позиции, пауза, запуск, перемотка, полный экран (`tmp/embed-live.mjs`, resolve подменён). 6 падений `tests/player-profile-cross-device.spec.js` есть и на `main`: без `PLAYER_PROFILE_LIVE` падают на пустом `fixtureDir`.
+- Не проверено: iPhone и Safari, комнаты «Смотрим вместе» с iframe, реальный `resolve` с новым сервером, реклама поверх слоя. В браузере без экрана нужен клик для старта и качество 480p.
+- Следующий шаг: выложить сайт (`main`), затем сервер (`deploy/source-host`), проверить на телефоне.
