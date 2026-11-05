@@ -18,7 +18,7 @@ function parseMessage(data) {
 export function createEmbedMedia({ video, frame, url, onReady, target = window }) {
   const origin = new URL(url).origin;
   let time = 0, duration = NaN, paused = true, ended = false, seeking = false;
-  let ready = false, responded = false, playAllowed = false, destroyed = false, metadataSent = false, seekTimer;
+  let ready = false, responded = false, destroyed = false, metadataSent = false, seekTimer;
 
   const fire = (type) => video.dispatchEvent(new Event(type));
   // The player only understands commands sent as JSON strings.
@@ -48,7 +48,7 @@ export function createEmbedMedia({ video, frame, url, onReady, target = window }
     // Started without the viewer's own click inside the frame, the player runs muted,
     // and sound can only be restored from its own menu.
     play: { value: () => {
-      if (playAllowed || ready) send({ api: "play" });
+      if (ready) send({ api: "play" });
       return Promise.resolve();
     } },
     pause: { value: () => {
@@ -113,7 +113,6 @@ export function createEmbedMedia({ video, frame, url, onReady, target = window }
 
   return {
     get responded() { return responded; },
-    allowPlayCommands() { playAllowed = true; },
     destroy() {
       if (destroyed) return;
       destroyed = true;

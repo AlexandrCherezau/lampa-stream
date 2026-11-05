@@ -366,18 +366,30 @@
 }
 
 /* An embedded third-party player stands in for the video element. */
+/* clip, not hidden: a hidden box can still be scrolled, which would bring the bars back. */
+.torrplayer--embed { overflow: clip; }
 .torrplayer--embed .torrplayer-video { visibility: hidden; }
 .torrplayer-embed,
 .torrplayer-embed-shield { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+/* Taller than the player by its bars and hint on each side, so the overflow cuts
+   them off while the film stays centred. */
+.torrplayer .torrplayer-embed { top: -100px; bottom: auto; height: calc(100% + 200px); }
+/* Solid and centred: this button has to cover the frame's own one exactly. */
+.torrplayer--embed .torrplayer-bigplay { top: 50%; background: rgb(12 15 17); backdrop-filter: none; }
 /* Its volume, speed and picture-in-picture are out of our reach. */
 .torrplayer--embed .torrplayer-btn--mute,
 .torrplayer--embed .torrplayer-volume,
 .torrplayer--embed .torrplayer-btn--pip,
 .torrplayer--embed [data-label="Скорость"] { display: none; }
-.torrplayer-btn--embed-menu { width: auto; padding: 0 10px; font-size: 13px; font-weight: 600; }
-/* Until it starts, and while its menus are open, the viewer talks to the frame directly. */
-.torrplayer--embed-front .torrplayer-embed { z-index: 40; }
+/* Before it starts, the click passes through our button into the frame. */
+.torrplayer--embed-start .torrplayer-embed-shield,
+.torrplayer--embed-start .torrplayer-controls,
+.torrplayer--embed-start .torrplayer-cast { display: none; }
+.torrplayer--embed-start .torrplayer-bigplay { pointer-events: none; }
+/* For its menus, or when it may need the viewer, the frame is shown whole. */
+.torrplayer--embed-front .torrplayer-embed { top: 0; height: 100%; z-index: 40; }
 .torrplayer--embed-front .torrplayer-embed-shield { display: none; }
+.player-wrap:has(.torrplayer--embed-front) .player-overlay-group { display: none; }
 .torrplayer-embed-back {
   position: absolute;
   top: var(--capsule-gap);

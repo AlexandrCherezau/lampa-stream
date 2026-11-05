@@ -221,6 +221,7 @@ const providerQualityLabel = (source) => source.qualityHeight >= 2160 ? "4K" : `
 // stall fast. Only acts before first real playback (see the watchdog effect).
 const FLEET_STALL_MS = 7000;
 const EMBED_RESPONSE_MS = 20_000;
+const EMBED_EXPOSE_MS = 6000;
 const PLAYBACK_STALL_MS = 20_000;
 const MIN_DISPLAY_MS = 250;
 const SYNC_TICK_MS = 500;
@@ -355,9 +356,11 @@ export default function OnlinePlayer({
   const errCountRef = useRef(0);
   const embedRef = useRef(null);
   const embedFrameRef = useRef(null);
+  const embedLoadedRef = useRef(false);
   const [embedStarted, setEmbedStarted] = useState(false);
   const [embedMenuOpen, setEmbedMenuOpen] = useState(false);
-  const [embedStartSkipped, setEmbedStartSkipped] = useState(false);
+  const [embedExposed, setEmbedExposed] = useState(false);
+  const [embedLoaded, setEmbedLoaded] = useState(false);
   const resumeDoneRef = useRef(false); // seek to saved timecode once per stream
   // True once ANY stream has actually attached. Used by the Lampac path to decide
   // whether a resolve error should blank the player (nothing ever played) or just
@@ -403,6 +406,8 @@ export default function OnlinePlayer({
   }, [prebuffering, state, onPrebufferFailed]);
   const [error, setError] = useState("");
   const [stream, setStream] = useState(null); // {dash?, hls?}
+  // A new page only. Reattaching to the same frame must not forget that it loaded.
+  useEffect(() => { setEmbedLoaded(false); embedLoadedRef.current = false; }, [stream?.embed]);
   const [audioNames, setAudioNames] = useState([]);
   const [subtitles, setSubtitles] = useState([]);
   const [meta, setMeta] = useState("");
@@ -932,7 +937,7 @@ export default function OnlinePlayer({
     const t = setTimeout(() => {
       if (stream.embed) {
         // It may wait for a click without a word, so only a page that never loaded failed.
-        if (!embedRef.current?.responded) fleetFailover();
+        if (!embedRef.current?.responded && !embedLoadedRef.current) fleetFailover();
         return;
       }
       if (fleetPlayedRef.current || userPausedRef.current) return; // paused viewers never trigger startup failover
@@ -961,6 +966,36 @@ export default function OnlinePlayer({
     // someone presses play.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prebuffering, isLampac, stream, fleetFailover, syncState?.playing]);
+
+  // We cannot see inside the frame, so an ad, a prompt or a stall shows up only as a
+  // clock that does not move. Show the frame whole then: it may need the viewer.
+  useEffect(() => {
+    if (!stream?.embed || prebuffering) return;
+    const v = videoRef.current;
+    if (!v) return;
+    let clickedAt = 0;
+    let lastTime = -1;
+    let lastMove = Date.now();
+    const onBlur = () => {
+      if (document.activeElement === embedFrameRef.current) clickedAt = Date.now();
+    };
+    const timer = setInterval(() => {
+      const now = Date.now();
+      if (v.currentTime !== lastTime) {
+        lastTime = v.currentTime;
+        lastMove = now;
+      }
+      const started = v.readyState > 0;
+      setEmbedExposed(started
+        ? !v.paused && !v.seeking && now - lastMove > EMBED_EXPOSE_MS
+        : clickedAt > 0 && now - clickedAt > EMBED_EXPOSE_MS);
+    }, 1000);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [stream?.embed, prebuffering]);
 
   // A fatal engine error is not the only way a relay can stop: some stalls emit
   // neither an error nor `waiting`. After real playback, refresh the SAME source
@@ -1156,7 +1191,7 @@ export default function OnlinePlayer({
     setAudioTracks([]); setAudioId(-1);
     setLevels([]); setCurrentLevel(-1);
     errCountRef.current = 0;
-    setEmbedStarted(false); setEmbedMenuOpen(false); setEmbedStartSkipped(false);
+    setEmbedStarted(false); setEmbedMenuOpen(false); setEmbedExposed(false);
     // Guard so an async attachHls (which awaits the dynamic hls.js import) bails
     // out if the effect cleaned up (stream change / unmount) before Hls loaded —
     // otherwise we'd attach a new Hls to a gone video and leak it.
@@ -1226,7 +1261,11 @@ export default function OnlinePlayer({
     const attachEmbed = () => {
       engineRef.current = "embed";
       embedRef.current = createEmbedMedia({ video: v, frame: embedFrameRef.current, url: stream.embed,
-        onReady: () => setEmbedStarted(true) });
+        onReady: () => {
+          setEmbedStarted(true);
+          // The click that started it left the keyboard inside the frame.
+          window.focus();
+        } });
       v.addEventListener("loadedmetadata", () => {
         setRecovering(false);
         resumeAt(v);
@@ -2567,7 +2606,8 @@ export default function OnlinePlayer({
   // failover paid a cold re-buffer (plus the 7 s stall watchdog) to get back.
   // The full-screen branches stay for the honest "nothing ever played" case.
   const hasMedia = !!stream || hadPlayedRef.current || fleetPlayedRef.current;
-  const embedFront = !!stream?.embed && (embedMenuOpen || (!embedStarted && !embedStartSkipped));
+  const embedFront = !!stream?.embed && (embedMenuOpen || embedExposed);
+  const embedStart = !!stream?.embed && !embedStarted && !embedFront;
   if (state === "loading" && !hasMedia) {
     return (
       <div className="torrpicker">
@@ -2627,7 +2667,7 @@ export default function OnlinePlayer({
 
   return (
     <div
-      className={"torrplayer" + (stream?.embed ? " torrplayer--embed" : "") + (embedFront ? " torrplayer--embed-front" : "") + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor")}
+      className={"torrplayer" + (stream?.embed ? " torrplayer--embed" : "") + (embedFront ? " torrplayer--embed-front" : "") + (embedExposed && !embedMenuOpen ? " torrplayer--embed-exposed" : "") + (embedStart ? " torrplayer--embed-start" : "") + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor")}
       ref={containerRef}
       onMouseMove={showControls}
       onMouseLeave={() => { if (videoRef.current && !videoRef.current.paused) setControlsVisible(false); }}
@@ -2637,14 +2677,15 @@ export default function OnlinePlayer({
       <video ref={videoRef} className="torrplayer-video" playsInline crossOrigin="anonymous" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
       {stream?.embed && !prebuffering && (
         <>
-          <iframe key={stream.embed} ref={embedFrameRef} className="torrplayer-embed" src={stream.embed}
+          <iframe key={stream.embed} ref={embedFrameRef} className="torrplayer-embed" src={stream.embed} onLoad={() => { embedLoadedRef.current = true; setEmbedLoaded(true); }}
             title="Плеер Alloha" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" />
-          {/* Keeps the pointer away from the frame's own controls once ours take over. */}
+          {/* Keeps the pointer away from the frame once ours take over. Until then its
+              click has to land in the frame, or the player starts without sound. */}
           <div className="torrplayer-embed-shield" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
-          {embedFront && <button className="torrplayer-embed-back" onClick={() => { embedRef.current?.allowPlayCommands(); setEmbedMenuOpen(false); setEmbedStartSkipped(true); }}>Наши кнопки</button>}
+          {embedMenuOpen && <button className="torrplayer-embed-back" onClick={() => setEmbedMenuOpen(false)}>Готово</button>}
         </>
       )}
-      {waiting && <div className="torrplayer-spinner" />}
+      {(waiting || (embedStart && !embedLoaded)) && <div className="torrplayer-spinner" />}
       {overlay}
       {/* Re-resolving over a LIVE element (fleet failover mid-film, a retry):
           the element and its buffer stay mounted, only the overlay shows. */}
@@ -2689,7 +2730,7 @@ export default function OnlinePlayer({
           fallback when the browser blocked autoplay (host is playing but our
           local video is still paused) — one tap unblocks play(), then sync owns
           it. When the host is the one paused, no button (follower just waits). */}
-      {!playing && !waiting && (!isFollower || !!syncState?.playing) && (
+      {!playing && !waiting && (!isFollower || !!syncState?.playing || embedStart) && (!embedStart || embedLoaded) && (
         <button className="torrplayer-bigplay" onClick={togglePlay} title="Смотреть"><PlayI /></button>
       )}
       {/* Cast-on-pause (Kinopoisk-style): real name + character + photo */}
@@ -2891,7 +2932,7 @@ export default function OnlinePlayer({
         </div>
         </div>
         {typeof document !== "undefined" && document.pictureInPictureEnabled && (<button className={"torrplayer-btn torrplayer-btn--pip" + (pipActive ? " torrplayer-btn--active" : "")} onClick={togglePiP} title="Картинка в картинке"><PiPIcon /></button>)}
-        {stream?.embed && !isFollower && <button className="torrplayer-btn torrplayer-btn--embed-menu" onClick={() => setEmbedMenuOpen(true)} title="Громкость, качество и озвучка в плеере Alloha">Alloha</button>}
+        {stream?.embed && !isFollower && <button className="torrplayer-btn torrplayer-btn--embed-menu" onClick={() => setEmbedMenuOpen(true)} title="Громкость, качество и озвучка"><VolumeI /></button>}
         <button className="torrplayer-btn torrplayer-btn--fs" onClick={toggleFullscreen} title="Полный экран (F)"><FullscreenI /></button>
         </div>
       </div>
