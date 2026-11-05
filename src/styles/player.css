@@ -317,6 +317,15 @@
 .torrplayer-notice { background: var(--menu-fill); border: 0; border-radius: 12px; backdrop-filter: var(--bar-blur); }
 .torrplayer-state-overlay,
 .torrplayer-switching { backdrop-filter: blur(6px); }
+/* Inside these overlays the spinner sits in the column above its label. */
+.torrplayer-state-overlay .torrplayer-spinner,
+.torrplayer-switching .torrplayer-spinner {
+  position: static;
+  flex: none;
+  transform: none;
+  animation-name: torrplayer-overlay-spin;
+}
+@keyframes torrplayer-overlay-spin { to { transform: rotate(360deg); } }
 
 /* The page's source switcher belongs to the same layer of controls. */
 .player-wrap .player-overlay-group { transition: opacity 0.25s ease; }
@@ -354,4 +363,34 @@
 
 @media (prefers-reduced-motion: reduce) {
   .torrplayer-controls, .torrplayer-seek-thumb, .torrplayer-seek-fill, .torrplayer-seek-buffer, .torrplayer-volume { transition: none; }
+}
+
+/* An embedded third-party player stands in for the video element. */
+.torrplayer--embed .torrplayer-video { visibility: hidden; }
+.torrplayer-embed,
+.torrplayer-embed-shield { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+/* Its volume, speed and picture-in-picture are out of our reach. */
+.torrplayer--embed .torrplayer-btn--mute,
+.torrplayer--embed .torrplayer-volume,
+.torrplayer--embed .torrplayer-btn--pip,
+.torrplayer--embed [data-label="Скорость"] { display: none; }
+.torrplayer-btn--embed-menu { width: auto; padding: 0 10px; font-size: 13px; font-weight: 600; }
+/* Until it starts, and while its menus are open, the viewer talks to the frame directly. */
+.torrplayer--embed-front .torrplayer-embed { z-index: 40; }
+.torrplayer--embed-front .torrplayer-embed-shield { display: none; }
+.torrplayer-embed-back {
+  position: absolute;
+  top: var(--capsule-gap);
+  right: var(--capsule-gap);
+  z-index: 41;
+  padding: 8px 14px;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--bar-fill);
+  border: 0;
+  border-radius: 10px;
+  backdrop-filter: var(--bar-blur);
+  cursor: pointer;
 }

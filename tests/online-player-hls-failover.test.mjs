@@ -340,3 +340,12 @@ test("in a room, a paused room holds a fresh attachment paused and a playing one
   assert.equal(attach(false), true);
   assert.equal(attach(true), false);
 });
+
+test("fatal errors are counted per trouble spot, not per film", () => {
+  const hlsAttach = source.slice(source.indexOf("const attachHls = async () => {"), source.indexOf(marker));
+  assert.match(hlsAttach, /hls\.on\(Hls\.Events\.FRAG_CHANGED, \(\) => \{ errCountRef\.current = 0; \}\)/);
+});
+
+test("a same-source refresh is not announced as a source switch", () => {
+  assert.match(source, /\{switching && !\(state === "loading" && hasMedia\) && \(/);
+});

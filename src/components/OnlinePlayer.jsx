@@ -18,6 +18,7 @@
 //   • Resume from last position, click-to-play, auto-hide controls, buffer bar
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createEmbedMedia } from "../utils/embed-media";
 // hls.js (~150KB) is loaded lazily ONLY when an HLS stream actually attaches,
 // so it stays out of the initial movie-page bundle. dash.js is likewise lazy
 // (desktop-only vendor bundle). Both keep the movie chunk small for fast nav.
@@ -219,6 +220,7 @@ const providerQualityLabel = (source) => source.qualityHeight >= 2160 ? "4K" : `
 // disaster was ~63 s. ~2× the slowest legit start gives margin while killing the
 // stall fast. Only acts before first real playback (see the watchdog effect).
 const FLEET_STALL_MS = 7000;
+const EMBED_RESPONSE_MS = 20_000;
 const PLAYBACK_STALL_MS = 20_000;
 const MIN_DISPLAY_MS = 250;
 const SYNC_TICK_MS = 500;
@@ -351,6 +353,10 @@ export default function OnlinePlayer({
   const hideTimerRef = useRef(null);
   const subsAddedRef = useRef(false);
   const errCountRef = useRef(0);
+  const embedRef = useRef(null);
+  const embedFrameRef = useRef(null);
+  const [embedStarted, setEmbedStarted] = useState(false);
+  const [embedMenuOpen, setEmbedMenuOpen] = useState(false);
   const resumeDoneRef = useRef(false); // seek to saved timecode once per stream
   // True once ANY stream has actually attached. Used by the Lampac path to decide
   // whether a resolve error should blank the player (nothing ever played) or just
@@ -655,6 +661,8 @@ export default function OnlinePlayer({
   rateRef.current = rate;
 
   const destroyAll = useCallback((video) => {
+    embedRef.current?.destroy();
+    embedRef.current = null;
     // destroy(), not reset(): reset() only tears down the MediaSource — the
     // MediaPlayer itself (event-bus listeners, BufferController/ScheduleController
     // timers, the refcount into the dash.js core) survives. Every stream change
@@ -815,8 +823,8 @@ export default function OnlinePlayer({
       const forceReattach = forceStreamReattachRef.current;
       forceStreamReattachRef.current = false;
       setStream((previous) => {
-        return !forceReattach && previous?.mp4 === ls.mp4 && previous?.hls === ls.hls && previous?.viaRelay === ls.viaRelay
-          ? previous : ls.mp4 ? { mp4: ls.mp4, viaRelay: ls.viaRelay } : { hls: ls.hls, viaRelay: ls.viaRelay };
+        return !forceReattach && previous?.embed === ls.embed && previous?.mp4 === ls.mp4 && previous?.hls === ls.hls && previous?.viaRelay === ls.viaRelay
+          ? previous : ls.embed ? { embed: ls.embed } : ls.mp4 ? { mp4: ls.mp4, viaRelay: ls.viaRelay } : { hls: ls.hls, viaRelay: ls.viaRelay };
       });
       setSubtitles(lampac.subtitles || []);
       setAudioNames(lampac.audioNames || []);
@@ -921,6 +929,11 @@ export default function OnlinePlayer({
     const onMeta = () => { metaSeen = true; };
     v.addEventListener("loadedmetadata", onMeta, { once: true });
     const t = setTimeout(() => {
+      if (stream.embed) {
+        // The embedded player may wait for a click, so only silence means it failed.
+        if (!embedRef.current?.responded) fleetFailover();
+        return;
+      }
       if (fleetPlayedRef.current || userPausedRef.current) return; // paused viewers never trigger startup failover
       const rs = v.readyState;
       if (!metaSeen && rs >= 3 /* HAVE_FUTURE_DATA */) {
@@ -933,7 +946,7 @@ export default function OnlinePlayer({
       // No forward progress and not enough buffered to advance: a throughput stall
       // the probe couldn't see and no error will report. Jump to the next balancer.
       fleetFailover();
-    }, stream.mp4 ? SWITCH_WATCHDOG_MS : FLEET_STALL_MS);
+    }, stream.embed ? EMBED_RESPONSE_MS : stream.mp4 ? SWITCH_WATCHDOG_MS : FLEET_STALL_MS);
     // A viewer can pause after the first decoded frames, before timeupdate
     // has latched playback. The startup timer must not resume or replace it.
     const onPause = () => { if (userPausedRef.current) clearTimeout(t); };
@@ -1142,6 +1155,7 @@ export default function OnlinePlayer({
     setAudioTracks([]); setAudioId(-1);
     setLevels([]); setCurrentLevel(-1);
     errCountRef.current = 0;
+    setEmbedStarted(false); setEmbedMenuOpen(false);
     // Guard so an async attachHls (which awaits the dynamic hls.js import) bails
     // out if the effect cleaned up (stream change / unmount) before Hls loaded —
     // otherwise we'd attach a new Hls to a gone video and leak it.
@@ -1206,6 +1220,18 @@ export default function OnlinePlayer({
         setState((s) => (hadPlayedRef.current ? s : "error"));
         if (!hadPlayedRef.current) setError("Поток недоступен");
       }, { once: true });
+    };
+
+    const attachEmbed = () => {
+      engineRef.current = "embed";
+      embedRef.current = createEmbedMedia({ video: v, frame: embedFrameRef.current, url: stream.embed,
+        onReady: () => setEmbedStarted(true) });
+      v.addEventListener("loadedmetadata", () => {
+        setRecovering(false);
+        resumeAt(v);
+      }, { once: true });
+      lampac.clearSwitching?.();
+      if (!userPausedRef.current) v.play().catch(() => {});
     };
 
     const attachDash = async () => {
@@ -1509,6 +1535,9 @@ export default function OnlinePlayer({
         const pref = savedIdx >= 0 ? savedIdx : preferredRuTrackIndex(tracks, audioNames);
         if (pref >= 0) { try { hls.audioTrack = pref; setAudioId(pref); } catch {} }
       });
+      // The playhead reached a new fragment: earlier errors were recovered from, and
+      // must not add up over a whole film into giving up on a working source.
+      hls.on(Hls.Events.FRAG_CHANGED, () => { errCountRef.current = 0; });
       hls.on(Hls.Events.ERROR, async (_e, data) => {
         if (!data?.fatal) return;
         errCountRef.current += 1;
@@ -1579,7 +1608,9 @@ export default function OnlinePlayer({
     (async () => {
       // Progressive file (Lampac torrent / direct MP4-MKV balancer) → native
       // element; no DASH/HLS engine, the container is the whole stream.
-      if (stream.mp4) {
+      if (stream.embed) {
+        if (!prebufferingRef.current) attachEmbed();
+      } else if (stream.mp4) {
         attachNative(stream.mp4);
       } else if (prebufferingRef.current && stream.hls) {
         attachHls();
@@ -1595,7 +1626,7 @@ export default function OnlinePlayer({
     // React detaches videoRef before this cleanup when the player unmounts.
     return () => { disposed = true; destroyAll(v); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stream]);
+  }, [stream, stream?.embed ? prebuffering : false]);
 
   // ── Add Collaps `cc` subtitles as <track> elements once ────────────────────
   useEffect(() => {
@@ -2148,7 +2179,7 @@ export default function OnlinePlayer({
         if (reqFS && typeof reqFS.then === "function") {
           try { await reqFS; } catch {}
         }
-        if (!document.fullscreenElement && v?.webkitEnterFullscreen) {
+        if (!document.fullscreenElement && !stream?.embed && v?.webkitEnterFullscreen) {
           try { v.webkitEnterFullscreen(); } catch {}
         }
       } catch {}
@@ -2303,6 +2334,9 @@ export default function OnlinePlayer({
       if (reqFS && typeof reqFS.then === "function") {
         try { await reqFS; } catch {}
       }
+      // iOS Safari: no container fullscreen, and the hidden element shows nothing.
+      // Only the embedded player's own controls can do it there.
+      if (stream?.embed && !document.fullscreenElement) { setEmbedMenuOpen(true); return; }
       // iOS Safari: requestFullscreen on a div doesn't work — use the video
       // element's native fullscreen instead (webkitEnterFullscreen).
       if (!document.fullscreenElement && v?.webkitEnterFullscreen) {
@@ -2591,7 +2625,7 @@ export default function OnlinePlayer({
 
   return (
     <div
-      className={"torrplayer" + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor")}
+      className={"torrplayer" + (stream?.embed ? " torrplayer--embed" : "") + (stream?.embed && (!embedStarted || embedMenuOpen) ? " torrplayer--embed-front" : "") + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor")}
       ref={containerRef}
       onMouseMove={showControls}
       onMouseLeave={() => { if (videoRef.current && !videoRef.current.paused) setControlsVisible(false); }}
@@ -2599,6 +2633,15 @@ export default function OnlinePlayer({
       onPointerUpCapture={syncRole ? () => { lastInputAtRef.current = Date.now(); } : undefined}
     >
       <video ref={videoRef} className="torrplayer-video" playsInline crossOrigin="anonymous" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
+      {stream?.embed && !prebuffering && (
+        <>
+          <iframe key={stream.embed} ref={embedFrameRef} className="torrplayer-embed" src={stream.embed}
+            title="Плеер Alloha" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" />
+          {/* Keeps the pointer away from the frame's own controls once ours take over. */}
+          <div className="torrplayer-embed-shield" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
+          {embedMenuOpen && <button className="torrplayer-embed-back" onClick={() => setEmbedMenuOpen(false)}>Наши кнопки</button>}
+        </>
+      )}
       {waiting && <div className="torrplayer-spinner" />}
       {overlay}
       {/* Re-resolving over a LIVE element (fleet failover mid-film, a retry):
@@ -2619,7 +2662,7 @@ export default function OnlinePlayer({
       )}
       {/* Fleet re-resolve in flight (balancer/dub/quality swap): keep <video>
           mounted, just dim + spin over it. Cleared on `seeked`/`playing`. */}
-      {switching && (
+      {switching && !(state === "loading" && hasMedia) && (
         <div className="torrplayer-switching">
           <div className="torrplayer-spinner" />
           <span className="torrplayer-switching-label">Переключаем источник…</span>
@@ -2846,6 +2889,7 @@ export default function OnlinePlayer({
         </div>
         </div>
         {typeof document !== "undefined" && document.pictureInPictureEnabled && (<button className={"torrplayer-btn torrplayer-btn--pip" + (pipActive ? " torrplayer-btn--active" : "")} onClick={togglePiP} title="Картинка в картинке"><PiPIcon /></button>)}
+        {stream?.embed && !isFollower && <button className="torrplayer-btn torrplayer-btn--embed-menu" onClick={() => setEmbedMenuOpen(true)} title="Громкость, качество и озвучка в плеере Alloha">Alloha</button>}
         <button className="torrplayer-btn torrplayer-btn--fs" onClick={toggleFullscreen} title="Полный экран (F)"><FullscreenI /></button>
         </div>
       </div>
