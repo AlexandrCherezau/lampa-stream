@@ -43,8 +43,12 @@ test("our controls drive the embedded player and keep the pointer off its own", 
   await expect(page.locator(".torrplayer-btn--mute")).toBeHidden();
   await page.locator(".torrplayer-btn--play").click();
   await expect.poll(async () => (await received(page)).some((m) => m.api === "pause")).toBe(true);
-  await page.locator(".torrplayer-embed-shield").click({ position: { x: 20, y: 20 } });
+  await page.locator(".torrplayer-bigplay").click({ timeout: 5000 });
   await expect.poll(async () => (await received(page)).filter((m) => m.api === "play").length).toBeGreaterThan(1);
+  await expect(page.locator(".torrplayer-bigplay")).toBeHidden();
+  const box = await page.locator(".torrplayer").boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect.poll(async () => (await received(page)).filter((m) => m.api === "pause").length).toBeGreaterThan(1);
   const clicked = await page.frames().find((f) => f.url().startsWith("https://befriend")).evaluate(() => window.clicked || 0);
   expect(clicked).toBe(0);
 });
