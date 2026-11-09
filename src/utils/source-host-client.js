@@ -1,3 +1,5 @@
+import { storage, STORAGE_KEYS } from "./storage.js";
+
 const ENDPOINT = "/api/source-host";
 const PREPARED_RESULT_TTL = 15_000;
 const PREPARED_CANDIDATE_TTL = 5 * 60_000;
@@ -334,6 +336,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
         if (timedOut || controller.signal.aborted || attempt.token !== generation || attempt.epoch !== selectionEpoch) return;
         resolvedStream(result);
         if (active || resolving) return;
+        if (sourcePreference?.providerId && candidate.providerId !== sourcePreference.providerId) hopped = true;
         activate(candidate, result);
         abortAutomaticAttempts();
       })
@@ -481,6 +484,7 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
   }
   async function choose(candidate, quality, manual) {
     if (manual) {
+      storage.set(STORAGE_KEYS.GLOBAL_SOURCE_PREFERENCE, { providerId: candidate.providerId, updatedAt: Date.now() });
       hopped = false;
       cancelRefresh();
       refreshAttempts = 0;
@@ -545,6 +549,12 @@ export function createSourceSession({ discover = discoverSources, resolve = reso
       : null;
     sourcePreference = stableSource && (stableSource.providerId || stableSource.voiceId || stableSource.providerName || stableSource.voiceName)
       ? stableSource : null;
+    const globalPreference = storage.get(STORAGE_KEYS.GLOBAL_SOURCE_PREFERENCE);
+    if (typeof globalPreference?.providerId === "string" && globalPreference.providerId.trim()
+      && Number.isFinite(globalPreference.updatedAt) && globalPreference.updatedAt > 0
+      && globalPreference.providerId !== sourcePreference?.providerId) {
+      sourcePreference = { providerId: globalPreference.providerId };
+    }
     preferenceReleased = !sourcePreference;
     preparedCandidate = preparedCandidateFor(title);
     preparedCandidateQueued = false;
