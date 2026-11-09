@@ -10,10 +10,8 @@ export default function useSourceHost({ enabled, apiKey, item, details, type, se
   const session = useRef(null);
   if (!session.current) session.current = createSourceSession({ publish: setValue });
   const sourcePreferenceRef = useRef(sourcePreference);
-  // Keep the latest checkpoint-derived preference while resolution is gated.
-  // Once discovery starts, its own first candidate write must not restart the
-  // session and cancel discovery of alternate voices.
-  if (!enabled) sourcePreferenceRef.current = sourcePreference;
+  // Episode restarts need the latest checkpoint without restarting discovery on each write.
+  sourcePreferenceRef.current = sourcePreference;
   const title = details?.title || details?.name || item?.title || item?.name;
   const imdbId = details?.imdb_id || details?.external_ids?.imdb_id || item?.imdb_id;
   const existingKinopoiskId = [details?.kinopoisk_id, details?.kinopoiskId, item?.kinopoisk_id, item?.kinopoiskId]
