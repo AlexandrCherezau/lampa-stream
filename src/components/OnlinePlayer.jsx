@@ -512,6 +512,8 @@ export default function OnlinePlayer({
   const voices = isLampac ? lampac.voices : [];
   const srcQualities = isLampac ? lampac.qualities : [];
   const [showBalanser, setShowBalanser] = useState(false);
+  const [showProviderPicker, setShowProviderPicker] = useState(false);
+  const providerPickerRef = useRef(null);
   const [showVoice, setShowVoice] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   // Inline notice that never blanks the player (dead balancer, stale link): the
@@ -2315,10 +2317,10 @@ export default function OnlinePlayer({
     if (prebufferingRef.current) return;
     hideTimerRef.current = setTimeout(() => {
       if (videoRef.current && !videoRef.current.paused &&
-          !showSettings && !showTracks && !showQuality && !showSpeed && !showSubs && !showBalanser && !showVoice)
+          !showSettings && !showTracks && !showQuality && !showSpeed && !showSubs && !showBalanser && !showVoice && !showProviderPicker)
         setControlsVisible(false);
     }, 3000);
-  }, [showSettings, showTracks, showQuality, showSpeed, showSubs, showBalanser, showVoice]);
+  }, [showSettings, showTracks, showQuality, showSpeed, showSubs, showBalanser, showVoice, showProviderPicker]);
   useEffect(() => { showControls(); return () => clearTimeout(hideTimerRef.current); }, [showControls, playing]);
 
   // ── Controls (engine-agnostic) ──────────────────────────────────────────────
@@ -2526,7 +2528,7 @@ export default function OnlinePlayer({
       lampac.clearSwitching?.();
     });
   };
-  const selectBalanser = (id, quality) => { selectManualSource(() => lampac.selectBalanser?.(id, quality)); setShowBalanser(false); setShowQuality(false); };
+  const selectBalanser = (id, quality) => { selectManualSource(() => lampac.selectBalanser?.(id, quality)); setShowBalanser(false); setShowQuality(false); setShowProviderPicker(false); };
   const selectVoice = (id) => { selectManualSource(() => lampac.selectVoice?.(id)); setShowVoice(false); };
   const selectSourceQuality = (id) => { selectManualSource(() => lampac.selectQuality?.(id)); setShowQuality(false); };
 
@@ -2629,6 +2631,19 @@ export default function OnlinePlayer({
     return () => { clearTimeout(t); document.removeEventListener("click", onDown); };
   }, [showSettings, showTracks, showQuality, showSpeed, showSubs, showBalanser, showVoice]);
 
+  useEffect(() => {
+    if (!showProviderPicker) return;
+    const onDown = (e) => { if (!providerPickerRef.current?.contains(e.target)) setShowProviderPicker(false); };
+    const onBlur = () => setShowProviderPicker(false); // A click into the iframe never reaches document.
+    document.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [showProviderPicker]);
+  useEffect(() => { setShowProviderPicker(false); }, [progressKey, isFollower, showSettings, embedMenuOpen]);
+
   // ── RENDER: loading ─────────────────────────────────────────────────────────
   const srcTitle = isLampac ? "Lampac — балансеры · озвучки · 4K · торренты" : "Онлайн (Collaps) — русская озвучка · до 4K";
   // Once media has attached (or has genuinely played), the <video> element is
@@ -2639,11 +2654,48 @@ export default function OnlinePlayer({
   // failover paid a cold re-buffer (plus the 7 s stall watchdog) to get back.
   // The full-screen branches stay for the honest "nothing ever played" case.
   const hasMedia = !!stream || attachedKeyRef.current != null || hadPlayedRef.current || fleetPlayedRef.current;
+  const activeBalanser = isLampac ? balansers.find((b) => b.id === lampac.balanser) : null;
+  const providerPicker = !isFollower && !showSettings && !embedMenuOpen && (stream || balansers.length > 0) && (
+    <div ref={providerPickerRef}
+      className={"torrplayer-provider-picker" + (state === "ready" && playing && (!stream?.embed || embedStarted) && !controlsVisible && !showProviderPicker ? " torrplayer-provider-picker--hidden" : "")}
+      onPointerEnter={showControls}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          setShowProviderPicker(false);
+          providerPickerRef.current?.querySelector("button")?.focus();
+        }
+        if (e.key !== "Tab") e.stopPropagation();
+      }}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setShowProviderPicker(false); }}
+    >
+      <button type="button" className="torrplayer-btn torrplayer-provider-toggle"
+        aria-haspopup="true" aria-expanded={showProviderPicker}
+        disabled={balansers.length === 0}
+        onClick={() => setShowProviderPicker((value) => !value)}>
+        <span>Плеер: {activeBalanser?.name || (isLampac ? "Выбор плеера" : "Collaps")}</span><span aria-hidden="true">▾</span>
+      </button>
+      {showProviderPicker && (
+        <div className="torrplayer-provider-menu" aria-label="Плееры">
+          {balansers.map((b, index) => (
+            <button type="button" key={b.id}
+              className={"torrplayer-audio-item" + (b.id === lampac.balanser ? " active" : "")}
+              aria-label={`Плеер ${index + 1}: ${b.name}${b.qualityHeight > 0 ? ` · до ${providerQualityLabel(b)}` : ""}${b.torrent ? " · торрент" : ""}`}
+              aria-current={b.id === lampac.balanser ? "true" : undefined}
+              onClick={() => { selectBalanser(b.id); providerPickerRef.current?.querySelector("button")?.focus(); }}>
+              {index + 1}. {b.name}{b.qualityHeight > 0 ? ` · до ${providerQualityLabel(b)}` : ""}{b.torrent ? " · торрент" : ""}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
   const embedFront = !!stream?.embed && (embedMenuOpen || embedExposed);
   const embedStart = !!stream?.embed && !embedStarted && !embedFront;
   if (state === "loading" && !hasMedia) {
     return (
       <div className="torrpicker">
+        {providerPicker}
         {overlay}
         <div className="torrpicker-head">
           <div className="torrplayer-title">{srcTitle}</div>
@@ -2656,6 +2708,7 @@ export default function OnlinePlayer({
   if (state === "error" && !hasMedia) {
     return (
       <div className="torrpicker">
+        {providerPicker}
         {overlay}
         <div className="torrpicker-head">
           <div className="torrplayer-title">{isLampac ? "Lampac" : "Онлайн (Collaps)"}</div>
@@ -2687,7 +2740,6 @@ export default function OnlinePlayer({
   const currentQualityLabel = currentLevel < 0 ? "Авто" : levels[currentLevel]?.label || "Авто";
   // Fleet picker labels (Lampac only). `lampac.balanser` is the active slug;
   // `lampac.voice`/`lampac.quality` are the active ids inside the hook's lists.
-  const activeBalanser = isLampac ? balansers.find((b) => b.id === lampac.balanser) : null;
   const activeVoice = isLampac ? voices.find((v) => v.id === lampac.voice) : null;
   const activeSrcQuality = isLampac ? srcQualities.find((q) => q.id === lampac.quality) : null;
   const showEngineQualities = levels.length > 0 && !(isLampac && srcQualities.length > 1 && levels.length === 1);
@@ -2707,6 +2759,7 @@ export default function OnlinePlayer({
       onPointerDownCapture={syncRole ? () => { lastInputAtRef.current = Date.now(); } : undefined}
       onPointerUpCapture={syncRole ? () => { lastInputAtRef.current = Date.now(); } : undefined}
     >
+      {providerPicker}
       <video ref={videoRef} className="torrplayer-video" playsInline crossOrigin="anonymous" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
       {stream?.embed && (
         <>
@@ -2718,7 +2771,7 @@ export default function OnlinePlayer({
           {embedMenuOpen && <button className="torrplayer-embed-back" onClick={() => setEmbedMenuOpen(false)}>Готово</button>}
         </>
       )}
-      {(waiting || (embedStart && !embedLoaded)) && <div className="torrplayer-spinner" />}
+      {(stream?.embed ? !embedStarted && !embedLoaded : waiting) && <div className="torrplayer-spinner" />}
       {overlay}
       {/* Re-resolving over a LIVE element (fleet failover mid-film, a retry):
           the element and its buffer stay mounted, only the overlay shows. */}
@@ -2763,8 +2816,8 @@ export default function OnlinePlayer({
           fallback when the browser blocked autoplay (host is playing but our
           local video is still paused) — one tap unblocks play(), then sync owns
           it. When the host is the one paused, no button (follower just waits). */}
-      {!playing && !waiting && (!isFollower || !!syncState?.playing || embedStart) && (!embedStart || embedLoaded) && (
-        <button className="torrplayer-bigplay" onClick={togglePlay} title="Смотреть"><PlayI /></button>
+      {(stream?.embed && !embedStarted ? embedLoaded : !playing && !waiting && (!isFollower || !!syncState?.playing)) && (
+        <button className={"torrplayer-bigplay" + (stream?.embed && !embedStarted ? " torrplayer-bigplay--embed-ready" : "")} onClick={togglePlay} title="Смотреть"><PlayI /></button>
       )}
       {/* Cast-on-pause (Kinopoisk-style): real name + character + photo */}
       {!playing && !waiting && cast.length > 0 && (

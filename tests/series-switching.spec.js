@@ -82,6 +82,7 @@ async function assertEpisode(page, season, episode) {
 }
 async function startEmbed(page) {
   await expect(page.locator(".torrplayer-embed")).toBeVisible();
+  await expect(page.locator(".torrplayer-bigplay--embed-ready")).toBeVisible();
   await page.frameLocator(".torrplayer-embed").getByRole("button").click();
   await expect(page.locator(".torrplayer--embed-start")).toHaveCount(0);
 }
