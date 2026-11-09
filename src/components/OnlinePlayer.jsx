@@ -281,6 +281,7 @@ export default function OnlinePlayer({
   // the details page. The media stays muted and paused until an explicit play.
   prebuffer = false,
   onRegisterPlay = null,
+  onPrebufferStarted = null,
   onPrebufferFailed = null,
   // ── Source-failed hook (optional): fires when a non-Lampac provider cannot
   // resolve a stream for this title (Collaps 410, host not allowed, etc.).
@@ -324,7 +325,9 @@ export default function OnlinePlayer({
         if (video) {
           userPausedRef.current = false;
           try { video.volume = volumeRef.current; video.muted = mutedRef.current; } catch {}
-          try { video.play()?.catch(() => {}); } catch {}
+          if (engineRef.current !== "embed") {
+            try { video.play()?.catch(() => {}); } catch {}
+          }
         }
       }
     }
@@ -1287,7 +1290,6 @@ export default function OnlinePlayer({
         resumeAt(v);
       }, { once: true, signal: attachEvents.signal });
       lampac.clearSwitching?.();
-      if (!userPausedRef.current) v.play().catch(() => {});
     };
 
     const attachDash = async () => {
@@ -1665,7 +1667,7 @@ export default function OnlinePlayer({
       // Progressive file (Lampac torrent / direct MP4-MKV balancer) → native
       // element; no DASH/HLS engine, the container is the whole stream.
       if (stream.embed) {
-        if (!prebufferingRef.current) attachEmbed();
+        attachEmbed();
       } else if (stream.mp4) {
         attachNative(stream.mp4);
       } else if (prebufferingRef.current && stream.hls) {
@@ -1682,7 +1684,7 @@ export default function OnlinePlayer({
     // React detaches videoRef before this cleanup when the player unmounts.
     return () => { disposed = true; attachEvents.abort(); destroyAll(v); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stream, stream?.embed ? prebuffering : false]);
+  }, [stream]);
 
   // ── Add Collaps `cc` subtitles as <track> elements once ────────────────────
   useEffect(() => {
@@ -1796,7 +1798,14 @@ export default function OnlinePlayer({
       }
     };
     const onDur = () => setDuration(v.duration || 0);
-    const onPlay = () => { setPlaying(true); if (!prebufferingRef.current) hadPlayedRef.current = true; };
+    const onPlay = () => {
+      if (engineRef.current === "embed" && prebufferingRef.current) {
+        activatePrebuffer();
+        onPrebufferStarted?.();
+      }
+      setPlaying(true);
+      if (!prebufferingRef.current) hadPlayedRef.current = true;
+    };
     const onPause = () => {
       setPlaying(false);
       if (prebufferingRef.current) return;
@@ -1882,7 +1891,7 @@ export default function OnlinePlayer({
       v.removeEventListener("loadedmetadata", onLoadedMeta);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stream, progressKey, persistCheckpoint]);
+  }, [stream, progressKey, persistCheckpoint, onPrebufferStarted]);
 
   // ── Watch Together sync ─────────────────────────────────────────────────────
   // Everyone steers towards the room's clock, on every room update and on a short
@@ -2313,7 +2322,7 @@ export default function OnlinePlayer({
   useEffect(() => { showControls(); return () => clearTimeout(hideTimerRef.current); }, [showControls, playing]);
 
   // ── Controls (engine-agnostic) ──────────────────────────────────────────────
-  const activateAndPlay = useCallback(() => {
+  const activatePrebuffer = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
     if (prebufferingRef.current) {
@@ -2330,8 +2339,14 @@ export default function OnlinePlayer({
       } catch {}
     }
     userPausedRef.current = false;
-    try { v.play()?.catch(() => {}); } catch {}
   }, []);
+  const activateAndPlay = useCallback(() => {
+    activatePrebuffer();
+    // The first embed play must come from the viewer's click inside the frame.
+    if (engineRef.current !== "embed") {
+      try { videoRef.current?.play()?.catch(() => {}); } catch {}
+    }
+  }, [activatePrebuffer]);
   useEffect(() => {
     if (!onRegisterPlay) return;
     onRegisterPlay(activateAndPlay);
@@ -2693,7 +2708,7 @@ export default function OnlinePlayer({
       onPointerUpCapture={syncRole ? () => { lastInputAtRef.current = Date.now(); } : undefined}
     >
       <video ref={videoRef} className="torrplayer-video" playsInline crossOrigin="anonymous" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
-      {stream?.embed && !prebuffering && (
+      {stream?.embed && (
         <>
           <iframe key={stream.embed} ref={embedFrameRef} className="torrplayer-embed" src={stream.embed} onLoad={() => { embedLoadedRef.current = true; setEmbedLoaded(true); }}
             title="Плеер Alloha" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" />

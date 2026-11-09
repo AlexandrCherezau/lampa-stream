@@ -6,15 +6,16 @@ import { test, expect } from "@playwright/test";
 
 const FRAME_ORIGIN = "https://befriend.stravers.live";
 const FRAME = `<!doctype html><body><button style="position:fixed;inset:0;width:100%;height:100%">Start</button><script>
-  window.commands = []; window.time = 0;
+  window.commands = []; window.time = 0; window.playing = false; window.clicks = 0;
   window.emit = (event, time = window.time) => parent.postMessage(JSON.stringify({ event, time }), "*");
-  document.querySelector("button").onclick = () => { window.time = 0.25; window.emit("play"); window.emit("timeupdate"); };
+  document.querySelector("button").onclick = () => { window.clicks++; window.playing = true; window.emit("play"); window.time = 0.25; window.emit("timeupdate"); };
   addEventListener("message", ({ data }) => {
     const command = JSON.parse(data); window.commands.push(command);
     if (command.api === "duration") window.emit("duration", 7200);
     if (command.api === "seek") { window.time = command.value; window.emit("seek"); }
-    if (command.api === "play" || command.api === "pause") window.emit(command.api);
+    if (command.api === "play" || command.api === "pause") { window.playing = command.api === "play"; window.emit(command.api); }
   });
+  setInterval(() => { if (window.advanceClock && window.playing) { window.time += 0.25; window.emit("timeupdate"); } }, 250);
   window.emit("pause");
 <\/script>`;
 let fixtureDir;
@@ -26,14 +27,14 @@ test.beforeAll(() => {
 });
 test.afterAll(() => { if (fixtureDir) rmSync(fixtureDir, { recursive: true, force: true }); });
 
-async function setup(page, { kind = "embed", holdResolve, sameUrl = false, duration = 0, resumeTime = {} } = {}) {
-  await page.addInitScript(({ duration, resumeTime }) => {
+async function setup(page, { kind = "embed", holdResolve, sameUrl = false, duration = 0, resumeTime = {}, prebuffer = false } = {}) {
+  await page.addInitScript(({ duration, resumeTime, prebuffer }) => {
     localStorage.setItem("lampa_stream_tmdb_token", "series-fixture");
     localStorage.setItem("streambert_playerSource", JSON.stringify("lampac"));
     localStorage.setItem("streambert_autoplayNextDuration", JSON.stringify(duration));
     localStorage.setItem("streambert_resumeTime", JSON.stringify(resumeTime));
-    Object.defineProperty(navigator, "connection", { value: { saveData: true } });
-  }, { duration, resumeTime });
+    Object.defineProperty(navigator, "connection", { value: { saveData: !prebuffer } });
+  }, { duration, resumeTime, prebuffer });
   await page.route("**/api/tmdb/**", (route) => {
     const season = Number(/\/season\/(\d+)/.exec(new URL(route.request().url()).pathname)?.[1]);
     return route.fulfill({ json: season ? { season_number: season, episodes: [1, 2, 3].map((episode) => ({
@@ -60,7 +61,8 @@ async function setup(page, { kind = "embed", holdResolve, sameUrl = false, durat
     const url = kind === "embed" ? `${FRAME_ORIGIN}/?episode=${sameUrl ? "shared" : id}` : "https://series-media.test/series.m3u8";
     await route.fulfill({ json: { kind, selected: { url, label: "360p" }, qualities: [], subtitles: [], audioNames: [] } }).catch(() => {});
   });
-  await page.route(`${FRAME_ORIGIN}/**`, (route) => route.fulfill({ contentType: "text/html", body: FRAME }));
+  await page.route(`${FRAME_ORIGIN}/**`, (route) => route.fulfill({ contentType: "text/html",
+    body: prebuffer ? FRAME.replace("window.commands = [];", "window.commands = []; window.advanceClock = true;") : FRAME }));
   await page.route("https://series-media.test/**", (route) => {
     const file = new URL(route.request().url()).pathname.split("/").pop();
     log.media.push(file);
@@ -86,6 +88,53 @@ async function startEmbed(page) {
 async function ending(page) {
   await frame(page).evaluate(() => { window.time = 7195; window.emit("play"); window.emit("timeupdate"); });
 }
+
+test("a direct series route preloads the frame silently, then one frame click starts the same episode", async ({ page }) => {
+  const log = await setup(page, { prebuffer: true });
+  await page.goto("/tv/1399?season=1&episode=1");
+  const iframe = page.locator(".torrplayer-embed");
+  await expect(iframe).toHaveAttribute("src", /episode=s1e1/);
+  await expect.poll(() => frame(page)?.evaluate(() => Array.isArray(window.commands)) ?? false).toBe(true);
+  await iframe.evaluate((node) => { window.prebufferFrame = node; });
+  await expect(page.locator(".torrplayer > .torrplayer-spinner")).toHaveCount(0);
+  expect(await frame(page).evaluate(() => window.commands)).toEqual([]);
+  await expect(page.locator(".now-playing-row")).toHaveCount(0);
+  expect(await page.locator(".torrplayer-video").evaluate((video) => video.paused)).toBe(true);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("streambert_history") || "[]"))).toEqual([]);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("streambert_resumeTime")))).toEqual({});
+
+  await card(page, 1).click();
+  await expect(iframe).toBeVisible();
+  await expect(page.locator(".torrplayer-bigplay")).toBeVisible();
+  expect(await iframe.evaluate((node) => node === window.prebufferFrame)).toBe(true);
+  await page.locator(".torrplayer").scrollIntoViewIfNeeded();
+  const box = await page.locator(".torrplayer-bigplay").boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await assertEpisode(page, 1, 1);
+  await expect.poll(() => frame(page).evaluate(() => window.time), { timeout: 10_000 }).toBeGreaterThan(7);
+  await expect(page.locator(".torrplayer--embed-exposed")).toHaveCount(0);
+  expect(await frame(page).evaluate(() => window.clicks)).toBe(1);
+  expect(await frame(page).evaluate(() => window.commands.filter(({ api }) => api === "play" || api === "pause"))).toEqual([]);
+  expect(log.resolve).toEqual(["s1e1"]);
+});
+
+test("the first frame play promotes a direct-route prebuffer without a play or pause echo", async ({ page }) => {
+  await setup(page, { prebuffer: true });
+  await page.goto("/tv/1399?season=1&episode=2");
+  const iframe = page.locator(".torrplayer-embed");
+  await expect(iframe).toHaveAttribute("src", /episode=s1e2/);
+  await expect.poll(() => frame(page)?.evaluate(() => Array.isArray(window.commands)) ?? false).toBe(true);
+  await iframe.evaluate((node) => { window.prebufferFrame = node; });
+  // Exercise an incoming start before the page/card activation has committed.
+  await frame(page).evaluate(() => document.querySelector("button").click());
+  await assertEpisode(page, 1, 2);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("streambert_history") || "[]")[0]))
+    .toMatchObject({ id: 1399, season: 1, episode: 2 });
+  await expect(iframe).toBeVisible();
+  expect(await iframe.evaluate((node) => node === window.prebufferFrame)).toBe(true);
+  await expect.poll(() => frame(page).evaluate(() => window.time)).toBeGreaterThan(1);
+  expect(await frame(page).evaluate(() => window.commands.filter(({ api }) => api === "play" || api === "pause"))).toEqual([]);
+});
 
 test("changing season during playback stops the old episode and keeps the page usable", async ({ page }) => {
   const log = await setup(page);

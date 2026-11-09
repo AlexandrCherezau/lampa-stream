@@ -1978,6 +1978,9 @@ export default function TVPage({
                         key={`${playerSource}:${playerInstance}`}
                         prebuffer={!playing}
                         onRegisterPlay={registerPrebufferPlay}
+                        onPrebufferStarted={() => {
+                          if (!playingRef.current && hiddenEpRef.current) playEpisode(hiddenEpRef.current);
+                        }}
                         onPrebufferFailed={dropPrebuffer}
                         provider={playerSource}
                         apiKey={apiKey}

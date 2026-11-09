@@ -52,7 +52,7 @@ export function createEmbedMedia({ video, frame, url, onReady, target = window }
       return Promise.resolve();
     } },
     pause: { value: () => {
-      send({ api: "pause" });
+      if (ready) send({ api: "pause" });
     } },
   };
   for (const name of OVERRIDES) Object.defineProperty(video, name, { configurable: true, ...properties[name] });

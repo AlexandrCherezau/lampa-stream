@@ -39,6 +39,19 @@ test("controls reach the frame as JSON strings addressed to its origin only", as
   assert.equal(f.video.seeking, true);
 });
 
+test("pre-ready controls cannot interrupt the frame's first click with a pause", async () => {
+  const f = fixture();
+  await f.video.play();
+  f.video.pause();
+  f.frame.dispatchEvent(new Event("load"));
+  f.receive({ event: "play", time: 0 });
+  f.video.pause();
+  assert.deepEqual(f.sent, [], "neither loading nor the first play allows a control echo");
+  f.receive({ event: "timeupdate", time: 0.25 });
+  f.video.pause();
+  assert.deepEqual(f.sent.at(-1).data, { api: "pause" }, "ordinary pause still works after startup");
+});
+
 test("the frame's messages become media events and element state", () => {
   const f = fixture();
   assert.equal(f.video.readyState, 0);
