@@ -2692,8 +2692,10 @@ export default function TVPage({
                       key={s.season_number}
                       className={`season-btn ${selectedSeason === s.season_number ? "active" : ""} ${sw === "all" ? "season-watched" : sw.startsWith("some") ? "season-partial" : ""}`}
                       onClick={() => {
+                        resetAutoplayRef.current?.();
                         requestedEpisodeRef.current = undefined;
                         requestedEpisodeResolvedRef.current = true;
+                        setPlaying(false);
                         setSelectedEp(null);
                         setSelectedSeason(s.season_number);
                         onRouteChange?.(s.season_number, undefined);
