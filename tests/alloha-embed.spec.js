@@ -16,7 +16,7 @@ const FRAME = `<!doctype html><body style="background:#123"><button id="native" 
   emit("pause");
 <\/script>`;
 
-async function open(page, { blockAutoplay = false, frameBody = null } = {}) {
+async function open(page, { blockAutoplay = false, frameBody = null, frameDelay = 0 } = {}) {
   await page.addInitScript(() => localStorage.setItem("lampa_stream_tmdb_token", "fixture"));
   await page.addInitScript((candidate) => {
     const originalFetch = window.fetch.bind(window);
@@ -26,7 +26,10 @@ async function open(page, { blockAutoplay = false, frameBody = null } = {}) {
   }, { id: "alloha", providerId: "habster:alloha", providerName: "Habster · Alloha", voiceName: "Озвучки в плеере", qualityHint: "До 4K" });
   await page.route("**/api/tmdb/**", (route) => route.fulfill({ json: { id: 969681, title: "Фильм", original_title: "Film", release_date: "2026-07-31", runtime: 120, imdb_id: "tt22084616", kinopoisk_id: 5494049, genres: [], credits: { cast: [] }, results: [], images: {} } }));
   await page.route("**/api/source-host?op=resolve", (route) => route.fulfill({ json: { kind: "embed", selected: { label: "auto", url: EMBED }, qualities: [], subtitles: [], audioNames: [] } }));
-  await page.route("https://befriend.stravers.live/**", (route) => route.fulfill({ contentType: "text/html", body: frameBody || blockAutoplay ? frameBody || FRAME.replace("window.received = [];", "window.received = []; window.blockAutoplay = true;") : FRAME }));
+  await page.route("https://befriend.stravers.live/**", async (route) => {
+    if (frameDelay) await new Promise((resolve) => setTimeout(resolve, frameDelay));
+    return route.fulfill({ contentType: "text/html", body: frameBody || blockAutoplay ? frameBody || FRAME.replace("window.received = [];", "window.received = []; window.blockAutoplay = true;") : FRAME });
+  });
   await page.goto("/movie/969681");
   await page.getByRole("button", { name: /^Смотреть/ }).first().click();
   await expect(page.locator(".torrplayer-embed")).toBeVisible();
@@ -124,4 +127,33 @@ test("the settings button shows the whole frame and Готово brings ours bac
   await frame.locator("#native").click({ position: { x: 20, y: 20 } });
   await page.locator(".torrplayer-embed-back").click();
   await expect(page.locator(".torrplayer--embed-front")).toHaveCount(0);
+});
+
+test("native waiting from the hidden video cannot block starting an embed", async ({ page }) => {
+  await page.addInitScript(() => {
+    const add = HTMLVideoElement.prototype.addEventListener;
+    HTMLVideoElement.prototype.addEventListener = function (type, listener, options) {
+      add.call(this, type, listener, options);
+      if (type === "waiting") this.dispatchEvent(new Event("waiting"));
+    };
+  });
+  await open(page);
+  await expect(page.locator(".torrplayer-bigplay")).toBeVisible();
+  await page.locator(".torrplayer-video").evaluate((video) => video.dispatchEvent(new Event("waiting")));
+  await expect(page.locator(".torrplayer > .torrplayer-spinner")).toHaveCount(0);
+  const box = await page.locator(".torrplayer-bigplay").boundingBox();
+  await page.waitForTimeout(500);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect.poll(() => page.frames().find((f) => f.url().startsWith("https://befriend")).evaluate(() => window.clicked || 0)).toBe(1);
+});
+
+test("the loading spinner lets the first click reach the frame", async ({ page }) => {
+  await open(page, { frameDelay: 3000 });
+  const spinner = page.locator(".torrplayer > .torrplayer-spinner");
+  await expect(spinner).toBeVisible();
+  const box = await spinner.boundingBox();
+  const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y).className,
+    [box.x + box.width / 2, box.y + box.height / 2]);
+  expect(hit).toContain("torrplayer-embed");
+  await expect(page.locator(".torrplayer-bigplay")).toBeVisible();
 });

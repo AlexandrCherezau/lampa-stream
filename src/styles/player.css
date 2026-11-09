@@ -297,7 +297,7 @@
 .torrplayer-bigplay svg { width: 28px; height: 28px; margin-left: 3px; }
 
 /* Everything else that appears over the picture */
-.torrplayer-spinner { border-color: rgb(255 255 255 / 0.18); border-top-color: #fff; }
+.torrplayer-spinner { pointer-events: none; border-color: rgb(255 255 255 / 0.18); border-top-color: #fff; }
 .torrplayer-skip {
   bottom: 70px;
   right: var(--capsule-gap);
