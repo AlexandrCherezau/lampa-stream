@@ -482,3 +482,11 @@ Post-deploy /tmp/lampa-postdeploy-smoke-report.json: HaikyuuS1E14 иFightClub ×
 - Проверено: unit 177+; полный браузерный прогон 162 passed (6 известных падений профиля, как на `main`) до последней правки prebuffer; после неё прошли целевые specs, `series-switching.spec.js:198` изредка падает (1 из 2). Живьём на пробной версии iframe и кнопка на сериях появляются; запуск серии Alloha в безголовом Chromium не идёт даже на чистой странице без сайта (play, затем pause на 0 с), поэтому сам просмотр серии не подтверждён.
 - Production: сайт `dpl_BhRPUwJ7sYWz61emrud1cSyJe4FC`, откат `dpl_BTMwaGnUToGTVJM1XYswF8p6z4mf`. Выложено по просьбе пользователя без его проверки на пробной версии.
 - Следующий шаг: нет, ждём отзыв пользователя по сериям.
+
+## Alloha по альтернативным названиям TMDB — 14 ноября 2026 (опубликовано)
+
+- Причина: Alloha в Habster ищется по ID Кинопоиска, а ID ищется по точному названию. Для tv/289517 мы слали «Работа с призрачными перспективами» и «꿀알바», а в Habster сериал записан как «Идеальная работа» / «Kkulalba» (КП 7791628). Kinogo показывает его через тот же Alloha на своём домене `kinogomy.stravers.live` и своём токене. Их токены не используем.
+- Исправление: `src/utils/alternative-titles.js` берёт `/{type}/{id}/alternative_titles` из TMDB (RU, затем UA/BY/KZ, затем US/GB, до 12 названий), `useSourceHost` шлёт их как `altTitles`, `titleKey` их учитывает. Сервер принимает до 20 строк по 300 символов; любое из них подтверждает совпадение, но ищет он максимум по 4 названиям. Год, тип, точное имя, отказ при неоднозначности и сверка getinfo не ослаблены.
+- Codex больше не используется: подписка пользователя закончилась 14 ноября, код пишет ведущий.
+- Проверено: source-host 116/116, frontend unit 182 (3 skipped), client check, Vite build. Живой Habster: без altTitles ничего, с ними Alloha и Collaps kp=7791628. Боевой `/api/source-host?op=discover` с altTitles отдаёт Habster · Alloha. Опубликованный `OnlinePlayer-DqWqyFSz.js` содержит запрос alternative_titles. Сам просмотр серии в браузере не проверялся.
+- Production: сайт `dpl_CUoCBdwxLMnhyApmH9xdg1B9wFWP` (main `6fc1ff8`), откат `dpl_JDiFTVPNAhG8Urf1oBjDX4fwQgG2`; сервер `dpl_D3jDeKirrfWGNCRyb32p2Ce1usQs` (deploy/source-host `b629ff4`), откат `dpl_39xR1E6L1tw4ZHkgzHTWh66Pb2gh`.
