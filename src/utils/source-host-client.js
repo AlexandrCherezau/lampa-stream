@@ -26,7 +26,7 @@ function titleKey(title) {
   return JSON.stringify([
     title.type, title.title, title.originalTitle, title.tmdbId, title.year,
     title.imdbId, title.kinopoiskId, title.language, Boolean(title.anime),
-    title.catalogSource, title.runtimeMinutes, title.season, title.episode,
+    title.catalogSource, title.runtimeMinutes, title.season, title.episode, title.altTitles,
   ]);
 }
 

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { alternativeTitleNames } from "../src/utils/alternative-titles.js";
 
 test("episode restarts use the latest preference while checkpoint writes leave discovery running", async (t) => {
   let source = await readFile(new URL("../src/utils/useSourceHost.js", import.meta.url), "utf8");
@@ -20,6 +21,7 @@ test("episode restarts use the latest preference while checkpoint writes leave d
     tmdbFetch: async () => null,
     isAnimeContent: () => false,
     collapsFindKp: async () => null,
+    alternativeTitleNames,
     createSourceSession: () => ({ start: (title, preference) => starts.push({ title, preference }), stop() {} }),
   };
   const previousWindow = globalThis.window;
