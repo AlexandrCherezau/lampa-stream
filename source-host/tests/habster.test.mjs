@@ -387,3 +387,53 @@ test("Habster Alloha opens the exact episode of a series", async () => {
   assert.equal(url.searchParams.get("episode"), "3");
   assert.equal(requests[0].pathname, "/series/328");
 });
+
+test("Habster matches a TMDB alternative title when the main names differ from its catalogue", async () => {
+  // TMDB tv/289517: RU name and Korean original differ from Habster's "Идеальная работа" / "Kkulalba".
+  const title = { type: "tv", title: "Работа с призрачными перспективами", originalTitle: "꿀알바", year: 2026, season: 1, episode: 1 };
+  const card = { kp_id: "7791628", name_ru: "Идеальная работа", name: "Kkulalba", year: 2026, category: "serial" };
+  const info = { kinopoiskId: 7791628, nameRu: "Идеальная работа", nameOriginal: "Kkulalba", nameEn: null, imdbId: null, year: 2026, type: "MINI_SERIES" };
+  const adapterFor = (queries) => createHabsterProvider({ transport: { async request(raw) {
+    const url = new URL(raw);
+    if (url.pathname === "/search.php") {
+      queries.push(url.searchParams.get("q"));
+      return response(JSON.stringify({ results: [card] }));
+    }
+    assert.equal(url.searchParams.get("kp_id"), "7791628");
+    return response(JSON.stringify(info));
+  } } });
+  const without = [];
+  assert.deepEqual(await collect(adapterFor(without).discover(title)), []);
+  assert.deepEqual(without, [title.title, title.originalTitle]);
+  const queries = [];
+  const [alloha] = await collect(adapterFor(queries).discover({ ...title, altTitles: ["Dead-End Job", "Идеальная работа"] }));
+  assert.deepEqual(alloha.ref, { type: "tv", kinopoiskId: 7791628, voiceId: "default", season: 1, episode: 1 });
+  // The first query already returns the card, which now matches an accepted alternative name.
+  assert.deepEqual(queries, [title.title]);
+});
+
+test("Habster searches alternative titles only after main names and caps the number of searches", async () => {
+  const title = { type: "movie", title: "Main", originalTitle: "Original", year: 2026,
+    altTitles: ["Alt one", "Alt two", "Alt three", "Alt four"] };
+  const queries = [];
+  const adapter = createHabsterProvider({ transport: { async request(raw) {
+    queries.push(new URL(raw).searchParams.get("q"));
+    return response(JSON.stringify({ results: [] }));
+  } } });
+  assert.deepEqual(await collect(adapter.discover(title)), []);
+  assert.deepEqual(queries, ["Main", "Original", "Alt one", "Alt two"]);
+});
+
+test("Habster still refuses ambiguous matches reached through alternative titles", async () => {
+  const title = { type: "tv", title: "Main", year: 2026, season: 1, episode: 1, altTitles: ["Shared name"] };
+  let calls = 0;
+  const adapter = createHabsterProvider({ transport: { async request() {
+    calls++;
+    return response(JSON.stringify({ results: [
+      { kp_id: "1", name_ru: "Shared name", year: 2026, category: "serial" },
+      { kp_id: "2", name: "Shared name", year: 2026, category: "series" },
+    ] }));
+  } } });
+  assert.deepEqual(await collect(adapter.discover(title)), []);
+  assert.equal(calls, 1, "ambiguity stops the lookup without trying more names or getinfo");
+});

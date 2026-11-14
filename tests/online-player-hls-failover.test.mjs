@@ -119,14 +119,14 @@ test("late media decode error still invokes bounded in-place recovery", async ()
 });
 
 test("healthy same-URL discovery update preserves the current stream instance", () => {
-  const updater = new Function("previous", "ls", "forceReattach", streamUpdaterBody);
+  const updater = new Function("previous", "ls", "forceReattach", "progressKey", streamUpdaterBody);
   const previous = { hls: "https://cdn.test/video.m3u8", viaRelay: false };
   const next = updater(previous, { hls: previous.hls, viaRelay: false }, false);
   assert.equal(next, previous);
 });
 
 test("same-URL manual retry after HLS teardown creates a fresh stream instance", () => {
-  const updater = new Function("previous", "ls", "forceReattach", streamUpdaterBody);
+  const updater = new Function("previous", "ls", "forceReattach", "progressKey", streamUpdaterBody);
   const previous = { hls: "https://cdn.test/video.m3u8", viaRelay: false };
   const manualRetryResolved = true;
   const forceReattach = manualRetryResolved;
@@ -136,7 +136,7 @@ test("same-URL manual retry after HLS teardown creates a fresh stream instance",
 });
 
 test("same-URL automatic recovery forces a fresh media-engine attachment", () => {
-  const updater = new Function("previous", "ls", "forceReattach", streamUpdaterBody);
+  const updater = new Function("previous", "ls", "forceReattach", "progressKey", streamUpdaterBody);
   const previous = { hls: "https://cdn.test/video.m3u8", viaRelay: false };
   const forceReattach = true;
   const next = updater(previous, { hls: previous.hls, viaRelay: false }, forceReattach);
@@ -348,4 +348,137 @@ test("fatal errors are counted per trouble spot, not per film", () => {
 
 test("a same-source refresh is not announced as a source switch", () => {
   assert.match(source, /\{switching && !\(state === "loading" && hasMedia\) && \(/);
+});
+
+
+test("a new episode with the same media URL still attaches a fresh stream", () => {
+  const updater = new Function("previous", "ls", "forceReattach", "progressKey", streamUpdaterBody);
+  for (const kind of ["hls", "mp4", "embed"]) {
+    const previous = { [kind]: "https://cdn.test/shared", progressKey: "tv_1_s1e1" };
+    const next = updater(previous, { [kind]: previous[kind] }, false, "tv_1_s1e2");
+    assert.notEqual(next, previous);
+    assert.equal(next.progressKey, "tv_1_s1e2");
+    assert.equal(updater(next, { [kind]: previous[kind] }, false, "tv_1_s1e2"), next);
+  }
+});
+
+test("native waiting events cannot set an embed's loading state", () => {
+  const start = source.indexOf("const onWaiting = ");
+  const end = source.indexOf(";\n", start);
+  const callback = source.slice(start + "const onWaiting = ".length, end);
+  const values = [];
+  const engineRef = { current: "embed" };
+  const onWaiting = new Function("engineRef", "setWaiting", `return (${callback})`)(engineRef, (v) => values.push(v));
+  onWaiting();
+  assert.deepEqual(values, []);
+  engineRef.current = "hls";
+  onWaiting();
+  assert.deepEqual(values, [true]);
+});
+
+test("native attachment listeners cannot fire against the next stream", () => {
+  const start = source.indexOf("const attachNative = (src) => {");
+  const end = source.indexOf("\n    const attachEmbed", start);
+  const attachEvents = new AbortController();
+  const calls = [];
+  const v = new EventTarget();
+  const env = {
+    v, attachEvents, disposed: false, engineRef: { current: null },
+    setRecovering: () => calls.push("recovering"), rateRef: { current: 1 },
+    reapplyVolume: () => calls.push("volume"), resumeAt: () => calls.push("resume"),
+    prebufferingRef: { current: true }, isLampac: false, hadPlayedRef: { current: false },
+    setState: () => calls.push("state"), setError: () => calls.push("error"),
+  };
+  const attach = new Function(...Object.keys(env), source.slice(start, end) + "return attachNative;")(...Object.values(env));
+  attach("old.mp4");
+  attachEvents.abort();
+  v.dispatchEvent(new Event("loadedmetadata"));
+  v.dispatchEvent(new Event("error"));
+  assert.deepEqual(calls, []);
+});
+
+function reflectFleet({ ready = true, previousStream, nextStream }) {
+  const marker = '// ── Reflect the Lampac fleet';
+  const start = source.indexOf('  useEffect(() => {', source.indexOf(marker));
+  const end = source.indexOf('\n  // Fleet inline notice', start);
+  const calls = [];
+  let stream = { hls: 'old.m3u8', progressKey: 'tv_1_s1e1' };
+  const env = {
+    useEffect: (effect) => effect(), isLampac: true, profileReady: ready, progressKey: 'tv_1_s1e2',
+    lampac: { stream: nextStream }, previousEpisodeStreamRef: { current: previousStream },
+    recoveryFailedRef: { current: false }, fleetPlayedRef: { current: false },
+    loadingEnteredAtRef: { current: 0 }, loadingExitRef: { current: null },
+    forceStreamReattachRef: { current: false }, MIN_DISPLAY_MS: 0,
+    setStream: (update) => { stream = update(stream); calls.push(['stream', stream]); },
+    setState: (v) => calls.push(['state', v]), setError() {}, setSubtitles() {}, setAudioNames() {}, setMeta() {},
+  };
+  new Function(...Object.keys(env), source.slice(start, end))(...Object.values(env));
+  return { calls, stream };
+}
+
+test("episode profile refresh cannot reattach the previous hook snapshot", () => {
+  const old = { hls: 'old.m3u8' };
+  assert.deepEqual(reflectFleet({ ready: false, previousStream: old, nextStream: old }).calls, []);
+  assert.deepEqual(reflectFleet({ previousStream: old, nextStream: old }).calls, []);
+  const { stream } = reflectFleet({ previousStream: old, nextStream: { ...old } });
+  assert.equal(stream.progressKey, 'tv_1_s1e2');
+});
+
+test("new episode preferences do not copy the previous video clock into its resume", () => {
+  const start = source.indexOf('  useEffect(() => {', source.indexOf('// Fleet inline notice'));
+  const effectStart = source.indexOf('  useEffect(() => {', start + 1);
+  const end = source.indexOf('\n  // ── Switching watchdog', effectStart);
+  const calls = [];
+  const env = {
+    useEffect: (effect) => effect(), prebuffering: false, isLampac: true, profileReady: true,
+    lampac: { stream: { hls: 'new.m3u8' }, sourcePreference: { providerId: 'habster:collaps' } },
+    previousEpisodeStreamRef: { current: { hls: 'old.m3u8' } },
+    attachedKeyRef: { current: 'tv_1_s1e1' }, progressKey: 'tv_1_s1e2',
+    videoRef: { current: { currentTime: 600 } }, resumeTargetRef: { current: null }, checkpointRef: { current: null },
+    storage: { get: () => ({ tv_1_s1e2: 12 }) }, STORAGE_KEYS: { RESUME_TIME: 'resume' },
+    persistCheckpoint: (position) => calls.push(position),
+  };
+  new Function(...Object.keys(env), source.slice(effectStart, end))(...Object.values(env));
+  assert.deepEqual(calls, [12]);
+});
+
+test("returning A to B to A waits for this selection's profile refresh", () => {
+  const start = source.indexOf("  const checkpointRef = ");
+  const end = source.indexOf("  const checkpointItem = ", start);
+  const declaration = source.slice(start, end);
+  const complete = /setProfileReady\w+\((\w+)\);/.exec(source)?.[0];
+  assert.ok(complete, "find the production profile-ready transition");
+  let readyKey = null, memo, memoKey;
+  const render = (progressKey) => new Function("useRef", "useState", "useMemo", "checkpoint", "progressKey",
+    declaration + `return { ready: profileReady, complete: () => { ${complete} } };`)(
+      (value) => ({ current: value }), () => [readyKey, (value) => { readyKey = value; }],
+      (factory, [key]) => { if (memoKey !== key) { memo = factory(); memoKey = key; } return memo; }, null, progressKey,
+    );
+  const first = render("A");
+  first.complete();
+  assert.equal(render("A").ready, true);
+  assert.equal(render("B").ready, false);
+  assert.equal(render("A").ready, false);
+});
+
+test("old viewing intervals keep their own episode metadata during switch cleanup", () => {
+  const start = source.indexOf("  const commitViewingSession = useCallback(");
+  const end = source.indexOf("\n  // Count only wall-clock intervals", start);
+  const recorded = [];
+  const oldItem = { id: "1", type: "tv", season: 1, episode: 1 };
+  const checkpointItemRef = { current: oldItem };
+  const viewingSessionRef = { current: null };
+  const env = {
+    useCallback: (callback) => callback, useEffect: (effect) => effect(),
+    progressKey: "tv_1_s1e1", checkpointItemRef, viewingSessionRef,
+    prebuffering: false, newPlaybackSessionId: () => "session",
+    recordViewingSession: (value) => { recorded.push(value); },
+  };
+  const commit = new Function(...Object.keys(env), source.slice(start, end) + "return commitViewingSession;")(...Object.values(env));
+  viewingSessionRef.current.segments.push({ start: 1000, end: 5000 });
+  checkpointItemRef.current = { ...oldItem, episode: 2 };
+  commit();
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0].item.episode, 1);
+  assert.equal(recorded[0].progressKey, "tv_1_s1e1");
 });

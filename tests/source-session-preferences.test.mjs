@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createSourceSession, discoverSources } from "../src/utils/source-host-client.js";
+import { storage, STORAGE_KEYS } from "../src/utils/storage.js";
 
 const candidate = (id, voiceId, voiceName) => ({
   id, providerId: "habster:alloha", providerName: "Habster · Alloha", voiceId, voiceName,
@@ -16,6 +17,114 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+function globalPreference(t, initial = null) {
+  let value = initial;
+  const writes = [];
+  t.mock.method(storage, "get", (key) => key === STORAGE_KEYS.GLOBAL_SOURCE_PREFERENCE ? value : null);
+  t.mock.method(storage, "set", (key, next) => {
+    assert.equal(key, STORAGE_KEYS.GLOBAL_SOURCE_PREFERENCE);
+    value = next;
+    writes.push(next);
+  });
+  return { writes, get value() { return value; } };
+}
+
+for (const { name, global, title, expected } of [
+  { name: "newer global provider overrides the title's voice and quality", global: { providerId: "global", updatedAt: 200 },
+    title: { providerId: "title", voiceId: "dub", quality: "2160p", updatedAt: 100 }, expected: { id: "global-default", quality: undefined } },
+  { name: "global provider overrides a title preference with a newer checkpoint timestamp", global: { providerId: "global", updatedAt: 100 },
+    title: { providerId: "title", voiceId: "dub", quality: "2160p", updatedAt: 200 }, expected: { id: "global-default", quality: undefined } },
+  { name: "global provider overrides a title preference with an equal timestamp", global: { providerId: "global", updatedAt: 100 },
+    title: { providerId: "title", voiceId: "dub", quality: "2160p", updatedAt: 100 }, expected: { id: "global-default", quality: undefined } },
+  { name: "matching global provider keeps the title's own voice and quality", global: { providerId: "title", updatedAt: 200 },
+    title: { providerId: "title", voiceId: "dub", quality: "2160p", updatedAt: 100 }, expected: { id: "title-dub", quality: "2160p" } },
+  { name: "matching global provider keeps a title voice restored by name", global: { providerId: "title", updatedAt: 100 },
+    title: { providerId: "title", voiceName: "dub", quality: "2160p", updatedAt: 200 }, expected: { id: "title-dub", quality: "2160p" } },
+  { name: "no global pick restores the title's voice and quality as before", global: null,
+    title: { providerId: "title", voiceId: "dub", voiceName: "dub", quality: "2160p", updatedAt: 200 }, expected: { id: "title-dub", quality: "2160p" } },
+  { name: "global pick applies when the title has no checkpoint", global: { providerId: "global", updatedAt: 200 },
+    title: null, expected: { id: "global-default", quality: undefined } },
+  { name: "newer audio-only checkpoint cannot suppress the global provider", global: { providerId: "global", updatedAt: 100 },
+    title: { audio: { lang: "ru" }, quality: "2160p", updatedAt: 200 }, expected: { id: "global-default", quality: undefined } },
+  { name: "legacy title checkpoint yields to a timestamped global pick", global: { providerId: "global", updatedAt: 200 },
+    title: { providerId: "title", voiceId: "dub", quality: "2160p" }, expected: { id: "global-default", quality: undefined } },
+  { name: "malformed global timestamp leaves the title alone", global: { providerId: "global", updatedAt: "bad" },
+    title: { providerId: "title", voiceId: "dub", quality: "2160p" }, expected: { id: "title-dub", quality: "2160p" } },
+]) test(name, async (t) => {
+  const saved = globalPreference(t, global);
+  const calls = [];
+  const session = createSourceSession({ publish() {},
+    discover: async (_title, { onEvent }) => {
+      for (const [id, providerId, voiceId] of [["title-default", "title", "default"], ["title-dub", "title", "dub"], ["global-default", "global", "default"]]) {
+        onEvent("candidate", { ...candidate(id, voiceId, voiceId), providerId, providerName: providerId });
+      }
+    },
+    resolve: async (id, quality) => { calls.push({ id, quality }); return result(); },
+  });
+  try {
+    await session.start({ title: name }, title);
+    await tick();
+    assert.deepEqual(calls, [expected]);
+    assert.deepEqual(saved.writes, []);
+  } finally { session.stop(); }
+});
+
+for (const unavailable of ["missing", "fails"]) test(`unavailable global provider (${unavailable}) uses automatic fallback without saving it`, async (t) => {
+  const saved = globalPreference(t, { providerId: "preferred", updatedAt: 200 });
+  const calls = [];
+  let state;
+  const session = createSourceSession({ publish: (value) => { state = value; },
+    discover: async (_title, { onEvent }) => {
+      for (const id of ["fallback", ...(unavailable === "fails" ? ["preferred"] : [])]) {
+        onEvent("candidate", { ...candidate(id, id, id), providerId: id, providerName: id });
+      }
+    },
+    resolve: async (id, quality) => {
+      calls.push({ id, quality });
+      if (id === "preferred") throw new Error("unavailable");
+      return result();
+    },
+  });
+  try {
+    await session.start({ title: unavailable }, { providerId: "old-title", quality: "2160p", updatedAt: 100 });
+    for (let i = 0; i < 5 && !state.stream; i++) await tick();
+    assert.equal(state.balanser, "fallback");
+    assert.equal(state.sourcePreference, null);
+    assert.deepEqual(calls, unavailable === "fails" ? [{ id: "preferred", quality: undefined }, { id: "fallback", quality: undefined }] : [{ id: "fallback", quality: undefined }]);
+    assert.deepEqual(saved.writes, []);
+    assert.deepEqual(saved.value, { providerId: "preferred", updatedAt: 200 });
+  } finally { session.stop(); }
+});
+
+test("only manual picks save a global provider, surviving automatic hops and episode restarts", async (t) => {
+  const saved = globalPreference(t);
+  t.mock.method(Date, "now", () => 500);
+  let state;
+  const session = createSourceSession({ publish: (value) => { state = value; },
+    discover: async (_title, { onEvent }) => {
+      for (const id of ["first", "picked"]) onEvent("candidate", { ...candidate(id, id, id), providerId: id, providerName: id });
+    },
+    resolve: async () => result(),
+  });
+  try {
+    await session.start({ type: "tv", title: "Series", season: 1, episode: 1 }); await tick();
+    assert.deepEqual(saved.writes, []);
+    await session.selectBalanser("picked");
+    assert.deepEqual(saved.value, { providerId: "picked", updatedAt: 500 });
+    session.notePlaying();
+    session.abandonCurrent(); await tick();
+    assert.equal(state.balanser, "first");
+    assert.equal(saved.writes.length, 1);
+    await session.start({ type: "tv", title: "Series", season: 1, episode: 2 }); await tick();
+    assert.equal(state.balanser, "picked");
+    assert.equal(saved.writes.length, 1);
+    await session.selectVoice("picked");
+    await session.selectQuality("2160p");
+    assert.equal(saved.writes.length, 3);
+    assert.deepEqual(saved.value, { providerId: "picked", updatedAt: 500 });
+  } finally { session.stop(); }
+});
 
 test("restores a saved stable voice and quality before starting another discovered voice", async () => {
   const calls = [];

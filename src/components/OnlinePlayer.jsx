@@ -221,6 +221,7 @@ const providerQualityLabel = (source) => source.qualityHeight >= 2160 ? "4K" : `
 // stall fast. Only acts before first real playback (see the watchdog effect).
 const FLEET_STALL_MS = 7000;
 const EMBED_RESPONSE_MS = 20_000;
+const EMBED_EXPOSE_MS = 6000;
 const PLAYBACK_STALL_MS = 20_000;
 const MIN_DISPLAY_MS = 250;
 const SYNC_TICK_MS = 500;
@@ -280,6 +281,7 @@ export default function OnlinePlayer({
   // the details page. The media stays muted and paused until an explicit play.
   prebuffer = false,
   onRegisterPlay = null,
+  onPrebufferStarted = null,
   onPrebufferFailed = null,
   // ── Source-failed hook (optional): fires when a non-Lampac provider cannot
   // resolve a stream for this title (Collaps 410, host not allowed, etc.).
@@ -323,7 +325,9 @@ export default function OnlinePlayer({
         if (video) {
           userPausedRef.current = false;
           try { video.volume = volumeRef.current; video.muted = mutedRef.current; } catch {}
-          try { video.play()?.catch(() => {}); } catch {}
+          if (engineRef.current !== "embed") {
+            try { video.play()?.catch(() => {}); } catch {}
+          }
         }
       }
     }
@@ -332,8 +336,9 @@ export default function OnlinePlayer({
     try { return progressKey ? getPlaybackCheckpoint(progressKey) : null; } catch { return null; }
   });
   const checkpointRef = useRef(checkpoint); checkpointRef.current = checkpoint;
-  const [profileReadyKey, setProfileReadyKey] = useState(null);
-  const profileReady = profileReadyKey === progressKey;
+  const profileSelection = useMemo(() => ({ progressKey }), [progressKey]);
+  const [profileReadySelection, setProfileReadySelection] = useState(null);
+  const profileReady = profileReadySelection === profileSelection;
   const checkpointItem = useMemo(() => makeViewingItem(item, details, type, season, episode, progressKey), [item, details, type, season, episode, progressKey]);
   const checkpointItemRef = useRef(checkpointItem); checkpointItemRef.current = checkpointItem;
   const viewingSessionRef = useRef(null);
@@ -355,8 +360,11 @@ export default function OnlinePlayer({
   const errCountRef = useRef(0);
   const embedRef = useRef(null);
   const embedFrameRef = useRef(null);
+  const embedLoadedRef = useRef(false);
   const [embedStarted, setEmbedStarted] = useState(false);
   const [embedMenuOpen, setEmbedMenuOpen] = useState(false);
+  const [embedExposed, setEmbedExposed] = useState(false);
+  const [embedLoaded, setEmbedLoaded] = useState(false);
   const resumeDoneRef = useRef(false); // seek to saved timecode once per stream
   // True once ANY stream has actually attached. Used by the Lampac path to decide
   // whether a resolve error should blank the player (nothing ever played) or just
@@ -365,8 +373,7 @@ export default function OnlinePlayer({
   const userPausedRef = useRef(false);
   const syncTrackerRef = useRef(null);
   if (!syncTrackerRef.current) syncTrackerRef.current = createSyncTracker();
-  // Which title the attached stream belongs to. After a title change the old one
-  // stays attached until the new one resolves, and it must not follow the room.
+  // Which episode owns the attached media; the video node survives episode changes.
   const attachedKeyRef = useRef(null);
   const recoveryPendingRef = useRef(false);
   const recoveryInFlightRef = useRef(false);
@@ -402,6 +409,8 @@ export default function OnlinePlayer({
   }, [prebuffering, state, onPrebufferFailed]);
   const [error, setError] = useState("");
   const [stream, setStream] = useState(null); // {dash?, hls?}
+  // A new page only. Reattaching to the same frame must not forget that it loaded.
+  useEffect(() => { setEmbedLoaded(false); embedLoadedRef.current = false; }, [stream?.embed]);
   const [audioNames, setAudioNames] = useState([]);
   const [subtitles, setSubtitles] = useState([]);
   const [meta, setMeta] = useState("");
@@ -503,6 +512,8 @@ export default function OnlinePlayer({
   const voices = isLampac ? lampac.voices : [];
   const srcQualities = isLampac ? lampac.qualities : [];
   const [showBalanser, setShowBalanser] = useState(false);
+  const [showProviderPicker, setShowProviderPicker] = useState(false);
+  const providerPickerRef = useRef(null);
   const [showVoice, setShowVoice] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   // Inline notice that never blanks the player (dead balancer, stale link): the
@@ -572,10 +583,10 @@ export default function OnlinePlayer({
         setCheckpoint(latest);
         if (!prebufferingRef.current && Number.isFinite(latest.position) && latest.position >= 0) saveResumeTime(latest.position);
       }
-      setProfileReadyKey(progressKey);
+      setProfileReadySelection(profileSelection);
     })();
     return () => { live = false; controller.abort(); };
-  }, [progressKey, saveResumeTime]);
+  }, [profileSelection, saveResumeTime]);
   // Advance to the next fleet balancer when a stream that resolved fine won't
   // actually play. Returns true if it jumped (→ keep the player in loading), false
   // when the fleet is exhausted (→ let the caller settle into the error screen).
@@ -686,6 +697,19 @@ export default function OnlinePlayer({
     engineRef.current = null;
   }, []);
 
+  const previousEpisodeStreamRef = useRef(null);
+  useEffect(() => {
+    previousEpisodeStreamRef.current = lampac.stream;
+    destroyAll();
+    setStream(null);
+    setState("loading"); setError(""); setNotice(null);
+    setPlaying(false); setWaiting(false);
+    setCurrent(0); setDuration(0); setBuffered(0);
+    resumeTargetRef.current = null;
+    recoveryPendingRef.current = false;
+    // The hook still exposes its old snapshot until the next discovery starts.
+  }, [progressKey, destroyAll]);
+
   // ── Precise resume timecodes (seconds) ───────────────────────────────────────
   // progress (percentage) drives the UI bar + "watched" threshold + sync; this
   // parallel map stores the EXACT second the viewer reached, so a reload resumes
@@ -787,8 +811,9 @@ export default function OnlinePlayer({
   // /dub/quality re-runs the hook, which hands us a new stream → the attach
   // effect re-attaches while <video> stays mounted (switching keeps it seamless).
   useEffect(() => {
-    if (!isLampac) return;
+    if (!isLampac || !profileReady) return;
     const ls = lampac.stream;
+    if (ls && ls === previousEpisodeStreamRef.current) return;
     if (ls && recoveryFailedRef.current) {
       setSubtitles(lampac.subtitles || []);
       setAudioNames(lampac.audioNames || []);
@@ -823,8 +848,8 @@ export default function OnlinePlayer({
       const forceReattach = forceStreamReattachRef.current;
       forceStreamReattachRef.current = false;
       setStream((previous) => {
-        return !forceReattach && previous?.embed === ls.embed && previous?.mp4 === ls.mp4 && previous?.hls === ls.hls && previous?.viaRelay === ls.viaRelay
-          ? previous : ls.embed ? { embed: ls.embed } : ls.mp4 ? { mp4: ls.mp4, viaRelay: ls.viaRelay } : { hls: ls.hls, viaRelay: ls.viaRelay };
+        return !forceReattach && previous?.progressKey === progressKey && previous?.embed === ls.embed && previous?.mp4 === ls.mp4 && previous?.hls === ls.hls && previous?.viaRelay === ls.viaRelay
+          ? previous : { ...(ls.embed ? { embed: ls.embed } : ls.mp4 ? { mp4: ls.mp4, viaRelay: ls.viaRelay } : { hls: ls.hls, viaRelay: ls.viaRelay }), progressKey };
       });
       setSubtitles(lampac.subtitles || []);
       setAudioNames(lampac.audioNames || []);
@@ -837,7 +862,7 @@ export default function OnlinePlayer({
       if (loadingExitRef.current) { clearTimeout(loadingExitRef.current); loadingExitRef.current = null; }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLampac, lampac.stream, lampac.sourceError, lampac.subtitles, lampac.audioNames, lampac.meta]);
+  }, [isLampac, profileReady, progressKey, lampac.stream, lampac.sourceError, lampac.subtitles, lampac.audioNames, lampac.meta]);
 
   // Fleet inline notice (non-fatal): show the hook's sourceError as an overlay
   // ONLY once a stream has genuinely played (frames decoded) — before that, a
@@ -849,8 +874,8 @@ export default function OnlinePlayer({
   }, [isLampac, lampac.sourceError]);
 
   useEffect(() => {
-    if (prebuffering || !isLampac || !lampac.sourcePreference) return;
-    const currentTime = videoRef.current?.currentTime || 0;
+    if (prebuffering || !isLampac || !profileReady || !lampac.sourcePreference || lampac.stream === previousEpisodeStreamRef.current) return;
+    const currentTime = attachedKeyRef.current === progressKey ? videoRef.current?.currentTime || 0 : 0;
     let legacyPosition = 0;
     try { legacyPosition = Number((storage.get(STORAGE_KEYS.RESUME_TIME) || {})[progressKey]) || 0; } catch {}
     // Discovery may select a voice before HLS applies its startPosition. Saving
@@ -864,7 +889,7 @@ export default function OnlinePlayer({
       voiceName: lampac.sourcePreference.voiceName,
       ...(lampac.quality ? { quality: lampac.quality } : {}),
     });
-  }, [prebuffering, isLampac, lampac.sourcePreference?.providerId, lampac.sourcePreference?.voiceId, lampac.sourcePreference?.voiceName, lampac.quality, progressKey, persistCheckpoint]);
+  }, [prebuffering, isLampac, profileReady, lampac.stream, lampac.sourcePreference?.providerId, lampac.sourcePreference?.voiceId, lampac.sourcePreference?.voiceName, lampac.quality, progressKey, persistCheckpoint]);
 
   // ── Switching watchdog: the overlay can NEVER outlive a switch ────────────────
   // The `switching` freeze is cleared by the hook (aborted/stale/error descents) or
@@ -930,8 +955,8 @@ export default function OnlinePlayer({
     v.addEventListener("loadedmetadata", onMeta, { once: true });
     const t = setTimeout(() => {
       if (stream.embed) {
-        // The embedded player may wait for a click, so only silence means it failed.
-        if (!embedRef.current?.responded) fleetFailover();
+        // It may wait for a click without a word, so only a page that never loaded failed.
+        if (!embedRef.current?.responded && !embedLoadedRef.current) fleetFailover();
         return;
       }
       if (fleetPlayedRef.current || userPausedRef.current) return; // paused viewers never trigger startup failover
@@ -960,6 +985,36 @@ export default function OnlinePlayer({
     // someone presses play.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prebuffering, isLampac, stream, fleetFailover, syncState?.playing]);
+
+  // We cannot see inside the frame, so an ad, a prompt or a stall shows up only as a
+  // clock that does not move. Show the frame whole then: it may need the viewer.
+  useEffect(() => {
+    if (!stream?.embed || prebuffering) return;
+    const v = videoRef.current;
+    if (!v) return;
+    let clickedAt = 0;
+    let lastTime = -1;
+    let lastMove = Date.now();
+    const onBlur = () => {
+      if (document.activeElement === embedFrameRef.current) clickedAt = Date.now();
+    };
+    const timer = setInterval(() => {
+      const now = Date.now();
+      if (v.currentTime !== lastTime) {
+        lastTime = v.currentTime;
+        lastMove = now;
+      }
+      const started = v.readyState > 0;
+      setEmbedExposed(started
+        ? !v.paused && !v.seeking && now - lastMove > EMBED_EXPOSE_MS
+        : clickedAt > 0 && now - clickedAt > EMBED_EXPOSE_MS);
+    }, 1000);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [stream?.embed, prebuffering]);
 
   // A fatal engine error is not the only way a relay can stop: some stalls emit
   // neither an error nor `waiting`. After real playback, refresh the SAME source
@@ -1155,11 +1210,12 @@ export default function OnlinePlayer({
     setAudioTracks([]); setAudioId(-1);
     setLevels([]); setCurrentLevel(-1);
     errCountRef.current = 0;
-    setEmbedStarted(false); setEmbedMenuOpen(false);
+    setEmbedStarted(false); setEmbedMenuOpen(false); setEmbedExposed(false);
     // Guard so an async attachHls (which awaits the dynamic hls.js import) bails
     // out if the effect cleaned up (stream change / unmount) before Hls loaded —
     // otherwise we'd attach a new Hls to a gone video and leak it.
     let disposed = false;
+    const attachEvents = new AbortController();
 
     // Re-apply the user's previously-set volume/mute to the underlying
     // <video> element. dash.js's player.initialize()/reset() and hls.js's
@@ -1191,7 +1247,7 @@ export default function OnlinePlayer({
         resumeAt(v);
         if (!prebufferingRef.current && !userPausedRef.current) v.play().catch(() => {});
       };
-      v.addEventListener("loadedmetadata", onMeta, { once: true });
+      v.addEventListener("loadedmetadata", onMeta, { once: true, signal: attachEvents.signal });
       // A native media error can't recover in-place (no ABR ladder): surface it
       // so the Lampac path can show an inline notice and keep the picker up.
       v.addEventListener("error", async () => {
@@ -1219,19 +1275,23 @@ export default function OnlinePlayer({
         }
         setState((s) => (hadPlayedRef.current ? s : "error"));
         if (!hadPlayedRef.current) setError("Поток недоступен");
-      }, { once: true });
+      }, { once: true, signal: attachEvents.signal });
     };
 
     const attachEmbed = () => {
       engineRef.current = "embed";
+      setWaiting(false);
       embedRef.current = createEmbedMedia({ video: v, frame: embedFrameRef.current, url: stream.embed,
-        onReady: () => setEmbedStarted(true) });
+        onReady: () => {
+          setEmbedStarted(true);
+          // The click that started it left the keyboard inside the frame.
+          window.focus();
+        } });
       v.addEventListener("loadedmetadata", () => {
         setRecovering(false);
         resumeAt(v);
-      }, { once: true });
+      }, { once: true, signal: attachEvents.signal });
       lampac.clearSwitching?.();
-      if (!userPausedRef.current) v.play().catch(() => {});
     };
 
     const attachDash = async () => {
@@ -1609,7 +1669,7 @@ export default function OnlinePlayer({
       // Progressive file (Lampac torrent / direct MP4-MKV balancer) → native
       // element; no DASH/HLS engine, the container is the whole stream.
       if (stream.embed) {
-        if (!prebufferingRef.current) attachEmbed();
+        attachEmbed();
       } else if (stream.mp4) {
         attachNative(stream.mp4);
       } else if (prebufferingRef.current && stream.hls) {
@@ -1624,9 +1684,9 @@ export default function OnlinePlayer({
       }
     })();
     // React detaches videoRef before this cleanup when the player unmounts.
-    return () => { disposed = true; destroyAll(v); };
+    return () => { disposed = true; attachEvents.abort(); destroyAll(v); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stream, stream?.embed ? prebuffering : false]);
+  }, [stream]);
 
   // ── Add Collaps `cc` subtitles as <track> elements once ────────────────────
   useEffect(() => {
@@ -1740,7 +1800,14 @@ export default function OnlinePlayer({
       }
     };
     const onDur = () => setDuration(v.duration || 0);
-    const onPlay = () => { setPlaying(true); if (!prebufferingRef.current) hadPlayedRef.current = true; };
+    const onPlay = () => {
+      if (engineRef.current === "embed" && prebufferingRef.current) {
+        activatePrebuffer();
+        onPrebufferStarted?.();
+      }
+      setPlaying(true);
+      if (!prebufferingRef.current) hadPlayedRef.current = true;
+    };
     const onPause = () => {
       setPlaying(false);
       if (prebufferingRef.current) return;
@@ -1768,7 +1835,7 @@ export default function OnlinePlayer({
       if (!tracker.steering || v.playbackRate !== tracker.appliedRate) setRate(v.playbackRate || 1);
     };
     const onVol = () => { if (!prebufferingRef.current) { setVolume(v.volume); setMuted(v.muted); } };
-    const onWaiting = () => setWaiting(true);
+    const onWaiting = () => { if (engineRef.current !== "embed") setWaiting(true); };
     // Playback actually running → clear the switch freeze even when no resume
     // seek fired (a fresh balancer/dub that starts at 0 emits no `seeked`).
     const onPlaying = () => { setWaiting(false); setRecovering(false); if (prebufferingRef.current) return; hadPlayedRef.current = true; if (isLampac) lampac.clearSwitching(); };
@@ -1826,7 +1893,7 @@ export default function OnlinePlayer({
       v.removeEventListener("loadedmetadata", onLoadedMeta);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stream, progressKey, persistCheckpoint]);
+  }, [stream, progressKey, persistCheckpoint, onPrebufferStarted]);
 
   // ── Watch Together sync ─────────────────────────────────────────────────────
   // Everyone steers towards the room's clock, on every room update and on a short
@@ -1939,12 +2006,12 @@ export default function OnlinePlayer({
 
   const commitViewingSession = useCallback((completedAt = null) => {
     const session = viewingSessionRef.current;
-    if (!session || session.progressKey !== progressKey || !session.segments.length || !checkpointItemRef.current?.id) return;
+    if (!session || session.progressKey !== progressKey || !session.segments.length || !session.item?.id) return;
     try {
       const result = recordViewingSession({
         sessionId: session.sessionId,
         progressKey,
-        item: checkpointItemRef.current,
+        item: session.item,
         segments: session.segments.map((segment) => ({ ...segment })),
         ...(completedAt || session.completedAt ? { completedAt: completedAt || session.completedAt } : {}),
       }, { flush: Boolean(completedAt || session.completedAt) });
@@ -1955,7 +2022,7 @@ export default function OnlinePlayer({
   useEffect(() => {
     if (prebuffering) return;
     const sessionId = newPlaybackSessionId();
-    viewingSessionRef.current = { sessionId, progressKey, segments: [], lastSample: null, playedMediaSeconds: 0, lastFlushAt: 0, completedAt: null };
+    viewingSessionRef.current = { sessionId, progressKey, item: checkpointItemRef.current, segments: [], lastSample: null, playedMediaSeconds: 0, lastFlushAt: 0, completedAt: null };
     return () => commitViewingSession();
   }, [prebuffering, progressKey, commitViewingSession]);
 
@@ -2084,12 +2151,14 @@ export default function OnlinePlayer({
         }
       }
 
-      // Wait until the actual end threshold, and preserve known post-credit scenes.
+      // Start at the confirmed outro, or the end threshold if no outro is known.
       if (!isFollower && !v.paused && !v.seeking && onNextRef.current && !nextFiredRef.current) {
         const remaining = v.duration - ct;
         const nearEnd = remaining >= 0 && remaining <= watchedThreshold;
+        const outroStart = skipTimings?.outro?.startTime;
+        const endingReached = Number.isFinite(outroStart) ? ct >= outroStart : nearEnd;
         const postCreditsDone = !skipTimings?.postCredits || ct >= skipTimings.postCredits.endTime;
-        if (nearEnd && postCreditsDone) {
+        if (endingReached && postCreditsDone) {
           nextFiredRef.current = true;
           onNextRef.current();
         }
@@ -2248,14 +2317,14 @@ export default function OnlinePlayer({
     if (prebufferingRef.current) return;
     hideTimerRef.current = setTimeout(() => {
       if (videoRef.current && !videoRef.current.paused &&
-          !showSettings && !showTracks && !showQuality && !showSpeed && !showSubs && !showBalanser && !showVoice)
+          !showSettings && !showTracks && !showQuality && !showSpeed && !showSubs && !showBalanser && !showVoice && !showProviderPicker)
         setControlsVisible(false);
     }, 3000);
-  }, [showSettings, showTracks, showQuality, showSpeed, showSubs, showBalanser, showVoice]);
+  }, [showSettings, showTracks, showQuality, showSpeed, showSubs, showBalanser, showVoice, showProviderPicker]);
   useEffect(() => { showControls(); return () => clearTimeout(hideTimerRef.current); }, [showControls, playing]);
 
   // ── Controls (engine-agnostic) ──────────────────────────────────────────────
-  const activateAndPlay = useCallback(() => {
+  const activatePrebuffer = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
     if (prebufferingRef.current) {
@@ -2272,8 +2341,14 @@ export default function OnlinePlayer({
       } catch {}
     }
     userPausedRef.current = false;
-    try { v.play()?.catch(() => {}); } catch {}
   }, []);
+  const activateAndPlay = useCallback(() => {
+    activatePrebuffer();
+    // The first embed play must come from the viewer's click inside the frame.
+    if (engineRef.current !== "embed") {
+      try { videoRef.current?.play()?.catch(() => {}); } catch {}
+    }
+  }, [activatePrebuffer]);
   useEffect(() => {
     if (!onRegisterPlay) return;
     onRegisterPlay(activateAndPlay);
@@ -2453,7 +2528,7 @@ export default function OnlinePlayer({
       lampac.clearSwitching?.();
     });
   };
-  const selectBalanser = (id, quality) => { selectManualSource(() => lampac.selectBalanser?.(id, quality)); setShowBalanser(false); setShowQuality(false); };
+  const selectBalanser = (id, quality) => { selectManualSource(() => lampac.selectBalanser?.(id, quality)); setShowBalanser(false); setShowQuality(false); setShowProviderPicker(false); };
   const selectVoice = (id) => { selectManualSource(() => lampac.selectVoice?.(id)); setShowVoice(false); };
   const selectSourceQuality = (id) => { selectManualSource(() => lampac.selectQuality?.(id)); setShowQuality(false); };
 
@@ -2556,6 +2631,19 @@ export default function OnlinePlayer({
     return () => { clearTimeout(t); document.removeEventListener("click", onDown); };
   }, [showSettings, showTracks, showQuality, showSpeed, showSubs, showBalanser, showVoice]);
 
+  useEffect(() => {
+    if (!showProviderPicker) return;
+    const onDown = (e) => { if (!providerPickerRef.current?.contains(e.target)) setShowProviderPicker(false); };
+    const onBlur = () => setShowProviderPicker(false); // A click into the iframe never reaches document.
+    document.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [showProviderPicker]);
+  useEffect(() => { setShowProviderPicker(false); }, [progressKey, isFollower, showSettings, embedMenuOpen]);
+
   // ── RENDER: loading ─────────────────────────────────────────────────────────
   const srcTitle = isLampac ? "Lampac — балансеры · озвучки · 4K · торренты" : "Онлайн (Collaps) — русская озвучка · до 4K";
   // Once media has attached (or has genuinely played), the <video> element is
@@ -2565,10 +2653,49 @@ export default function OnlinePlayer({
   // MediaSource and the entire buffer, so every mid-film error or fleet
   // failover paid a cold re-buffer (plus the 7 s stall watchdog) to get back.
   // The full-screen branches stay for the honest "nothing ever played" case.
-  const hasMedia = !!stream || hadPlayedRef.current || fleetPlayedRef.current;
+  const hasMedia = !!stream || attachedKeyRef.current != null || hadPlayedRef.current || fleetPlayedRef.current;
+  const activeBalanser = isLampac ? balansers.find((b) => b.id === lampac.balanser) : null;
+  const providerPicker = !isFollower && !showSettings && !embedMenuOpen && (stream || balansers.length > 0) && (
+    <div ref={providerPickerRef}
+      className={"torrplayer-provider-picker" + (state === "ready" && playing && (!stream?.embed || embedStarted) && !controlsVisible && !showProviderPicker ? " torrplayer-provider-picker--hidden" : "")}
+      onPointerEnter={showControls}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          setShowProviderPicker(false);
+          providerPickerRef.current?.querySelector("button")?.focus();
+        }
+        if (e.key !== "Tab") e.stopPropagation();
+      }}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setShowProviderPicker(false); }}
+    >
+      <button type="button" className="torrplayer-btn torrplayer-provider-toggle"
+        aria-haspopup="true" aria-expanded={showProviderPicker}
+        disabled={balansers.length === 0}
+        onClick={() => setShowProviderPicker((value) => !value)}>
+        <span>Плеер: {activeBalanser?.name || (isLampac ? "Выбор плеера" : "Collaps")}</span><span aria-hidden="true">▾</span>
+      </button>
+      {showProviderPicker && (
+        <div className="torrplayer-provider-menu" aria-label="Плееры">
+          {balansers.map((b, index) => (
+            <button type="button" key={b.id}
+              className={"torrplayer-audio-item" + (b.id === lampac.balanser ? " active" : "")}
+              aria-label={`Плеер ${index + 1}: ${b.name}${b.qualityHeight > 0 ? ` · до ${providerQualityLabel(b)}` : ""}${b.torrent ? " · торрент" : ""}`}
+              aria-current={b.id === lampac.balanser ? "true" : undefined}
+              onClick={() => { selectBalanser(b.id); providerPickerRef.current?.querySelector("button")?.focus(); }}>
+              {index + 1}. {b.name}{b.qualityHeight > 0 ? ` · до ${providerQualityLabel(b)}` : ""}{b.torrent ? " · торрент" : ""}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+  const embedFront = !!stream?.embed && (embedMenuOpen || embedExposed);
+  const embedStart = !!stream?.embed && !embedStarted && !embedFront;
   if (state === "loading" && !hasMedia) {
     return (
       <div className="torrpicker">
+        {providerPicker}
         {overlay}
         <div className="torrpicker-head">
           <div className="torrplayer-title">{srcTitle}</div>
@@ -2581,6 +2708,7 @@ export default function OnlinePlayer({
   if (state === "error" && !hasMedia) {
     return (
       <div className="torrpicker">
+        {providerPicker}
         {overlay}
         <div className="torrpicker-head">
           <div className="torrplayer-title">{isLampac ? "Lampac" : "Онлайн (Collaps)"}</div>
@@ -2612,7 +2740,6 @@ export default function OnlinePlayer({
   const currentQualityLabel = currentLevel < 0 ? "Авто" : levels[currentLevel]?.label || "Авто";
   // Fleet picker labels (Lampac only). `lampac.balanser` is the active slug;
   // `lampac.voice`/`lampac.quality` are the active ids inside the hook's lists.
-  const activeBalanser = isLampac ? balansers.find((b) => b.id === lampac.balanser) : null;
   const activeVoice = isLampac ? voices.find((v) => v.id === lampac.voice) : null;
   const activeSrcQuality = isLampac ? srcQualities.find((q) => q.id === lampac.quality) : null;
   const showEngineQualities = levels.length > 0 && !(isLampac && srcQualities.length > 1 && levels.length === 1);
@@ -2625,24 +2752,26 @@ export default function OnlinePlayer({
 
   return (
     <div
-      className={"torrplayer" + (stream?.embed ? " torrplayer--embed" : "") + (stream?.embed && (!embedStarted || embedMenuOpen) ? " torrplayer--embed-front" : "") + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor")}
+      className={"torrplayer" + (stream?.embed ? " torrplayer--embed" : "") + (embedFront ? " torrplayer--embed-front" : "") + (embedExposed && !embedMenuOpen ? " torrplayer--embed-exposed" : "") + (embedStart ? " torrplayer--embed-start" : "") + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor")}
       ref={containerRef}
       onMouseMove={showControls}
       onMouseLeave={() => { if (videoRef.current && !videoRef.current.paused) setControlsVisible(false); }}
       onPointerDownCapture={syncRole ? () => { lastInputAtRef.current = Date.now(); } : undefined}
       onPointerUpCapture={syncRole ? () => { lastInputAtRef.current = Date.now(); } : undefined}
     >
+      {providerPicker}
       <video ref={videoRef} className="torrplayer-video" playsInline crossOrigin="anonymous" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
-      {stream?.embed && !prebuffering && (
+      {stream?.embed && (
         <>
-          <iframe key={stream.embed} ref={embedFrameRef} className="torrplayer-embed" src={stream.embed}
+          <iframe key={stream.embed} ref={embedFrameRef} className="torrplayer-embed" src={stream.embed} onLoad={() => { embedLoadedRef.current = true; setEmbedLoaded(true); }}
             title="Плеер Alloha" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" />
-          {/* Keeps the pointer away from the frame's own controls once ours take over. */}
+          {/* Keeps the pointer away from the frame once ours take over. Until then its
+              click has to land in the frame, or the player starts without sound. */}
           <div className="torrplayer-embed-shield" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
-          {embedMenuOpen && <button className="torrplayer-embed-back" onClick={() => setEmbedMenuOpen(false)}>Наши кнопки</button>}
+          {embedMenuOpen && <button className="torrplayer-embed-back" onClick={() => setEmbedMenuOpen(false)}>Готово</button>}
         </>
       )}
-      {waiting && <div className="torrplayer-spinner" />}
+      {(stream?.embed ? !embedStarted && !embedLoaded : waiting) && <div className="torrplayer-spinner" />}
       {overlay}
       {/* Re-resolving over a LIVE element (fleet failover mid-film, a retry):
           the element and its buffer stay mounted, only the overlay shows. */}
@@ -2687,8 +2816,8 @@ export default function OnlinePlayer({
           fallback when the browser blocked autoplay (host is playing but our
           local video is still paused) — one tap unblocks play(), then sync owns
           it. When the host is the one paused, no button (follower just waits). */}
-      {!playing && !waiting && (!isFollower || !!syncState?.playing) && (
-        <button className="torrplayer-bigplay" onClick={togglePlay} title="Смотреть"><PlayI /></button>
+      {(stream?.embed && !embedStarted ? embedLoaded : !playing && !waiting && (!isFollower || !!syncState?.playing)) && (
+        <button className={"torrplayer-bigplay" + (stream?.embed && !embedStarted ? " torrplayer-bigplay--embed-ready" : "")} onClick={togglePlay} title="Смотреть"><PlayI /></button>
       )}
       {/* Cast-on-pause (Kinopoisk-style): real name + character + photo */}
       {!playing && !waiting && cast.length > 0 && (
@@ -2889,7 +3018,7 @@ export default function OnlinePlayer({
         </div>
         </div>
         {typeof document !== "undefined" && document.pictureInPictureEnabled && (<button className={"torrplayer-btn torrplayer-btn--pip" + (pipActive ? " torrplayer-btn--active" : "")} onClick={togglePiP} title="Картинка в картинке"><PiPIcon /></button>)}
-        {stream?.embed && !isFollower && <button className="torrplayer-btn torrplayer-btn--embed-menu" onClick={() => setEmbedMenuOpen(true)} title="Громкость, качество и озвучка в плеере Alloha">Alloha</button>}
+        {stream?.embed && !isFollower && <button className="torrplayer-btn torrplayer-btn--embed-menu" onClick={() => setEmbedMenuOpen(true)} title="Громкость, качество и озвучка"><VolumeI /></button>}
         <button className="torrplayer-btn torrplayer-btn--fs" onClick={toggleFullscreen} title="Полный экран (F)"><FullscreenI /></button>
         </div>
       </div>

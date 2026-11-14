@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { tmdbFetch, isAnimeContent } from "./api";
 import { collapsFindKp } from "./collaps-client";
 import { createSourceSession } from "./source-host-client";
+import { alternativeTitleNames } from "./alternative-titles";
 
 export const SWITCH_WATCHDOG_MS = 14_000;
 
@@ -10,10 +11,8 @@ export default function useSourceHost({ enabled, apiKey, item, details, type, se
   const session = useRef(null);
   if (!session.current) session.current = createSourceSession({ publish: setValue });
   const sourcePreferenceRef = useRef(sourcePreference);
-  // Keep the latest checkpoint-derived preference while resolution is gated.
-  // Once discovery starts, its own first candidate write must not restart the
-  // session and cancel discovery of alternate voices.
-  if (!enabled) sourcePreferenceRef.current = sourcePreference;
+  // Episode restarts need the latest checkpoint without restarting discovery on each write.
+  sourcePreferenceRef.current = sourcePreference;
   const title = details?.title || details?.name || item?.title || item?.name;
   const imdbId = details?.imdb_id || details?.external_ids?.imdb_id || item?.imdb_id;
   const existingKinopoiskId = [details?.kinopoisk_id, details?.kinopoiskId, item?.kinopoisk_id, item?.kinopoiskId]
@@ -35,12 +34,16 @@ export default function useSourceHost({ enabled, apiKey, item, details, type, se
     let alive = true;
     (async () => {
       const needsClientIds = !window.__webShim;
-      const [external, kp] = await Promise.all([
+      const [external, kp, alternatives] = await Promise.all([
         needsClientIds && !imdbId && apiKey && item?.id ? tmdbFetch(`/${type}/${item.id}/external_ids`, apiKey, { signal: controller.signal }).catch(() => null) : null,
         needsClientIds && !existingKinopoiskId ? collapsFindKp({ query: title, originalTitle, year, type }, { signal: controller.signal }).catch(() => null) : null,
+        // Catalogues may know the title only by a translation TMDB lists as an alternative name.
+        !existingKinopoiskId && apiKey && item?.id ? tmdbFetch(`/${type}/${item.id}/alternative_titles`, apiKey, { signal: controller.signal }).catch(() => null) : null,
       ]);
       if (!alive) return;
+      const altTitles = alternativeTitleNames(alternatives, [title, originalTitle]);
       const params = { type, title, originalTitle, language, anime, tmdbId: item?.id,
+        ...(altTitles.length ? { altTitles } : {}),
         ...(catalogSource ? { catalogSource } : {}),
         ...(year ? { year: Number(year) } : {}), ...(imdbId || external?.imdb_id ? { imdbId: imdbId || external.imdb_id } : {}),
         ...(existingKinopoiskId || (kp?.ok && kp.kinopoiskId)
