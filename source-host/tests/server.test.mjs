@@ -1179,3 +1179,13 @@ test("Kinoarc IMDb-only discovery and native HLS resolution remain usable while 
   assert.deepEqual(data.audioNames, ["Русский"]);
   assert.equal(nativeCalls, 0);
 });
+
+test("validateTitle keeps bounded alternative titles and rejects malformed ones", () => {
+  const base = { type: "tv", title: "Main", season: 1, episode: 1 };
+  assert.deepEqual(validateTitle({ ...base, altTitles: [" Идеальная работа ", "", "Dead-End Job", "Идеальная работа"] }).altTitles,
+    ["Идеальная работа", "Dead-End Job"]);
+  assert.equal(validateTitle(base).altTitles, undefined);
+  for (const altTitles of ["Идеальная работа", [1], [null], Array(21).fill("x"), ["x".repeat(301)], { 0: "x" }]) {
+    assert.throws(() => validateTitle({ ...base, altTitles }), /altTitles/);
+  }
+});

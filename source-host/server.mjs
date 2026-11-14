@@ -35,6 +35,13 @@ export function validateTitle(value) {
     title[key] = value[key].trim();
   }
   if (!title.title && !title.originalTitle) throw failure("Нужно название");
+  if (value.altTitles != null) {
+    // Catalogues often list a title under a translation TMDB keeps only as an alternative name.
+    if (!Array.isArray(value.altTitles) || value.altTitles.length > 20
+      || value.altTitles.some((name) => typeof name !== "string" || name.length > 300)) throw failure("Неверный параметр altTitles");
+    const altTitles = [...new Set(value.altTitles.map((name) => name.trim()).filter(Boolean))];
+    if (altTitles.length) title.altTitles = altTitles;
+  }
   for (const key of ["tmdbId", "kinopoiskId", "year"]) {
     if (value[key] == null || value[key] === "") continue;
     const number = Number(value[key]);

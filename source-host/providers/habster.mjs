@@ -4,6 +4,7 @@ const ORIGIN = "https://habster.sbs";
 const EMBED_ORIGIN = "https://api.initem.ws";
 const ALLOHA_ORIGIN = "https://befriend.stravers.live";
 const BODY_LIMIT = 1024 * 1024;
+const MAX_SEARCHES = 4;
 
 function literal(value) {
   if (value.startsWith('"')) return JSON.parse(value);
@@ -189,15 +190,16 @@ export function createHabsterProvider({ transport } = {}) {
   async function findKinopoiskId(title, signal) {
     if (!Number.isSafeInteger(title.year) || title.year < 1880 || title.year > 2200) return null;
     const queries = new Map();
-    for (const name of [title.title, title.originalTitle]) {
+    for (const name of [title.title, title.originalTitle, ...(title.altTitles || [])]) {
       const normalized = normalizedName(name);
       if (normalized && !queries.has(normalized)) queries.set(normalized, name);
     }
+    // Every alternative name may confirm a match, but only the first few are searched.
     const names = [...queries.keys()];
     if (!names.length) return null;
     const bounded = signal ? AbortSignal.any([signal, AbortSignal.timeout(3_000)]) : AbortSignal.timeout(3_000);
     let id;
-    for (const query of queries.values()) {
+    for (const query of [...queries.values()].slice(0, MAX_SEARCHES)) {
       const search = new URL("/search.php", ORIGIN);
       search.searchParams.set("q", query);
       const data = JSON.parse(await readText(search, bounded, { accept: "application/json" }));
