@@ -222,6 +222,9 @@ const providerQualityLabel = (source) => source.qualityHeight >= 2160 ? "4K" : `
 const FLEET_STALL_MS = 7000;
 const EMBED_RESPONSE_MS = 20_000;
 const EMBED_EXPOSE_MS = 6000;
+const EMBED_MODE_HINT_MS = 3000;
+// A tap reveals the hidden corner button and clicks it at once; that first click only reveals.
+const EMBED_MODE_TAP_GRACE_MS = 400;
 const PLAYBACK_STALL_MS = 20_000;
 const MIN_DISPLAY_MS = 250;
 const SYNC_TICK_MS = 500;
@@ -365,6 +368,11 @@ export default function OnlinePlayer({
   const [embedMenuOpen, setEmbedMenuOpen] = useState(false);
   const [embedExposed, setEmbedExposed] = useState(false);
   const [embedLoaded, setEmbedLoaded] = useState(false);
+  // The embedded player starts with its own controls; ours take over only on request.
+  const [embedOurs, setEmbedOurs] = useState(false);
+  const [embedModeShown, setEmbedModeShown] = useState(false);
+  const embedModeShownRef = useRef({ shown: false, at: 0 });
+  const embedModeTimerRef = useRef(null);
   const resumeDoneRef = useRef(false); // seek to saved timecode once per stream
   // True once ANY stream has actually attached. Used by the Lampac path to decide
   // whether a resolve error should blank the player (nothing ever played) or just
@@ -2690,7 +2698,29 @@ export default function OnlinePlayer({
       )}
     </div>
   );
-  const embedFront = !!stream?.embed && (embedMenuOpen || embedExposed);
+  // A watch-party follower keeps ours: its own clicks in the frame would break the sync.
+  const embedNative = !!stream?.embed && !embedOurs && !isFollower;
+  const embedFront = !!stream?.embed && (embedNative || embedMenuOpen || embedExposed);
+  const showEmbedMode = useCallback(() => {
+    if (!embedModeShownRef.current.shown) embedModeShownRef.current = { shown: true, at: Date.now() };
+    setEmbedModeShown(true);
+    clearTimeout(embedModeTimerRef.current);
+    embedModeTimerRef.current = setTimeout(() => {
+      embedModeShownRef.current = { shown: false, at: 0 };
+      setEmbedModeShown(false);
+    }, EMBED_MODE_HINT_MS);
+  }, []);
+  const switchToOurs = useCallback(() => {
+    const { shown, at } = embedModeShownRef.current;
+    if (!shown || Date.now() - at < EMBED_MODE_TAP_GRACE_MS) { showEmbedMode(); return; }
+    setEmbedOurs(true);
+    setEmbedMenuOpen(false);
+  }, [showEmbedMode]);
+  // Show the button for a moment once the frame is up, so the viewer learns where it lives.
+  useEffect(() => {
+    if (embedNative && embedLoaded) showEmbedMode();
+  }, [embedNative, embedLoaded, showEmbedMode]);
+  useEffect(() => () => clearTimeout(embedModeTimerRef.current), []);
   const embedStart = !!stream?.embed && !embedStarted && !embedFront;
   if (state === "loading" && !hasMedia) {
     return (
@@ -2752,7 +2782,7 @@ export default function OnlinePlayer({
 
   return (
     <div
-      className={"torrplayer" + (stream?.embed ? " torrplayer--embed" : "") + (embedFront ? " torrplayer--embed-front" : "") + (embedExposed && !embedMenuOpen ? " torrplayer--embed-exposed" : "") + (embedStart ? " torrplayer--embed-start" : "") + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor")}
+      className={"torrplayer" + (stream?.embed ? " torrplayer--embed" : "") + (embedNative ? " torrplayer--embed-native" : "") + (embedFront ? " torrplayer--embed-front" : "") + (embedExposed && !embedMenuOpen ? " torrplayer--embed-exposed" : "") + (embedStart ? " torrplayer--embed-start" : "") + (isFollower ? " torrplayer--follower" : "") + (controlsVisible ? "" : " torrplayer--hidden-cursor")}
       ref={containerRef}
       onMouseMove={showControls}
       onMouseLeave={() => { if (videoRef.current && !videoRef.current.paused) setControlsVisible(false); }}
@@ -2768,7 +2798,13 @@ export default function OnlinePlayer({
           {/* Keeps the pointer away from the frame once ours take over. Until then its
               click has to land in the frame, or the player starts without sound. */}
           <div className="torrplayer-embed-shield" onClick={isFollower ? undefined : togglePlay} onDoubleClick={toggleFullscreen} />
-          {embedMenuOpen && <button className="torrplayer-embed-back" onClick={() => setEmbedMenuOpen(false)}>Готово</button>}
+          {embedMenuOpen && !embedNative && <button className="torrplayer-embed-back" onClick={() => setEmbedMenuOpen(false)}>Готово</button>}
+          {/* The frame swallows pointer moves, so this corner is the only place that can bring the button back. */}
+          {embedNative && (
+            <div className="torrplayer-embed-hotzone" onMouseEnter={showEmbedMode} onMouseMove={showEmbedMode} onTouchStart={showEmbedMode}>
+              <button className={"torrplayer-embed-mode" + (embedModeShown ? "" : " torrplayer-embed-mode--hidden")} onFocus={showEmbedMode} onClick={switchToOurs}>Наш плеер</button>
+            </div>
+          )}
         </>
       )}
       {(stream?.embed ? !embedStarted && !embedLoaded : waiting) && <div className="torrplayer-spinner" />}
@@ -3019,6 +3055,7 @@ export default function OnlinePlayer({
         </div>
         {typeof document !== "undefined" && document.pictureInPictureEnabled && (<button className={"torrplayer-btn torrplayer-btn--pip" + (pipActive ? " torrplayer-btn--active" : "")} onClick={togglePiP} title="Картинка в картинке"><PiPIcon /></button>)}
         {stream?.embed && !isFollower && <button className="torrplayer-btn torrplayer-btn--embed-menu" onClick={() => setEmbedMenuOpen(true)} title="Громкость, качество и озвучка"><VolumeI /></button>}
+        {stream?.embed && !isFollower && <button className="torrplayer-btn torrplayer-btn--embed-native" onClick={() => { setEmbedOurs(false); setEmbedMenuOpen(false); }} title="Вернуть плеер Alloha">Alloha</button>}
         <button className="torrplayer-btn torrplayer-btn--fs" onClick={toggleFullscreen} title="Полный экран (F)"><FullscreenI /></button>
         </div>
       </div>

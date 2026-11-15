@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect } from "@playwright/test";
+import { useOurs } from "./embed-mode.js";
 
 const FRAME_ORIGIN = "https://befriend.stravers.live";
 const FRAME = `<!doctype html><body><button style="position:fixed;inset:0;width:100%;height:100%">Start</button><script>
@@ -81,7 +82,7 @@ async function assertEpisode(page, season, episode) {
   await expect(card(page, episode)).toHaveClass(/playing/);
 }
 async function startEmbed(page) {
-  await expect(page.locator(".torrplayer-embed")).toBeVisible();
+  await useOurs(page);
   await expect(page.locator(".torrplayer-bigplay--embed-ready")).toBeVisible();
   await page.frameLocator(".torrplayer-embed").getByRole("button").click();
   await expect(page.locator(".torrplayer--embed-start")).toHaveCount(0);
@@ -105,7 +106,7 @@ test("a direct series route preloads the frame silently, then one frame click st
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("streambert_resumeTime")))).toEqual({});
 
   await card(page, 1).click();
-  await expect(iframe).toBeVisible();
+  await useOurs(page);
   await expect(page.locator(".torrplayer-bigplay")).toBeVisible();
   expect(await iframe.evaluate((node) => node === window.prebufferFrame)).toBe(true);
   await page.locator(".torrplayer").scrollIntoViewIfNeeded();
