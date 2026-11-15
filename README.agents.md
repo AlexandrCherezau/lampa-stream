@@ -490,3 +490,11 @@ Post-deploy /tmp/lampa-postdeploy-smoke-report.json: HaikyuuS1E14 иFightClub ×
 - Codex больше не используется: подписка пользователя закончилась 14 ноября, код пишет ведущий.
 - Проверено: source-host 116/116, frontend unit 182 (3 skipped), client check, Vite build. Живой Habster: без altTitles ничего, с ними Alloha и Collaps kp=7791628. Боевой `/api/source-host?op=discover` с altTitles отдаёт Habster · Alloha. Опубликованный `OnlinePlayer-DqWqyFSz.js` содержит запрос alternative_titles. Сам просмотр серии в браузере не проверялся.
 - Production: сайт `dpl_CUoCBdwxLMnhyApmH9xdg1B9wFWP` (main `6fc1ff8`), откат `dpl_JDiFTVPNAhG8Urf1oBjDX4fwQgG2`; сервер `dpl_D3jDeKirrfWGNCRyb32p2Ce1usQs` (deploy/source-host `b629ff4`), откат `dpl_39xR1E6L1tw4ZHkgzHTWh66Pb2gh`.
+
+## Alloha сначала в своём плеере — 15 ноября 2026 (опубликовано)
+
+- Просьба: «сделай что б просто их плеер запускался, а наш можно было включить по кнопке, кнопка должна скрываться». Причина: их меню (звук, качество до 2160p, озвучки, субтитры) снаружи не управляется — postMessage знает только play/pause/seek, а `quality=`/`hidden=` в URL не действуют.
+- `OnlinePlayer.jsx`: `embedOurs=false` по умолчанию, `embedNative` = embed и не наш режим и не ведомый «Смотрим вместе» (его клики в кадре ломали бы синхронизацию). В нативном режиме кадр целиком, наши bigplay, панель и cast скрыты (`.torrplayer--embed-native`), «Сменить источник» слева вверху тоже скрыт.
+- Кнопка «Наш плеер» по центру сверху (`.torrplayer-embed-hotzone`, справа мешает невидимая зона выбора плеера): видна 3 с после загрузки и при наведении на эту зону; первое касание только показывает её (400 мс). Обратно — кнопка «Alloha» в нашей панели.
+- Тесты: хелпер `tests/embed-mode.js` (`useOurs`) для старых проверок нашего режима; 3 новых в `alloha-embed.spec.js`. alloha-embed 12/12, вместе с player-picker/global-source-preference/series-switching 28/29 (один тест серий нестабилен под параллельной нагрузкой, отдельно проходит), unit 182 (3 skipped). На настоящем Alloha и телефоне не проверялось.
+- Production: сайт `dpl_EVxFSB4fvve3hHBGyH8GvJdHwA1z` (main `e0ecb6a`, бандл `OnlinePlayer-DOAnwGLJ.js` с кнопкой), откат `dpl_CUoCBdwxLMnhyApmH9xdg1B9wFWP`. Сервер не менялся.
