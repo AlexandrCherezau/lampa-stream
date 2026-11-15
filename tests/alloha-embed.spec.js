@@ -1,6 +1,7 @@
 // Our controls driving an embedded player. The frame is a stand-in that speaks the
 // real player's message protocol; the real one needs the separate live check.
 import { test, expect } from "@playwright/test";
+import { useOurs } from "./embed-mode.js";
 
 const EMBED = "https://befriend.stravers.live/?kp=5494049&token=t";
 const FRAME = `<!doctype html><body style="background:#123"><button id="native" style="position:fixed;inset:0;width:100%;height:100%">native</button><div id="bar" style="position:fixed;left:0;right:0;bottom:10px;height:40px;pointer-events:none"></div><script>
@@ -16,7 +17,7 @@ const FRAME = `<!doctype html><body style="background:#123"><button id="native" 
   emit("pause");
 <\/script>`;
 
-async function open(page, { blockAutoplay = false, frameBody = null, frameDelay = 0 } = {}) {
+async function open(page, { blockAutoplay = false, frameBody = null, frameDelay = 0, ours = true } = {}) {
   await page.addInitScript(() => localStorage.setItem("lampa_stream_tmdb_token", "fixture"));
   await page.addInitScript((candidate) => {
     const originalFetch = window.fetch.bind(window);
@@ -33,6 +34,8 @@ async function open(page, { blockAutoplay = false, frameBody = null, frameDelay 
   await page.goto("/movie/969681");
   await page.getByRole("button", { name: /^Смотреть/ }).first().click();
   await expect(page.locator(".torrplayer-embed")).toBeVisible();
+  // Alloha opens in its own player; these checks are about ours, switched on by the corner button.
+  if (ours) await useOurs(page);
   return page.frameLocator(".torrplayer-embed");
 }
 const received = (page) => page.frames().find((frame) => frame.url().startsWith("https://befriend")).evaluate(() => window.received);
@@ -156,4 +159,47 @@ test("the loading spinner lets the first click reach the frame", async ({ page }
     [box.x + box.width / 2, box.y + box.height / 2]);
   expect(hit).toContain("torrplayer-embed");
   await expect(page.locator(".torrplayer-bigplay")).toBeVisible();
+});
+
+test("Alloha opens in its own player, whole and clickable, with ours off", async ({ page }) => {
+  const frame = await open(page, { ours: false });
+  await expect(page.locator(".torrplayer--embed-native")).toHaveCount(1);
+  const player = await page.locator(".torrplayer").boundingBox();
+  const embed = await page.locator(".torrplayer-embed").boundingBox();
+  // Ours cuts the frame 100px past each edge; its own player is not cut.
+  expect(Math.abs(embed.y - player.y)).toBeLessThan(20);
+  expect(embed.height).toBeLessThanOrEqual(player.height);
+  await expect(page.locator(".torrplayer-embed-shield")).toBeHidden();
+  await frame.locator("#native").click({ position: { x: 300, y: 300 } });
+  await expect.poll(() => page.frames().find((f) => f.url().startsWith("https://befriend")).evaluate(() => window.clicked || 0)).toBe(1);
+  await page.waitForTimeout(1500);
+  await expect(page.locator(".torrplayer--embed-native")).toHaveCount(1);
+  expect((await received(page)).some((m) => m.api === "play")).toBe(false);
+});
+
+test("the corner button hides itself, comes back on hover and switches players both ways", async ({ page }) => {
+  const frame = await open(page, { ours: false });
+  const mode = page.locator(".torrplayer-embed-mode");
+  await expect(mode).not.toHaveClass(/torrplayer-embed-mode--hidden/);
+  await expect(mode).toHaveClass(/torrplayer-embed-mode--hidden/, { timeout: 6_000 });
+  await page.locator(".torrplayer-embed-hotzone").hover();
+  await expect(mode).not.toHaveClass(/torrplayer-embed-mode--hidden/);
+  await page.waitForTimeout(500);
+  await mode.click();
+  await expect(page.locator(".torrplayer--embed-native")).toHaveCount(0);
+  await frame.locator("#native").click();
+  await expect(page.locator(".torrplayer--embed-start")).toHaveCount(0, { timeout: 15_000 });
+  await reveal(page);
+  await page.locator(".torrplayer-btn--embed-native").click();
+  await expect(page.locator(".torrplayer--embed-native")).toHaveCount(1);
+});
+
+test("a tap on the hidden corner button only reveals it", async ({ page }) => {
+  await open(page, { ours: false });
+  const mode = page.locator(".torrplayer-embed-mode");
+  await expect(mode).toHaveClass(/torrplayer-embed-mode--hidden/, { timeout: 6_000 });
+  // A tap brings no hover first: the click lands on the still hidden button.
+  await mode.dispatchEvent("click");
+  await expect(page.locator(".torrplayer--embed-native")).toHaveCount(1);
+  await expect(mode).not.toHaveClass(/torrplayer-embed-mode--hidden/);
 });

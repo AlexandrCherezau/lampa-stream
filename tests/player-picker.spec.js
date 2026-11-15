@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { useOurs } from "./embed-mode.js";
 
 const FRAME_ORIGIN = "https://player-picker.example";
 const FRAME = `<!doctype html><body style="margin:0;background:#000"><button id="native" style="position:fixed;inset:0;opacity:0">native</button><script>
@@ -83,6 +84,7 @@ const trigger = (page) => picker(page).getByRole("button", { name: /^Плеер:
 const menu = (page) => page.locator(".torrplayer-provider-menu");
 
 async function expectBeforeStart(page) {
+  await useOurs(page);
   await expect(page.locator(".torrplayer--embed-start")).toHaveCount(1);
   await expect(page.locator(".torrplayer-bigplay")).toBeVisible();
   await expect(trigger(page)).toBeVisible();
@@ -102,6 +104,7 @@ test("the source picker is available while the first source is resolving", async
   } finally {
     fixture.releaseResolve();
   }
+  await useOurs(page);
   await expect(page.locator(".torrplayer-bigplay")).toBeVisible();
 });
 

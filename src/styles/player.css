@@ -433,6 +433,41 @@
 .torrplayer--embed-front .torrplayer-embed { top: 0; height: 100%; z-index: 40; }
 .torrplayer--embed-front .torrplayer-embed-shield { display: none; }
 .player-wrap:has(.torrplayer--embed-front) .player-overlay-group { display: none; }
+/* Its own player is the default: ours stays underneath until the corner button. */
+.torrplayer--embed-native .torrplayer-bigplay,
+.torrplayer--embed-native .torrplayer-controls,
+.torrplayer--embed-native .torrplayer-cast { display: none; }
+/* Top centre: the provider picker holds the top right, the frame's own voice picker the top left. */
+.torrplayer-embed-hotzone {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 41;
+  display: flex;
+  justify-content: center;
+  width: 200px;
+  transform: translateX(-50%);
+  height: 64px;
+  padding: var(--capsule-gap);
+  box-sizing: border-box;
+}
+.torrplayer-embed-mode {
+  height: 34px;
+  padding: 0 14px;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--bar-fill);
+  border: 0;
+  border-radius: 10px;
+  backdrop-filter: var(--bar-blur);
+  cursor: pointer;
+  transition: opacity 0.25s ease;
+}
+.torrplayer-embed-mode--hidden { opacity: 0; }
+.torrplayer-btn--embed-native { width: auto; padding: 0 8px; font: inherit; font-size: 12px; font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .torrplayer-embed-mode { transition: none; } }
 .torrplayer-embed-back {
   position: absolute;
   top: var(--capsule-gap);
