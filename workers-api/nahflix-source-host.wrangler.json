@@ -1,0 +1,11 @@
+{
+  "name": "lampa-source-host",
+  "account_id": "8fba540fe71f4b89e1a5c4968afaa633",
+  "main": "nahflix-source-host.mjs",
+  "compatibility_date": "2026-10-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "vars": {
+    "SOURCE_PUBLIC_ORIGIN": "https://lampa-source-host.ocr-gemini-proxy.workers.dev"
+  }
+}
