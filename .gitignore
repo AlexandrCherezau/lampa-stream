@@ -8,3 +8,5 @@ dist/
 .vercel
 test-results/
 playwright-report/
+.dev.vars*
+.wrangler/
