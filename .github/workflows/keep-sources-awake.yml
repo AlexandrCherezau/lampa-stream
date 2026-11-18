@@ -1,0 +1,13 @@
+# The free Collaps source host sleeps after 15 idle minutes and takes about a minute to wake.
+name: Keep the Collaps source host awake
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+permissions: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - run: curl --silent --show-error --fail --max-time 120 --retry 2 https://nahflix-sources.onrender.com/healthz

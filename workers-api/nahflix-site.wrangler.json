@@ -12,6 +12,7 @@
   },
   "vars": {
     "SOURCE_HOST_URL": "https://lampa-source-host.ocr-gemini-proxy.workers.dev",
+    "COLLAPS_HOST_URL": "https://nahflix-sources.onrender.com",
     "PROFILE_STORAGE_BACKEND": "blob"
   },
   "services": [
