@@ -1,0 +1,7 @@
+name = "nahflix"
+pages_build_output_dir = "../../dist"
+compatibility_date = "2026-10-11"
+
+[[services]]
+binding = "API"
+service = "nahflix"

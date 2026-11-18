@@ -278,11 +278,14 @@ export function formatBytes(bytes) {
 const hasSecureBridge = () =>
   typeof window !== "undefined" && !!window.electron?.secureGet;
 
+// A deployment with its own TMDB token asks the viewer for none; the server ignores this placeholder.
+const SHARED_TMDB_KEY = import.meta.env?.VITE_TMDB_SHARED === "1" ? "shared" : "";
+
 export const secureStorage = {
   /** Read an encrypted value. Returns null if not set. */
   async get(key) {
-    if (!hasSecureBridge()) return null;
-    return window.electron.secureGet(key);
+    const value = hasSecureBridge() ? await window.electron.secureGet(key) : null;
+    return value || (key === "apikey" && SHARED_TMDB_KEY) || null;
   },
 
   /** Write an encrypted value. Pass null/empty to delete. */

@@ -513,7 +513,7 @@ export function createViewingProfileStore({ read = storage.get, write = storage.
 }
 
 let singleton;
-const profile = () => singleton ||= createViewingProfileStore({ endpoint: typeof window !== 'undefined' && window.location?.protocol === 'file:' ? 'https://nahflix.ocr-gemini-proxy.workers.dev/api/profile' : '/api/profile' });
+const profile = () => singleton ||= createViewingProfileStore({ endpoint: typeof window !== 'undefined' && window.location?.protocol === 'file:' ? 'https://nahflix.pages.dev/api/profile' : '/api/profile' });
 export const getViewingProfileSnapshot = () => profile().getSnapshot();
 export const subscribeViewingProfile = (listener) => profile().subscribe(listener);
 export const startViewingProfileSync = () => profile().start();

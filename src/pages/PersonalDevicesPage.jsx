@@ -26,7 +26,7 @@ export default function PersonalDevicesPage({ initialPairToken, apiKey, onNaviga
 
   const shareUrl = useMemo(() => {
     if (!activePair?.requestToken || typeof window === "undefined") return "";
-    const origin = /^https?:$/.test(window.location.protocol) ? window.location.origin : "https://nahflix.ocr-gemini-proxy.workers.dev";
+    const origin = /^https?:$/.test(window.location.protocol) ? window.location.origin : "https://nahflix.pages.dev";
     return `${origin}/devices#pair=${encodeURIComponent(activePair.requestToken)}`;
   }, [activePair]);
   useEffect(() => {
